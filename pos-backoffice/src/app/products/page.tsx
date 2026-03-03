@@ -1,0 +1,583 @@
+"use client";
+
+import { useState, useEffect, useMemo } from "react";
+import Link from "next/link";
+import { ArrowLeft, Plus, Trash2, BookOpen, RefreshCw, Search } from "lucide-react";
+import { getProducts, getCategories, getPrinters, getModifierGroups, createProduct, updateProduct, deleteProduct, getZohoItems, syncZohoBooks, checkZohoConnection, clearAndSyncProducts } from "@/lib/api";
+
+type Product = {
+  id: string;
+  name: string;
+  name_arabic?: string;
+  name_turkish?: string;
+  sku?: string;
+  category_id?: string;
+  category?: string;
+  price: number;
+  tax_rate: number;
+  image_url?: string;
+  printers: string[];
+  modifier_groups: string[];
+  active: boolean;
+  pos_enabled?: boolean;
+  /** API'dan gelen Sellable kolonu (true/false/string vb.) */
+  sellable_from_api?: unknown;
+};
+
+type ZohoItem = { item_id: string; name: string; sku: string; rate: number };
+
+export default function ProductsPage() {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
+  const [printers, setPrinters] = useState<{ id: string; name: string }[]>([]);
+  const [modifierGroups, setModifierGroups] = useState<{ id: string; name: string }[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortBy, setSortBy] = useState<"category" | "name" | "price">("category");
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [editing, setEditing] = useState<Product | null | undefined>(undefined);
+  const [form, setForm] = useState({ name: "", name_arabic: "", name_turkish: "", sku: "", category_id: "", price: 0, tax_rate: 0, printers: [] as string[], modifier_groups: [] as string[], pos_enabled: true });
+  const [showZohoPicker, setShowZohoPicker] = useState(false);
+  const [zohoItems, setZohoItems] = useState<ZohoItem[]>([]);
+  const [zohoLoading, setZohoLoading] = useState(false);
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [checkLoading, setCheckLoading] = useState(false);
+  const [lastSync, setLastSync] = useState<string | null>(null);
+  const [zohoCheckResult, setZohoCheckResult] = useState<{ ok: boolean; itemsCount: number; groupsCount: number; error?: string } | null>(null);
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  useEffect(() => {
+    const t = setInterval(() => load(), 30000);
+    return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    async function runSync() {
+      try {
+        const r = await syncZohoBooks();
+        if (mounted && !r.error) {
+          setLastSync(new Date().toLocaleTimeString());
+          load();
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    runSync();
+    const t = setInterval(runSync, 60000);
+    return () => {
+      mounted = false;
+      clearInterval(t);
+    };
+  }, []);
+
+  async function load(silent = false) {
+    if (!silent) {
+      setLoadError(null);
+      setLoading(true);
+    }
+    try {
+      const [prods, cats, prts, mgs] = await Promise.all([getProducts(), getCategories(), getPrinters(), getModifierGroups()]);
+      setProducts(prods);
+      setCategories(cats);
+      setPrinters(prts);
+      setModifierGroups(mgs.map((m) => ({ id: m.id, name: m.name })));
+    } catch (e) {
+      console.error(e);
+      const msg = (e as Error).message || "Bağlantı hatası";
+      if (msg.includes("401") || msg.includes("Unauthorized")) {
+        window.location.href = "/login";
+        return;
+      }
+      if (!silent) setLoadError(msg);
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  }
+
+  function openEdit(p?: Product) {
+    if (p) {
+      setEditing(p);
+      setForm({
+        name: p.name,
+        name_arabic: p.name_arabic || "",
+        name_turkish: p.name_turkish || "",
+        sku: p.sku || "",
+        category_id: p.category_id || "",
+        price: p.price,
+        tax_rate: (p.tax_rate ?? 0) * 100,
+        image_url: p.image_url || "",
+        printers: p.printers || [],
+        modifier_groups: p.modifier_groups || [],
+        pos_enabled: p.pos_enabled === 1 || p.pos_enabled === true,
+      });
+    } else {
+      setEditing(null);
+      setForm({ name: "", name_arabic: "", name_turkish: "", sku: "", category_id: "", price: 0, tax_rate: 0, printers: [] as string[], modifier_groups: [] as string[], pos_enabled: true });
+    }
+  }
+
+  function togglePrinter(id: string) {
+    setForm((f) => ({
+      ...f,
+      printers: f.printers.includes(id) ? f.printers.filter((x) => x !== id) : [...f.printers, id],
+    }));
+  }
+
+  function toggleModifierGroup(id: string) {
+    setForm((f) => ({
+      ...f,
+      modifier_groups: f.modifier_groups.includes(id) ? f.modifier_groups.filter((x) => x !== id) : [...f.modifier_groups, id],
+    }));
+  }
+
+  async function save() {
+    const trimmedName = form.name.trim();
+    if (!trimmedName) {
+      alert("Product name is required");
+      return;
+    }
+    try {
+      const payload = {
+        name: trimmedName,
+        name_arabic: form.name_arabic?.trim() || "",
+        name_turkish: form.name_turkish?.trim() || "",
+        sku: form.sku?.trim() || "",
+        category_id: form.category_id || undefined,
+        price: Number(form.price) || 0,
+        tax_rate: (Number(form.tax_rate) || 0) / 100,
+        image_url: form.image_url?.trim() || "",
+        printers: form.printers,
+        modifier_groups: form.modifier_groups,
+        pos_enabled: form.pos_enabled,
+      };
+      if (editing) {
+        await updateProduct(editing.id, payload);
+      } else {
+        await createProduct(payload);
+      }
+      await load(true);
+      setEditing(undefined);
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+
+  async function remove(id: string) {
+    if (!confirm("Are you sure you want to delete?")) return;
+    try {
+      await deleteProduct(id);
+      await load(true);
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+
+  async function toggleTill(p: Product) {
+    const isOn = p.pos_enabled === 1 || p.pos_enabled === true;
+    try {
+      await updateProduct(p.id, {
+        name: p.name,
+        name_arabic: p.name_arabic ?? "",
+        name_turkish: p.name_turkish ?? "",
+        sku: p.sku ?? "",
+        category_id: p.category_id ?? undefined,
+        price: p.price ?? 0,
+        tax_rate: p.tax_rate ?? 0,
+        image_url: p.image_url ?? "",
+        printers: p.printers ?? [],
+        modifier_groups: p.modifier_groups ?? [],
+        pos_enabled: !isOn,
+      });
+      await load(true);
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+
+  async function loadZohoItems() {
+    setZohoLoading(true);
+    setShowZohoPicker(true);
+    setZohoItems([]);
+    try {
+      const res = await getZohoItems();
+      setZohoItems(res?.items ?? []);
+    } catch {
+      setZohoItems([]);
+    } finally {
+      setZohoLoading(false);
+    }
+  }
+
+  function selectZohoItem(item: ZohoItem) {
+    setForm((f) => ({
+      ...f,
+      name: item.name,
+      sku: item.sku ?? "",
+      price: item.rate ?? 0,
+    }));
+    setShowZohoPicker(false);
+  }
+
+  /** Zoho'da yapılan değişiklikleri uygular: tüm ürünleri siler, Zoho'dan çeker, listeyi yeniler. */
+  async function syncFromZoho() {
+    setSyncLoading(true);
+    setZohoCheckResult(null);
+    try {
+      const r = await clearAndSyncProducts();
+      setLastSync(new Date().toLocaleTimeString());
+      if (r.error) {
+        alert(r.error);
+      } else {
+        await load(true);
+      }
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setSyncLoading(false);
+    }
+  }
+
+  async function checkZoho() {
+    setCheckLoading(true);
+    setZohoCheckResult(null);
+    try {
+      const r = await checkZohoConnection();
+      setZohoCheckResult({ ok: r.ok, itemsCount: r.itemsCount ?? 0, groupsCount: r.groupsCount ?? 0, error: r.error ?? undefined });
+    } catch {
+      setZohoCheckResult({ ok: false, itemsCount: 0, groupsCount: 0, error: "Bağlantı kontrol edilemedi" });
+    } finally {
+      setCheckLoading(false);
+    }
+  }
+
+  const filteredProducts = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return products;
+    return products.filter(
+      (p) =>
+        p.name.toLowerCase().includes(q) ||
+        (p.sku || "").toLowerCase().includes(q) ||
+        (p.category || "").toLowerCase().includes(q) ||
+        (p.name_arabic || "").toLowerCase().includes(q) ||
+        (p.name_turkish || "").toLowerCase().includes(q)
+    );
+  }, [products, searchQuery]);
+
+  const sortedProducts = useMemo(() => {
+    const list = [...filteredProducts];
+    if (sortBy === "category") {
+      list.sort((a, b) => {
+        const hasCatA = !!(a.category_id || (a.category || "").trim());
+        const hasCatB = !!(b.category_id || (b.category || "").trim());
+        if (hasCatA !== hasCatB) return hasCatA ? -1 : 1;
+        const catA = (a.category || "").trim();
+        const catB = (b.category || "").trim();
+        return catA.localeCompare(catB);
+      });
+    } else if (sortBy === "name") list.sort((a, b) => a.name.localeCompare(b.name));
+    else if (sortBy === "price") list.sort((a, b) => (a.price ?? 0) - (b.price ?? 0));
+    return list;
+  }, [filteredProducts, sortBy]);
+
+  if (loadError) {
+    return (
+      <div className="p-6">
+        <p className="text-amber-400 mb-4">{loadError}</p>
+        <p className="text-slate-400 text-sm mb-4">Backend çalışıyor mu? <code className="bg-slate-800 px-1 rounded">cd backend && npm run dev</code></p>
+        <button onClick={() => load()} className="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white">Tekrar Dene</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6 w-full max-w-[1920px] mx-auto">
+      <Link href="/" className="inline-flex items-center gap-2 text-slate-400 hover:text-white mb-6">
+        <ArrowLeft className="w-4 h-4" /> Back
+      </Link>
+
+      <div className="flex justify-between items-center mb-8 flex-wrap gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-sky-400">Products</h1>
+          <p className="text-slate-400">Add, edit, delete products. Zoho entegrasyonu her dakika değişiklikleri otomatik çeker (sellable olmayanlar silinir, yeniler eklenir, fiyat/kategori/SKU güncellenir).</p>
+          {lastSync && <p className="text-slate-500 text-sm mt-1">Last sync: {lastSync}</p>}
+          {zohoCheckResult && (
+            <p className={`text-sm mt-1 ${zohoCheckResult.ok ? "text-emerald-400" : "text-amber-400"}`}>
+              {zohoCheckResult.ok
+                ? `Zoho: ${zohoCheckResult.itemsCount} ürün, ${zohoCheckResult.groupsCount} grup bulundu.`
+                : `Zoho: ${zohoCheckResult.error || "Bağlantı yok"}`}
+            </p>
+          )}
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          <button onClick={checkZoho} disabled={checkLoading} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-600 hover:bg-slate-500 disabled:opacity-50 text-white font-medium" title="Zoho bağlantısını ve ürün sayısını kontrol et">
+            {checkLoading ? "Kontrol..." : "Zoho Kontrol"}
+          </button>
+          <button onClick={syncFromZoho} disabled={syncLoading} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-medium" title="Zoho'da yapılan değişiklikleri uygula (ürünler Zoho'dan senkronize edilir)">
+            <RefreshCw className={`w-4 h-4 ${syncLoading ? "animate-spin" : ""}`} /> Zoho Sync
+          </button>
+          <button onClick={() => openEdit()} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium">
+            <Plus className="w-4 h-4" /> New Product
+          </button>
+        </div>
+      </div>
+
+      <div className="flex gap-4 mb-4 flex-wrap">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+          <input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search products by name, SKU, category..."
+            className="w-full pl-10 pr-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white placeholder-slate-500"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-sm text-slate-400">Sort by:</label>
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as "category" | "name" | "price")}
+            className="px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white"
+          >
+            <option value="category">Category</option>
+            <option value="name">Name</option>
+            <option value="price">Price</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto rounded-lg border border-slate-700 mb-8 relative min-h-[120px]">
+        {loading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-slate-950/60 z-10 rounded-lg">
+            <div className="w-8 h-8 border-2 border-sky-500 border-t-transparent rounded-full animate-spin" />
+          </div>
+        )}
+        <table className="w-full min-w-[900px] table-fixed">
+          <thead>
+            <tr className="border-b border-slate-700 bg-slate-800/50">
+              <th className="text-left p-3 font-medium w-14">Görsel</th>
+              <th className="text-left p-3 font-medium min-w-[140px]">Product</th>
+              <th className="text-left p-3 font-medium min-w-[90px]">SKU</th>
+              <th className="text-left p-3 font-medium min-w-[120px]">Category</th>
+              <th className="text-left p-3 font-medium w-20">Price</th>
+              <th className="text-left p-3 font-medium w-24">Sellable</th>
+              <th className="text-left p-3 font-medium w-20">Till</th>
+              <th className="text-left p-3 font-medium w-28">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sortedProducts.map((p) => (
+              <tr
+                key={p.id}
+                className="border-b border-slate-700/50 cursor-pointer hover:bg-slate-800/50 transition-colors"
+                onClick={() => openEdit(p)}
+              >
+                <td className="p-2">
+                  <div className="relative w-12 h-12 rounded-lg bg-slate-700 overflow-hidden flex items-center justify-center">
+                    <span className="text-slate-500 text-xs">—</span>
+                    {p.image_url && (
+                      <img src={p.image_url} alt={p.name} className="absolute inset-0 w-full h-full object-cover z-10" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                    )}
+                  </div>
+                </td>
+                <td className="p-3 truncate" title={p.name}>{p.name}</td>
+                <td className="p-3 text-slate-400">{p.sku || "—"}</td>
+                <td className="p-3 truncate" title={p.category || ""}>{p.category || "—"}</td>
+                <td className="p-3">{p.price?.toFixed(2)}</td>
+                <td className="p-3 text-slate-400 font-mono text-sm" title={p.sellable_from_api === undefined || p.sellable_from_api === null ? "API yanıtında Sellable alanı yok" : ""}>
+                  {p.sellable_from_api === undefined || p.sellable_from_api === null ? "—" : String(p.sellable_from_api)}
+                </td>
+                <td className="p-3" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    type="button"
+                    onClick={() => toggleTill(p)}
+                    className={`relative inline-flex h-6 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-slate-900 ${(p.pos_enabled === 1 || p.pos_enabled === true) ? "bg-emerald-600" : "bg-slate-600"}`}
+                    title={(p.pos_enabled === 1 || p.pos_enabled === true) ? "Till'de gösteriliyor (Off yap)" : "Till'de gizli (On yap)"}
+                  >
+                    <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition ${(p.pos_enabled === 1 || p.pos_enabled === true) ? "translate-x-4" : "translate-x-0.5"}`} />
+                  </button>
+                  <span className="ml-2 text-xs text-slate-500">{(p.pos_enabled === 1 || p.pos_enabled === true) ? "On" : "Off"}</span>
+                </td>
+                <td className="p-3" onClick={(e) => e.stopPropagation()}>
+                  <button onClick={() => remove(p.id)} className="p-1.5 rounded bg-slate-700 hover:bg-red-600/30 text-red-400">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {editing !== undefined && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-900 rounded-xl border border-slate-700 p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto">
+            <h2 className="text-xl font-bold text-sky-400 mb-4">{editing ? "Edit Product" : "New Product"}</h2>
+            <div className="space-y-4">
+              {!editing && (
+                <button
+                  type="button"
+                  onClick={loadZohoItems}
+                  className="w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-400 border border-emerald-500/50"
+                >
+                  <BookOpen className="w-4 h-4" />
+                  Select from Zoho Books
+                </button>
+              )}
+              <div>
+                <label className="block text-sm text-slate-400 mb-1">Product name</label>
+                <input
+                  value={form.name}
+                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white"
+                  placeholder="Product name"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-400 mb-1">SKU (Zoho)</label>
+                <input
+                  value={form.sku}
+                  onChange={(e) => setForm((f) => ({ ...f, sku: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white"
+                  placeholder="SKU"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-400 mb-1">Görsel URL</label>
+                <input
+                  value={form.image_url}
+                  onChange={(e) => setForm((f) => ({ ...f, image_url: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white"
+                  placeholder="https://..."
+                />
+                {form.image_url && (
+                  <img src={form.image_url} alt="Önizleme" className="mt-2 w-16 h-16 object-cover rounded border border-slate-600" onError={(e) => { (e.target as HTMLImageElement).style.visibility = "hidden"; }} />
+                )}
+              </div>
+              <div>
+                <label className="block text-sm text-slate-400 mb-1">Category</label>
+                <select
+                  value={form.category_id}
+                  onChange={(e) => setForm((f) => ({ ...f, category_id: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white"
+                >
+                  <option value="">Select</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm text-slate-400 mb-1">Price (AED)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={form.price}
+                  onChange={(e) => setForm((f) => ({ ...f, price: parseFloat(e.target.value) || 0 }))}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-400 mb-1">VAT (%)</label>
+                <input
+                  type="number"
+                  value={form.tax_rate}
+                  onChange={(e) => setForm((f) => ({ ...f, tax_rate: parseFloat(e.target.value) || 0 }))}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-400 mb-1">Printers</label>
+                <div className="flex flex-wrap gap-2">
+                  {printers.map((pr) => (
+                    <button
+                      key={pr.id}
+                      type="button"
+                      onClick={() => togglePrinter(pr.id)}
+                      className={`px-3 py-1 rounded-lg text-sm ${form.printers.includes(pr.id) ? "bg-sky-600 text-white" : "bg-slate-700 text-slate-400"}`}
+                    >
+                      {pr.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm text-slate-400 mb-1">Modifier Groups</label>
+                <div className="flex flex-wrap gap-2">
+                  {modifierGroups.length === 0 ? (
+                    <p className="text-slate-500 text-sm">No modifiers. <Link href="/modifiers" className="text-sky-400 hover:underline">Add from Modifiers page</Link></p>
+                  ) : (
+                    modifierGroups.map((mg) => (
+                      <button
+                        key={mg.id}
+                        type="button"
+                        onClick={() => toggleModifierGroup(mg.id)}
+                        className={`px-3 py-1 rounded-lg text-sm ${form.modifier_groups.includes(mg.id) ? "bg-amber-600 text-white" : "bg-slate-700 text-slate-400"}`}
+                      >
+                        {mg.name}
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center justify-between p-3 rounded-lg bg-slate-800/50 border border-slate-700">
+                <span className="text-sm text-slate-300">Show in Till</span>
+                <button
+                  type="button"
+                  onClick={() => setForm((f) => ({ ...f, pos_enabled: !f.pos_enabled }))}
+                  className={`w-12 h-6 rounded-full transition-colors ${form.pos_enabled ? "bg-emerald-600" : "bg-slate-600"}`}
+                >
+                  <div className={`w-5 h-5 rounded-full bg-white shadow transition-transform ${form.pos_enabled ? "translate-x-6" : "translate-x-1"}`} style={{ marginTop: 2 }} />
+                </button>
+              </div>
+            </div>
+            <div className="flex gap-2 mt-6">
+              <button onClick={save} className="flex-1 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium">
+                Save
+              </button>
+              <button onClick={() => setEditing(undefined)} className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showZohoPicker && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[60] p-4">
+          <div className="bg-slate-900 rounded-xl border border-slate-700 p-6 max-w-2xl w-full max-h-[80vh] flex flex-col">
+            <h2 className="text-xl font-bold text-sky-400 mb-4">Zoho Books Products</h2>
+            {zohoLoading ? (
+              <p className="text-slate-400 py-8 text-center">Loading...</p>
+            ) : zohoItems.length === 0 ? (
+              <p className="text-slate-400 py-8 text-center">No products found or Zoho connection not configured.</p>
+            ) : (
+              <div className="flex-1 overflow-y-auto space-y-2 mb-4">
+                {zohoItems.map((item) => (
+                  <button
+                    key={item.item_id}
+                    onClick={() => selectZohoItem(item)}
+                    className="w-full flex justify-between items-center p-4 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-left"
+                  >
+                    <div>
+                      <p className="font-medium text-white">{item.name}</p>
+                      {item.sku && <p className="text-slate-400 text-sm">SKU: {item.sku}</p>}
+                    </div>
+                    <p className="text-sky-400 font-medium">{item.rate?.toFixed(2)}</p>
+                  </button>
+                ))}
+              </div>
+            )}
+            <button onClick={() => setShowZohoPicker(false)} className="w-full py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white">
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

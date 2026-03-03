@@ -1,0 +1,14 @@
+{
+  "name": "limonpos",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "concurrently -n backend,web -c cyan,green \"npm run start:backend\" \"npm run start:web\"",
+    "start:backend": "cd backend && npm run dev",
+    "start:web": "cd pos-backoffice && npm run dev",
+    "install:all": "cd backend && npm install && cd ../pos-backoffice && npm install"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
