@@ -76,7 +76,7 @@ class ServerPreferences @Inject constructor(
     }
 
     companion object {
-        /** Backend API - Hosting: the-limon.com. Lokal geliştirme: http://10.0.2.2:3002/api/ */
-        const val DEFAULT_BASE_URL = "https://the-limon.com/api/"
+        /** Backend API - api.the-limon.com. Lokal: http://10.0.2.2:3002/api/ */
+        const val DEFAULT_BASE_URL = "https://api.the-limon.com/api/"
     }
 }

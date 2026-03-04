@@ -46,33 +46,13 @@ class DatabaseSeeder @Inject constructor(
 
     private suspend fun seedTables() {
         val tables = mutableListOf<TableEntity>()
-        (1..8).forEach { i ->
+        (1..43).forEach { i ->
             tables.add(TableEntity(
                 id = "main-$i",
-                number = "T$i",
+                number = i.toString(),
                 name = "Table $i",
                 capacity = 4,
                 floor = "Main",
-                status = "free"
-            ))
-        }
-        (9..12).forEach { i ->
-            tables.add(TableEntity(
-                id = "terrace-${i - 8}",
-                number = "T$i",
-                name = "Table $i",
-                capacity = 4,
-                floor = "Terrace",
-                status = "free"
-            ))
-        }
-        (1..4).forEach { i ->
-            tables.add(TableEntity(
-                id = "vip-$i",
-                number = "VIP$i",
-                name = "VIP $i",
-                capacity = 6,
-                floor = "VIP",
                 status = "free"
             ))
         }

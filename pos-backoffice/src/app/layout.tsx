@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import Sidebar from "@/components/Sidebar";
+import AppShell from "@/components/AppShell";
 
 export const metadata: Metadata = {
   title: "Limon POS Back-Office & Dashboard",
@@ -15,12 +15,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="antialiased bg-slate-950 text-slate-100 min-h-screen">
-        <div className="flex">
-          <div className="hidden md:block">
-            <Sidebar />
-          </div>
-          <div className="flex-1">{children}</div>
-        </div>
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );

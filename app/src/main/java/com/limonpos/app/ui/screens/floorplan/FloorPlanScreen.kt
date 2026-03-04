@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.AttachMoney
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Lock
@@ -152,6 +153,11 @@ fun FloorPlanScreen(
                             expanded = uiState.showMenu,
                             onDismissRequest = { viewModel.dismissMenu() }
                         ) {
+                            DropdownMenuItem(
+                                text = { Text("Table Service", color = LimonText) },
+                                onClick = { viewModel.dismissMenu() },
+                                leadingIcon = { Icon(Icons.Default.Restaurant, contentDescription = null, tint = LimonPrimary) }
+                            )
                             DropdownMenuItem(
                                 text = { Text("Sync Data", color = LimonText) },
                                 onClick = {
@@ -409,7 +415,7 @@ private fun OpenTableDialog(
     onDismiss: () -> Unit,
     onConfirm: (Int) -> Unit
 ) {
-    var guestCount by remember { mutableStateOf(1) }
+    var guestCount by remember { mutableStateOf(2) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Open Table ${table.number}", color = LimonText) },

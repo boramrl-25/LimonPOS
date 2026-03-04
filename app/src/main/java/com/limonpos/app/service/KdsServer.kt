@@ -877,10 +877,13 @@ body{font-family:system-ui,-apple-system,sans-serif;margin:0;background:#0a0a0a;
 .fp-legend .dot.free{background:#22c55e}
 .fp-legend .dot.occupied{background:#f59e0b}
 .fp-legend .dot.bill{background:#3b82f6}
-.fp-floors{display:flex;gap:8px;padding:12px 24px;flex-wrap:wrap}
-.fp-floor-btn{padding:10px 18px;border-radius:8px;border:1px solid #262626;background:#0f0f0f;color:#e2e8f0;cursor:pointer;font-weight:500}
-.fp-floor-btn:hover{background:#1a1a1a;border-color:#f59e0b}
-.fp-floor-btn.active{background:#f59e0b;color:#000;border-color:#f59e0b}
+.fp-search{flex:1;max-width:320px;padding:10px 14px;border-radius:8px;border:1px solid #262626;background:#0a0a0a;color:#e2e8f0}
+.fp-sections{display:flex;gap:8px;padding:12px 24px;flex-wrap:wrap;align-items:center}
+.fp-section-btn{padding:10px 18px;border-radius:8px;border:1px solid #262626;background:#0f0f0f;color:#e2e8f0;cursor:pointer;font-weight:500}
+.fp-section-btn:hover{background:#1a1a1a;border-color:#f59e0b}
+.fp-section-btn.active{background:#f59e0b;color:#000;border-color:#f59e0b}
+.fp-manage-btn{background:#262626;color:#94a3b8;padding:8px 14px;border-radius:8px;border:1px solid #404040;cursor:pointer;font-size:13px}
+.fp-manage-btn:hover{background:#333;color:#e2e8f0}
 .fp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:16px;padding:24px;max-width:1400px;margin:0 auto}
 .fp-table{aspect-ratio:0.9;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;transition:transform .15s;border:2px solid transparent}
 .fp-table:hover{transform:scale(1.02)}
@@ -925,7 +928,11 @@ body{font-family:system-ui,-apple-system,sans-serif;margin:0;background:#0a0a0a;
   <span><span class="dot occupied"></span>Occupied</span>
   <span><span class="dot bill"></span>Bill</span>
 </div>
-<div class="fp-floors" id="fp-floors"></div>
+<div class="fp-sections" style="padding:12px 24px;display:flex;flex-wrap:wrap;gap:12px;align-items:center">
+  <input type="text" id="fp-search" class="fp-search" placeholder="Search tables..." oninput="applyFilters()">
+  <span id="fp-section-chips"></span>
+  <button class="fp-manage-btn" onclick="openSectionModal()">Manage Sections</button>
+</div>
 <div class="fp-grid" id="fp-tables"></div>
 <div id="open-table-modal" class="modal-overlay" style="display:none">
   <div class="modal-box">
@@ -938,6 +945,29 @@ body{font-family:system-ui,-apple-system,sans-serif;margin:0;background:#0a0a0a;
     <div class="modal-btns">
       <button class="btn-ok" onclick="confirmOpenTable()">Open</button>
       <button class="btn-cancel" onclick="closeOpenModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+<div id="section-modal" class="modal-overlay" style="display:none">
+  <div class="modal-box" style="max-width:480px">
+    <h3>Section Management</h3>
+    <p style="color:#94a3b8;font-size:13px;margin:0 0 16px">Edit table numbers per section. Tables 1-43 only.</p>
+    <div id="section-list"></div>
+    <div class="modal-btns">
+      <button class="btn-ok" onclick="closeSectionModal()">Done</button>
+    </div>
+  </div>
+</div>
+<div id="section-edit-modal" class="modal-overlay" style="display:none">
+  <div class="modal-box" style="max-width:360px">
+    <h3>Section <span id="edit-section-name"></span> — Add/Remove Tables</h3>
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <input type="number" id="section-add-num" placeholder="Table # (1-43)" min="1" max="43" style="flex:1">
+      <button class="btn-ok" onclick="addTableToSection()" style="padding:10px 16px">Add</button>
+    </div>
+    <div id="section-tables-list" style="max-height:180px;overflow-y:auto"></div>
+    <div class="modal-btns" style="margin-top:16px">
+      <button class="btn-cancel" onclick="closeSectionEditModal()">Close</button>
     </div>
   </div>
 </div>
@@ -959,11 +989,139 @@ body{font-family:system-ui,-apple-system,sans-serif;margin:0;background:#0a0a0a;
 const base = location.origin;
 document.getElementById('fp-url').textContent = base;
 let tables = [], users = [], products = [];
-let selectedFloor = 'Main';
+let selectedSection = 'Main';
+let searchQuery = '';
 let openTableId = null;
 let addOrderId = null, addTableName = '', addCart = [];
+let editingSectionKey = null;
+
+var DEFAULT_SECTIONS = { A: [29,30,31,32,33,34,35,40], B: [24,25,26,27,28,29,36,37,38,39], C: [1,2,3,4,5,6,7,8,9,10], D: [11,12,13,14,15,16,17,18,19,20,21], E: [41,42,43] };
+
+function getSections() {
+  try {
+    var s = localStorage.getItem('floorPlanSections');
+    if (s) return JSON.parse(s);
+  } catch (e) {}
+  return JSON.parse(JSON.stringify(DEFAULT_SECTIONS));
+}
+
+function saveSections(s) { localStorage.setItem('floorPlanSections', JSON.stringify(s)); }
 
 function escapeHtml(s) { return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function numMatch(t) {
+  var n = parseInt(t.number, 10);
+  if (isNaN(n)) return true;
+  if (selectedSection === 'Main') return true;
+  var sections = getSections();
+  var nums = sections[selectedSection];
+  if (!nums || !Array.isArray(nums)) return true;
+  return nums.indexOf(n) >= 0;
+}
+
+function applyFilters() {
+  searchQuery = (document.getElementById('fp-search') && document.getElementById('fp-search').value || '').trim().toLowerCase();
+  renderTables();
+}
+
+function renderSectionChips() {
+  var chips = '<button class="fp-section-btn' + (selectedSection === 'Main' ? ' active' : '') + '" onclick="selectSection(\'Main\');">Main</button>';
+  ['A','B','C','D','E'].forEach(function(k) {
+    chips += '<button class="fp-section-btn' + (selectedSection === k ? ' active' : '') + '" onclick="selectSection(\'' + k + '\');">' + k + '</button>';
+  });
+  var el = document.getElementById('fp-section-chips');
+  if (el) el.innerHTML = chips;
+}
+
+function selectSection(s) { selectedSection = s; renderTables(); renderSectionChips(); }
+
+function renderTables() {
+  var onMain = (tables || []).filter(function(t){ return (t.floor||'Main') === 'Main'; });
+  var filtered = onMain.filter(function(t) {
+    if (!numMatch(t)) return false;
+    if (searchQuery) {
+      var num = String(t.number||''), name = String(t.name||'');
+      if (num.toLowerCase().indexOf(searchQuery) < 0 && name.toLowerCase().indexOf(searchQuery) < 0) return false;
+    }
+    return true;
+  });
+  var tableHtml = filtered.map(function(t) {
+    var status = t.status || 'free';
+    var statusText = status === 'free' ? 'Free' : (status === 'bill' ? 'Bill' : (status === 'reserved' ? 'Reserved' : 'Occupied'));
+    return '<div class="fp-table ' + status + '" data-id="' + escapeHtml(t.id) + '" data-status="' + status + '" onclick="onTableClick(\'' + escapeHtml(t.id).replace(/'/g,"\\\\'") + '\',\'' + status.replace(/'/g,"\\\\'") + '\')">' +
+      '<span class="fp-table-name">' + escapeHtml(t.name || t.number || t.id) + '</span>' +
+      '<span class="fp-table-num">' + escapeHtml(t.number || '') + '</span>' +
+      '<span class="fp-table-status">' + statusText + (t.waiterName ? ' — ' + escapeHtml(t.waiterName) : '') + '</span>' +
+      '</div>';
+  }).join('');
+  var grid = document.getElementById('fp-tables');
+  if (grid) grid.innerHTML = tableHtml || '<p style="color:#94a3b8;grid-column:1/-1">No tables match filter</p>';
+}
+
+function openSectionModal() {
+  var s = getSections();
+  var html = '';
+  ['A','B','C','D','E'].forEach(function(k) {
+    var nums = s[k] || [];
+    html += '<div style="margin-bottom:16px;padding:12px;background:#1a1a1a;border-radius:8px">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' +
+      '<strong style="color:#f59e0b">Section ' + k + '</strong>' +
+      '<button class="btn-ok" style="padding:6px 12px;font-size:12px" onclick="closeSectionModal();editSection(\'' + k + '\')">Edit</button>' +
+      '</div>' +
+      '<span style="color:#94a3b8;font-size:13px">' + (nums.length ? nums.sort(function(a,b){return a-b}).join(', ') : '—') + '</span></div>';
+  });
+  document.getElementById('section-list').innerHTML = html || '<p style="color:#94a3b8">No sections</p>';
+  document.getElementById('section-modal').style.display = 'flex';
+}
+
+function closeSectionModal() { document.getElementById('section-modal').style.display = 'none'; }
+
+function editSection(k) {
+  editingSectionKey = k;
+  document.getElementById('edit-section-name').textContent = k;
+  renderSectionEditList();
+  document.getElementById('section-add-num').value = '';
+  document.getElementById('section-edit-modal').style.display = 'flex';
+}
+
+function renderSectionEditList() {
+  var s = getSections();
+  var nums = (s[editingSectionKey] || []).slice().sort(function(a,b){return a-b});
+  var html = nums.map(function(n) {
+    return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #262626">' +
+      '<span>Table ' + n + '</span>' +
+      '<button class="btn-cancel" style="padding:4px 10px;font-size:12px" onclick="removeTableFromSection(' + n + ')">Remove</button></div>';
+  }).join('');
+  document.getElementById('section-tables-list').innerHTML = html || '<p style="color:#94a3b8">No tables in section</p>';
+}
+
+function addTableToSection() {
+  var inp = document.getElementById('section-add-num');
+  var n = parseInt(inp.value, 10);
+  if (isNaN(n) || n < 1 || n > 43) return;
+  var s = getSections();
+  if (!s[editingSectionKey]) s[editingSectionKey] = [];
+  if (s[editingSectionKey].indexOf(n) >= 0) return;
+  s[editingSectionKey].push(n);
+  saveSections(s);
+  inp.value = '';
+  renderSectionEditList();
+  renderSectionChips();
+}
+
+function removeTableFromSection(n) {
+  var s = getSections();
+  if (!s[editingSectionKey]) return;
+  s[editingSectionKey] = s[editingSectionKey].filter(function(x){ return x !== n; });
+  saveSections(s);
+  renderSectionEditList();
+  renderSectionChips();
+}
+
+function closeSectionEditModal() {
+  document.getElementById('section-edit-modal').style.display = 'none';
+  editingSectionKey = null;
+}
 
 async function loadFloorPlan() {
   try {
@@ -971,28 +1129,13 @@ async function loadFloorPlan() {
     var uRes = await fetch(base + '/users');
     tables = await tRes.json();
     users = await uRes.json();
-    var floors = [...new Set((tables || []).map(function(t){return t.floor||'Main'}))].sort();
-    var floorHtml = floors.map(function(f) {
-      return '<button class="fp-floor-btn' + (f === selectedFloor ? ' active' : '') + '" onclick="selectFloor(\'' + escapeHtml(f).replace(/'/g,"\\\\'") + '\')">' + escapeHtml(f) + '</button>';
-    }).join('');
-    document.getElementById('fp-floors').innerHTML = floorHtml || '<button class="fp-floor-btn active">Main</button>';
-    var onFloor = (tables || []).filter(function(t){ return (t.floor||'Main') === selectedFloor; });
-    var tableHtml = onFloor.map(function(t) {
-      var status = t.status || 'free';
-      var statusText = status === 'free' ? 'Free' : (status === 'bill' ? 'Bill' : (status === 'reserved' ? 'Reserved' : 'Occupied'));
-      return '<div class="fp-table ' + status + '" data-id="' + escapeHtml(t.id) + '" data-status="' + status + '" onclick="onTableClick(\'' + escapeHtml(t.id).replace(/'/g,"\\\\'") + '\',\'' + status.replace(/'/g,"\\\\'") + '\')">' +
-        '<span class="fp-table-name">' + escapeHtml(t.name || t.number || t.id) + '</span>' +
-        '<span class="fp-table-num">' + escapeHtml(t.number || '') + '</span>' +
-        '<span class="fp-table-status">' + statusText + (t.waiterName ? ' — ' + escapeHtml(t.waiterName) : '') + '</span>' +
-        '</div>';
-    }).join('');
-    document.getElementById('fp-tables').innerHTML = tableHtml || '<p style="color:#94a3b8">No tables on this floor</p>';
+    renderSectionChips();
+    applyFilters();
   } catch (e) {
-    document.getElementById('fp-tables').innerHTML = '<p class="msg err">Error: ' + escapeHtml(e.message) + '</p>';
+    var grid = document.getElementById('fp-tables');
+    if (grid) grid.innerHTML = '<p class="msg err">Error: ' + escapeHtml(e.message) + '</p>';
   }
 }
-
-function selectFloor(f) { selectedFloor = f; loadFloorPlan(); }
 
 function onTableClick(tableId, status) {
   if (status === 'free') {

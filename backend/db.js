@@ -13,20 +13,20 @@ const defaultData = {
     { id: "pm2", name: "Kart", code: "card", active: 1, sort_order: 1 },
   ],
   modifier_groups: [],
-  tables: Array.from({ length: 8 }, (_, i) => ({
-    id: `t${i + 1}`,
-    number: i + 1,
-    name: `Masa ${i + 1}`,
+  tables: Array.from({ length: 43 }, (_, i) => ({
+    id: `main-${i + 1}`,
+    number: String(i + 1),
+    name: `Table ${i + 1}`,
     capacity: 4,
-    floor: "main",
+    floor: "Main",
     status: "free",
     current_order_id: null,
     guest_count: 0,
     waiter_id: null,
     waiter_name: null,
     opened_at: null,
-    x: 100 + (i % 4) * 150,
-    y: 50 + Math.floor(i / 4) * 120,
+    x: 100 + (i % 6) * 140,
+    y: 50 + Math.floor(i / 6) * 110,
     width: 120,
     height: 100,
     shape: "square",
@@ -38,6 +38,7 @@ const defaultData = {
   void_requests: [],
   zoho_config: {},
   devices: [],
+  setup_complete: false,
 };
 
 export const db = await JSONFilePreset(join(__dirname, "data.json"), defaultData);

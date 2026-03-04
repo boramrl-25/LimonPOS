@@ -45,9 +45,23 @@ export async function exchangeCodeForRefreshToken(code, client_id, client_secret
   return { refresh_token: rt };
 }
 
+/** Zoho ayarlarını env (Railway Variables) veya db'den alır. Env önceliklidir. */
+export function getZohoConfig(db) {
+  const dbCfg = db?.data?.zoho_config || {};
+  const fromEnv = {
+    refresh_token: process.env.ZOHO_REFRESH_TOKEN || dbCfg.refresh_token,
+    client_id: process.env.ZOHO_CLIENT_ID || dbCfg.client_id,
+    client_secret: process.env.ZOHO_CLIENT_SECRET || dbCfg.client_secret,
+    organization_id: process.env.ZOHO_ORGANIZATION_ID || dbCfg.organization_id,
+    customer_id: process.env.ZOHO_CUSTOMER_ID || dbCfg.customer_id,
+    enabled: process.env.ZOHO_ENABLED || dbCfg.enabled || "true",
+  };
+  return fromEnv;
+}
+
 export async function getZohoAccessToken(db) {
   await db.read();
-  const cfg = db.data?.zoho_config || {};
+  const cfg = getZohoConfig(db);
   const { refresh_token, client_id, client_secret } = cfg;
   if (!refresh_token || !client_id || !client_secret) return null;
 
@@ -75,7 +89,7 @@ export async function getZohoAccessToken(db) {
 
 export async function pushToZohoBooks(db, order, items, paymentMethod = "cash") {
   await db.read();
-  const cfg = db.data?.zoho_config || {};
+  const cfg = getZohoConfig(db);
   const { organization_id, customer_id, enabled } = cfg;
   if (enabled !== "true" || !organization_id || !customer_id) return false;
 
@@ -154,7 +168,7 @@ async function fetchCategoriesFromEndpoint(token, organization_id, path) {
 /** Get Zoho Categories (item groups). Returns { item_groups: [...] } for compatibility. */
 export async function getZohoItemGroups(db) {
   await db.read();
-  const cfg = db.data?.zoho_config || {};
+  const cfg = getZohoConfig(db);
   const { organization_id, enabled } = cfg;
   if (enabled !== "true" || !organization_id) return { item_groups: [] };
 
@@ -176,7 +190,7 @@ export async function getZohoItemGroups(db) {
 /** Fetch items from Zoho Books - only SELLABLE items. Returns { items: [...] } or null on error. Supports pagination and alternate response shapes. */
 export async function getZohoItems(db) {
   await db.read();
-  const cfg = db.data?.zoho_config || {};
+  const cfg = getZohoConfig(db);
   const { organization_id, enabled } = cfg;
   if (enabled !== "true" || !organization_id) return null;
 
@@ -310,7 +324,7 @@ export async function syncFromZoho(db, options = {}) {
   const itemsRes = await getZohoItems(db);
   const itemsFetched = itemsRes?.items?.length ?? 0;
   if (!itemsRes) {
-    const cfg = db.data?.zoho_config || {};
+    const cfg = getZohoConfig(db);
     const hasConfig = !!(cfg.organization_id && cfg.enabled === "true" && cfg.refresh_token && cfg.client_id && cfg.client_secret);
     let tokenOk = false;
     try {

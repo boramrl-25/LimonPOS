@@ -18,8 +18,12 @@ function LoginForm() {
       await login(pin);
       router.push(redirectTo);
       router.refresh();
-    } catch {
-      setError("Invalid PIN. Default: 1234");
+    } catch (e) {
+      const msg = (e as Error).message || "";
+      if (msg.includes("fetch") || msg.includes("Failed") || msg.includes("timeout") || msg.includes("Network"))
+        setError("Cannot reach API. Check https://api.the-limon.com/api is up and CORS allows this site.");
+      else
+        setError("Invalid PIN. Default admin: 1234");
     }
   }
 

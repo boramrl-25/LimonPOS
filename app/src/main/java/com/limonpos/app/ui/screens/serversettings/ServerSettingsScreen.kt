@@ -6,6 +6,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -27,6 +28,7 @@ fun ServerSettingsScreen(
 ) {
     val baseUrl by viewModel.baseUrl.collectAsState()
     val message by viewModel.message.collectAsState()
+    val testing by viewModel.testing.collectAsState()
     var inputUrl by remember { mutableStateOf(baseUrl) }
 
     LaunchedEffect(baseUrl) {
@@ -108,19 +110,33 @@ fun ServerSettingsScreen(
             message?.let { msg ->
                 Text(
                     msg,
-                    color = LimonPrimary,
+                    color = if (msg.startsWith("Bağlantı başarılı")) LimonSuccess else LimonPrimary,
                     fontSize = 14.sp,
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
             }
-            Button(
-                onClick = { viewModel.saveUrl(inputUrl) },
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = LimonPrimary)
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Icon(Icons.Default.Wifi, contentDescription = null, modifier = Modifier.size(20.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Save")
+                OutlinedButton(
+                    onClick = { viewModel.testConnection(inputUrl) },
+                    modifier = Modifier.weight(1f),
+                    enabled = !testing
+                ) {
+                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(if (testing) "Test ediliyor…" else "Bağlantıyı test et")
+                }
+                Button(
+                    onClick = { viewModel.saveUrl(inputUrl) },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = LimonPrimary)
+                ) {
+                    Icon(Icons.Default.Wifi, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Save")
+                }
             }
         }
     }

@@ -1,4 +1,4 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://the-limon.com/api";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.the-limon.com/api";
 const TOKEN_KEY = "limonpos_admin_token";
 const FETCH_TIMEOUT_MS = 15000;
 
@@ -44,6 +44,21 @@ function headers() {
   const token = getToken();
   if (token) h["Authorization"] = `Bearer ${token}`;
   return h;
+}
+
+export async function getSetupStatus(): Promise<{ setupComplete: boolean }> {
+  const res = await fetchWithTimeout(`${API_URL}/setup/status`, { headers: headers() });
+  if (!res.ok) throw new Error("Failed to fetch setup status");
+  return res.json();
+}
+
+export async function completeSetup(): Promise<{ setupComplete: boolean }> {
+  const res = await fetchWithTimeout(`${API_URL}/setup/complete`, {
+    method: "POST",
+    headers: headers(),
+  });
+  if (!res.ok) throw new Error("Failed to complete setup");
+  return res.json();
 }
 
 export async function getUsers() {
@@ -280,6 +295,24 @@ export async function createTable(table: Record<string, unknown>) {
     body: JSON.stringify(table),
   });
   if (!res.ok) throw new Error("Failed to create table");
+  return res.json();
+}
+
+export type FloorPlanSections = { A: number[]; B: number[]; C: number[]; D: number[]; E: number[] };
+
+export async function getFloorPlanSections(): Promise<FloorPlanSections> {
+  const res = await fetchWithTimeout(`${API_URL}/floor-plan-sections`, { headers: headers() });
+  if (!res.ok) throw new Error("Failed to fetch floor plan sections");
+  return res.json();
+}
+
+export async function updateFloorPlanSections(sections: FloorPlanSections) {
+  const res = await fetch(`${API_URL}/floor-plan-sections`, {
+    method: "PUT",
+    headers: headers(),
+    body: JSON.stringify(sections),
+  });
+  if (!res.ok) throw new Error("Failed to update floor plan sections");
   return res.json();
 }
 

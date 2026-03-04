@@ -5,7 +5,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "dev:3002": "cross-env PORT=3002 node --watch server.js"
+    "dev:3002": "cross-env PORT=3002 node --watch server.js",
+    "migrate-to-railway": "node scripts/migrate-to-railway.js"
   },
   "dependencies": {
     "axios": "^1.7.7",

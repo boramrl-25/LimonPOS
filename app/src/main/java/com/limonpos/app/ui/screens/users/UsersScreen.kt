@@ -9,6 +9,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -59,6 +60,11 @@ fun UsersScreen(
                             Icon(Icons.Default.MoreVert, contentDescription = "Menu", tint = LimonPrimary)
                         }
                         DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Table Service", color = LimonText) },
+                                onClick = { menuExpanded = false; onNavigateToFloorPlan() },
+                                leadingIcon = { Icon(Icons.Default.Restaurant, contentDescription = null, tint = LimonPrimary) }
+                            )
                             DropdownMenuItem(
                                 text = { Text("Sync Data", color = LimonText) },
                                 onClick = { menuExpanded = false; onSync() },

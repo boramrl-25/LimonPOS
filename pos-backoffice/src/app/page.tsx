@@ -1,16 +1,33 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { LayoutDashboard, Settings, Package, Users, Printer, FolderOpen, BarChart3, SlidersHorizontal } from "lucide-react";
-import { getToken } from "@/lib/api";
+import { LayoutDashboard, Settings, Package, Users, Printer, FolderOpen, BarChart3, SlidersHorizontal, Map } from "lucide-react";
+import { getToken, getSetupStatus } from "@/lib/api";
 
 export default function Home() {
   const router = useRouter();
+  const [ready, setReady] = useState(false);
   useEffect(() => {
-    if (!getToken()) router.replace("/login");
+    const token = getToken();
+    if (!token) {
+      router.replace("/login");
+      return;
+    }
+    getSetupStatus()
+      .then(({ setupComplete }) => {
+        if (!setupComplete) router.replace("/setup");
+        else setReady(true);
+      })
+      .catch(() => setReady(true));
   }, [router]);
+
+  if (!ready) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-slate-400">Yükleniyor...</div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -29,6 +46,17 @@ export default function Home() {
             <div>
               <h2 className="font-semibold">Dashboard</h2>
               <p className="text-slate-400 text-sm">Analytics & Overview</p>
+            </div>
+          </Link>
+
+          <Link
+            href="/floorplan"
+            className="flex items-center gap-4 p-6 rounded-xl bg-slate-800/50 border border-slate-700 hover:border-sky-500/50 hover:bg-slate-800 transition-colors"
+          >
+            <Map className="w-10 h-10 text-amber-400" />
+            <div>
+              <h2 className="font-semibold">Floor Plan</h2>
+              <p className="text-slate-400 text-sm">Tables, sections, filters</p>
             </div>
           </Link>
 
