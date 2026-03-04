@@ -1,8 +1,21 @@
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import fs from "fs";
 import { JSONFilePreset } from "lowdb/node";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// Kalıcı veri: Production'da mutlaka DATA_DIR kalıcı bir dizin olmalı (örn. Railway volume /data).
+// DATA_DIR yoksa __dirname kullanılır; sunucu/ephemeral disk silinirse tüm veri gider.
+const DATA_DIR = process.env.DATA_DIR || __dirname;
+if (!process.env.DATA_DIR) {
+  console.warn("[db] DATA_DIR tanımlı değil – veriler proje dizininde; Railway/redeploy'da SİLİNİR. Volume + DATA_DIR=/data ekleyin.");
+}
+if (!fs.existsSync(DATA_DIR)) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+const DATA_FILE = join(DATA_DIR, "data.json");
+
 const defaultData = {
   users: [{ id: "u1", name: "Admin", pin: "1234", role: "admin", active: 1, permissions: "[\"post_void\",\"pre_void\"]", cash_drawer_permission: 1 }],
   categories: [{ id: "cat1", name: "İçecekler", color: "#84CC16", sort_order: 0, active: 1 }],
@@ -25,10 +38,10 @@ const defaultData = {
     waiter_id: null,
     waiter_name: null,
     opened_at: null,
-    x: 100 + (i % 6) * 140,
-    y: 50 + Math.floor(i / 6) * 110,
-    width: 120,
-    height: 100,
+    x: 80 + (i % 10) * 90,
+    y: 50 + Math.floor(i / 10) * 100,
+    width: 80,
+    height: 80,
     shape: "square",
   })),
   orders: [],
@@ -41,4 +54,4 @@ const defaultData = {
   setup_complete: false,
 };
 
-export const db = await JSONFilePreset(join(__dirname, "data.json"), defaultData);
+export const db = await JSONFilePreset(DATA_FILE, defaultData);

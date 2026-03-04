@@ -41,8 +41,10 @@ async function ensureData() {
     ];
     needWrite = true;
   }
-  if (!Array.isArray(db.data.tables) || db.data.tables.length === 0) {
-    db.data.tables = Array.from({ length: 43 }, (_, i) => ({
+  // Tables: only fill defaults when truly empty AND no orders (first run). If we have orders but tables empty (e.g. bad restart), rebuild from orders so data is not lost.
+  if (!Array.isArray(db.data.tables)) db.data.tables = [];
+  if (db.data.tables.length === 0) {
+    const defaultTable = (i) => ({
       id: `main-${i + 1}`,
       number: String(i + 1),
       name: `Table ${i + 1}`,
@@ -59,7 +61,27 @@ async function ensureData() {
       width: 80,
       height: 80,
       shape: "square",
-    }));
+    });
+    db.data.tables = Array.from({ length: 43 }, (_, i) => defaultTable(i));
+    const orders = db.data.orders || [];
+    if (orders.length > 0) {
+      for (const order of orders) {
+        const tid = order.table_id;
+        if (!tid) continue;
+        const tIdx = db.data.tables.findIndex((t) => t.id === tid);
+        if (tIdx >= 0) {
+          const t = db.data.tables[tIdx];
+          const isPaid = order.status === "paid";
+          db.data.tables[tIdx] = {
+            ...t,
+            status: isPaid ? "free" : "occupied",
+            current_order_id: isPaid ? null : order.id,
+            waiter_id: isPaid ? null : (order.waiter_id ?? t.waiter_id),
+            waiter_name: isPaid ? null : (order.waiter_name ?? t.waiter_name),
+          };
+        }
+      }
+    }
     needWrite = true;
   }
   if (!Array.isArray(db.data.printers)) db.data.printers = [];
@@ -146,7 +168,14 @@ const authMiddleware = (req, res, next) => {
 
 // No auth — telefondan tarayıcıda açıp bağlantı testi: http://192.168.1.169:3002/api/health
 app.get("/api/health", (req, res) => {
-  res.json({ ok: true, message: "LimonPOS API", ts: Date.now() });
+  const dataDir = process.env.DATA_DIR || "";
+  res.json({
+    ok: true,
+    message: "LimonPOS API",
+    ts: Date.now(),
+    data_dir: dataDir || "(not set)",
+    persistent_storage: !!dataDir,
+  });
 });
 
 app.post("/api/auth/login", async (req, res) => {
@@ -906,8 +935,6 @@ app.get("/api/zoho/check", authMiddleware, async (req, res) => {
   }
 });
 
-app.get("/api/health", (req, res) => res.json({ ok: true }));
-
 app.get("/", (req, res) => {
   res.set("Content-Type", "text/html");
   res.send(`
@@ -925,8 +952,14 @@ app.get("/", (req, res) => {
 });
 
 const HOST = process.env.HOST || "0.0.0.0";
+const DATA_DIR = process.env.DATA_DIR;
 app.listen(PORT, HOST, () => {
   console.log(`LimonPOS Backend running on http://localhost:${PORT}`);
+  if (DATA_DIR) {
+    console.log(`DATA_DIR=${DATA_DIR} – veriler kalıcı (restart'ta silinmez).`);
+  } else {
+    console.warn("UYARI: DATA_DIR tanımlı değil. Veriler geçici diskte; her restart/redeploy'da SİLİNİR. Railway'de Volume ekleyip DATA_DIR=/data yapın.");
+  }
   if (HOST === "0.0.0.0") {
     console.log("Listening on all interfaces – use this PC's IP (e.g. http://192.168.x.x:3002/api/) from phone.");
   }
