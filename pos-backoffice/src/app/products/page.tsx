@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
-import { ArrowLeft, Plus, Trash2, BookOpen, RefreshCw, Search } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, BookOpen, RefreshCw, Search, FileSpreadsheet } from "lucide-react";
+import * as XLSX from "xlsx";
 import { getProducts, getCategories, getPrinters, getModifierGroups, createProduct, updateProduct, deleteProduct, getZohoItems, syncZohoBooks, checkZohoConnection, clearAndSyncProducts } from "@/lib/api";
 
 type Product = {
@@ -33,6 +34,7 @@ export default function ProductsPage() {
   const [modifierGroups, setModifierGroups] = useState<{ id: string; name: string }[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<"category" | "name" | "price">("category");
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Product | null | undefined>(undefined);
@@ -44,6 +46,8 @@ export default function ProductsPage() {
   const [checkLoading, setCheckLoading] = useState(false);
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [zohoCheckResult, setZohoCheckResult] = useState<{ ok: boolean; itemsCount: number; groupsCount: number; error?: string } | null>(null);
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     load();
@@ -255,10 +259,111 @@ export default function ProductsPage() {
     }
   }
 
+  function exportProductsToExcel() {
+    if (!products.length) {
+      alert("No products to export");
+      return;
+    }
+    const rows = products.map((p) => ({
+      Name: p.name,
+      SKU: p.sku || "",
+      Category: p.category || "",
+      Price: p.price ?? 0,
+      VATPercent: (p.tax_rate ?? 0) * 100,
+      Till: Boolean(p.pos_enabled) ? "On" : "Off",
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Products");
+    XLSX.writeFile(wb, "products.xlsx");
+  }
+
+  async function handleProductImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    try {
+      const data = await file.arrayBuffer();
+      const wb = XLSX.read(data, { type: "array" });
+      const sheetName = wb.SheetNames[0];
+      const sheet = wb.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet);
+
+      for (const row of rows) {
+        const name = String(row.Name ?? row.name ?? "").trim();
+        if (!name) continue;
+        const sku = String(row.SKU ?? row.sku ?? "").trim();
+        const priceRaw = row.Price ?? row.price ?? 0;
+        const taxRaw = row.VATPercent ?? row.tax_rate ?? 0;
+        const categoryName = String(row.Category ?? row.category ?? "").trim();
+        const tillRaw = String(row.Till ?? row.pos_enabled ?? "").toLowerCase();
+
+        const price = Number(priceRaw) || 0;
+        const tax_rate = (Number(taxRaw) || 0) / 100;
+        const pos_enabled = tillRaw === "on" || tillRaw === "1" || tillRaw === "true" || tillRaw === "yes";
+
+        let category_id: string | undefined = undefined;
+        if (categoryName) {
+          const cat = categories.find((c) => c.name.toLowerCase() === categoryName.toLowerCase());
+          if (cat) category_id = cat.id;
+        }
+
+        const existing =
+          (sku && products.find((p) => (p.sku || "").toLowerCase() === sku.toLowerCase())) ||
+          products.find((p) => p.name.trim().toLowerCase() === name.toLowerCase());
+
+        if (existing) {
+          await updateProduct(existing.id, {
+            name,
+            sku,
+            price,
+            tax_rate,
+            category_id: category_id ?? existing.category_id ?? undefined,
+            image_url: existing.image_url ?? "",
+            printers: existing.printers ?? [],
+            modifier_groups: existing.modifier_groups ?? [],
+            pos_enabled,
+          });
+        } else {
+          await createProduct({
+            name,
+            sku,
+            price,
+            tax_rate,
+            category_id,
+            image_url: "",
+            printers: [],
+            modifier_groups: [],
+            pos_enabled,
+          });
+        }
+      }
+
+      await load(true);
+      alert(`Imported ${rows.length} product row(s).`);
+    } catch (err) {
+      alert((err as Error).message);
+    } finally {
+      setImporting(false);
+      e.target.value = "";
+    }
+  }
+
   const filteredProducts = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return products;
-    return products.filter(
+    let base = products;
+
+    if (categoryFilter && categoryFilter !== "all") {
+      base = base.filter((p) => {
+        if (p.category_id === categoryFilter) return true;
+        const cat = categories.find((c) => c.id === categoryFilter);
+        if (!cat) return false;
+        return (p.category || "").trim().toLowerCase() === cat.name.toLowerCase();
+      });
+    }
+
+    if (!q) return base;
+    return base.filter(
       (p) =>
         p.name.toLowerCase().includes(q) ||
         (p.sku || "").toLowerCase().includes(q) ||
@@ -266,7 +371,7 @@ export default function ProductsPage() {
         (p.name_arabic || "").toLowerCase().includes(q) ||
         (p.name_turkish || "").toLowerCase().includes(q)
     );
-  }, [products, searchQuery]);
+  }, [products, searchQuery, categoryFilter, categories]);
 
   const sortedProducts = useMemo(() => {
     const list = [...filteredProducts];
@@ -314,6 +419,31 @@ export default function ProductsPage() {
           )}
         </div>
         <div className="flex gap-2 flex-wrap">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            className="hidden"
+            onChange={handleProductImport}
+          />
+          <button
+            onClick={exportProductsToExcel}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-medium"
+          >
+            <FileSpreadsheet className="w-4 h-4" /> Export Excel
+          </button>
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={importing}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-medium disabled:opacity-50"
+          >
+            {importing ? (
+              <div className="w-4 h-4 border-2 border-sky-500 border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <FileSpreadsheet className="w-4 h-4" />
+            )}
+            Import Excel/CSV
+          </button>
           <button onClick={checkZoho} disabled={checkLoading} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-600 hover:bg-slate-500 disabled:opacity-50 text-white font-medium" title="Zoho bağlantısını ve ürün sayısını kontrol et">
             {checkLoading ? "Kontrol..." : "Zoho Kontrol"}
           </button>
@@ -335,6 +465,21 @@ export default function ProductsPage() {
             placeholder="Search products by name, SKU, category..."
             className="w-full pl-10 pr-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white placeholder-slate-500"
           />
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-sm text-slate-400">Category:</label>
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white"
+          >
+            <option value="all">All</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
         </div>
         <div className="flex items-center gap-2">
           <label className="text-sm text-slate-400">Sort by:</label>

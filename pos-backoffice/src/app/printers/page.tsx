@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { ArrowLeft, Plus, Pencil, Trash2 } from "lucide-react";
+import { ArrowLeft, Plus, Pencil, Trash2, FileSpreadsheet } from "lucide-react";
+import * as XLSX from "xlsx";
 import { getPrinters, createPrinter, updatePrinter, deletePrinter } from "@/lib/api";
 
 type Printer = { id: string; name: string; printer_type: string; ip_address: string; port: number; status: string; kds_enabled?: boolean };
@@ -12,6 +13,8 @@ export default function PrintersPage() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Printer | null | undefined>(undefined);
   const [form, setForm] = useState({ name: "", printer_type: "kitchen", ip_address: "", port: 9100, kds_enabled: true });
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     load();
@@ -61,6 +64,68 @@ export default function PrintersPage() {
     }
   }
 
+  function exportPrintersToExcel() {
+    if (!printers.length) {
+      alert("No printers to export");
+      return;
+    }
+    const rows = printers.map((p) => ({
+      Name: p.name,
+      Type: p.printer_type,
+      IP: p.ip_address,
+      Port: p.port,
+      KDSEnabled: p.printer_type === "kitchen" && Boolean(p.kds_enabled) ? "On" : "Off",
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Printers");
+    XLSX.writeFile(wb, "printers.xlsx");
+  }
+
+  async function handlePrinterImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    try {
+      const data = await file.arrayBuffer();
+      const wb = XLSX.read(data, { type: "array" });
+      const sheetName = wb.SheetNames[0];
+      const sheet = wb.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet);
+
+      for (const row of rows) {
+        const name = String(row.Name ?? row.name ?? "").trim();
+        if (!name) continue;
+        const typeRaw = String(row.Type ?? row.printer_type ?? "kitchen").toLowerCase();
+        const ip_address = String(row.IP ?? row.ip_address ?? "");
+        const portRaw = row.Port ?? row.port ?? 9100;
+        const kdsRaw = String(row.KDSEnabled ?? row.kds_enabled ?? "").toLowerCase();
+
+        const printer_type = typeRaw === "receipt" ? "receipt" : "kitchen";
+        const port = Number(portRaw) || 9100;
+        const kds_enabled = printer_type === "kitchen" && (kdsRaw === "on" || kdsRaw === "1" || kdsRaw === "true" || kdsRaw === "yes");
+
+        const existing = printers.find((p) => p.name.toLowerCase() === name.toLowerCase());
+
+        const payload = { name, printer_type, ip_address, port, kds_enabled };
+
+        if (existing) {
+          await updatePrinter(existing.id, payload);
+        } else {
+          await createPrinter(payload);
+        }
+      }
+
+      await load();
+      alert(`Imported ${rows.length} printer row(s).`);
+    } catch (err) {
+      alert((err as Error).message);
+    } finally {
+      setImporting(false);
+      e.target.value = "";
+    }
+  }
+
   return (
     <div className="p-6 max-w-4xl">
       <Link href="/" className="inline-flex items-center gap-2 text-slate-400 hover:text-white mb-6">
@@ -72,9 +137,36 @@ export default function PrintersPage() {
           <h1 className="text-2xl font-bold text-sky-400">Printers</h1>
           <p className="text-slate-400">Kitchen and receipt printers</p>
         </div>
-        <button onClick={() => openEdit()} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium">
-          <Plus className="w-4 h-4" /> New Printer
-        </button>
+        <div className="flex gap-2 flex-wrap">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            className="hidden"
+            onChange={handlePrinterImport}
+          />
+          <button
+            onClick={exportPrintersToExcel}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-medium"
+          >
+            <FileSpreadsheet className="w-4 h-4" /> Export Excel
+          </button>
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={importing}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-medium disabled:opacity-50"
+          >
+            {importing ? (
+              <div className="w-4 h-4 border-2 border-sky-500 border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <FileSpreadsheet className="w-4 h-4" />
+            )}
+            Import Excel/CSV
+          </button>
+          <button onClick={() => openEdit()} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium">
+            <Plus className="w-4 h-4" /> New Printer
+          </button>
+        </div>
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-slate-700 mb-8 relative min-h-[120px]">

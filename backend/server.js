@@ -54,10 +54,10 @@ async function ensureData() {
       waiter_id: null,
       waiter_name: null,
       opened_at: null,
-      x: 100 + (i % 6) * 140,
-      y: 50 + Math.floor(i / 6) * 110,
-      width: 120,
-      height: 100,
+      x: 80 + (i % 10) * 90,
+      y: 50 + Math.floor(i / 10) * 100,
+      width: 80,
+      height: 80,
       shape: "square",
     }));
     needWrite = true;
@@ -116,6 +116,20 @@ async function ensureData() {
       return { ...p, pos_enabled: enabled };
     });
     db.data.migrations.posEnabledDefaultToOne = true;
+  }
+  // Migration: normalize table layout so tables are ordered by number (1–10 together, then 11–20, etc.)
+  if (!db.data.migrations.tablesGridLayoutV1) {
+    const tables = Array.isArray(db.data.tables) ? [...db.data.tables] : [];
+    tables.sort((a, b) => (parseInt(a.number, 10) || 0) - (parseInt(b.number, 10) || 0));
+    tables.forEach((t, i) => {
+      t.x = 80 + (i % 10) * 90;
+      t.y = 50 + Math.floor(i / 10) * 100;
+      t.width = 80;
+      t.height = 80;
+      t.shape = t.shape || "square";
+    });
+    db.data.tables = tables;
+    db.data.migrations.tablesGridLayoutV1 = true;
   }
   await db.write();
 }
@@ -288,7 +302,7 @@ app.post("/api/products", authMiddleware, async (req, res) => {
   await ensureData();
   const id = req.body.id || `p_${uuid().slice(0, 8)}`;
   const body = req.body;
-  const prod = { id, name: body.name || "Product", name_arabic: body.name_arabic || "", name_turkish: body.name_turkish || "", sku: body.sku || "", category_id: body.category_id || null, price: body.price ?? 0, tax_rate: body.tax_rate ?? 0, image_url: body.image_url || "", printers: JSON.stringify(body.printers || []), modifier_groups: JSON.stringify(body.modifier_groups || []), active: body.active !== false ? 1 : 0, pos_enabled: body.pos_enabled !== false ? 1 : 0 };
+  const prod = { id, name: body.name || "Product", name_arabic: body.name_arabic || "", name_turkish: body.name_turkish || "", sku: body.sku || "", category_id: body.category_id || null, price: body.price ?? 0, tax_rate: body.tax_rate ?? 0, image_url: body.image_url || "", printers: JSON.stringify(body.printers || []), modifier_groups: JSON.stringify(body.modifier_groups || []), active: body.active !== false ? 1 : 0, pos_enabled: body.pos_enabled !== false ? 1 : 0, sellable: true };
   db.data.products = db.data.products.filter((p) => p.id !== id);
   db.data.products.push(prod);
   await db.write();

@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { ArrowLeft, Plus, Pencil, Trash2, ChevronUp, ChevronDown, GripVertical } from "lucide-react";
+import { ArrowLeft, Plus, Pencil, Trash2, ChevronUp, ChevronDown, GripVertical, FileSpreadsheet } from "lucide-react";
+import * as XLSX from "xlsx";
 import { getCategories, getModifierGroups, getPrinters, createCategory, updateCategory, deleteCategory } from "@/lib/api";
 
 type Category = { id: string; name: string; color: string; sort_order: number; show_till?: boolean | number; modifier_groups?: string[]; printers?: string[] };
@@ -16,6 +17,8 @@ export default function CategoriesPage() {
   const [form, setForm] = useState({ name: "", color: "#84CC16", sort_order: 0, show_till: false, modifier_groups: [] as string[], printers: [] as string[] });
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     load();
@@ -173,6 +176,74 @@ export default function CategoriesPage() {
     }
   }
 
+  function exportCategoriesToExcel() {
+    if (!categories.length) {
+      alert("No categories to export");
+      return;
+    }
+    const rows = sortedCategories.map((c, idx) => ({
+      Name: c.name,
+      Color: c.color,
+      SortOrder: c.sort_order ?? idx,
+      ShowTill: (c.show_till ?? 0) ? "On" : "Off",
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Categories");
+    XLSX.writeFile(wb, "categories.xlsx");
+  }
+
+  async function handleCategoryImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    try {
+      const data = await file.arrayBuffer();
+      const wb = XLSX.read(data, { type: "array" });
+      const sheetName = wb.SheetNames[0];
+      const sheet = wb.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet);
+
+      for (let index = 0; index < rows.length; index += 1) {
+        const row = rows[index];
+        const name = String(row.Name ?? row.name ?? "").trim();
+        if (!name) continue;
+        const color = String(row.Color ?? row.color ?? "#84CC16");
+        const sortRaw = row.SortOrder ?? row.sort_order ?? index;
+        const showRaw = String(row.ShowTill ?? row.show_till ?? "").toLowerCase();
+
+        const sort_order = Number(sortRaw) || index;
+        const show_till = showRaw === "on" || showRaw === "1" || showRaw === "true" || showRaw === "yes";
+
+        const existing = categories.find((c) => c.name.toLowerCase() === name.toLowerCase());
+
+        const payload = {
+          name,
+          color,
+          sort_order,
+          show_till,
+          active: true,
+          modifier_groups: existing?.modifier_groups ?? [],
+          printers: existing?.printers ?? [],
+        };
+
+        if (existing) {
+          await updateCategory(existing.id, payload);
+        } else {
+          await createCategory(payload);
+        }
+      }
+
+      await load();
+      alert(`Imported ${rows.length} category row(s).`);
+    } catch (err) {
+      alert((err as Error).message);
+    } finally {
+      setImporting(false);
+      e.target.value = "";
+    }
+  }
+
   const sortedCategories = [...categories].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
 
   return (
@@ -186,9 +257,36 @@ export default function CategoriesPage() {
           <h1 className="text-2xl font-bold text-sky-400">Categories</h1>
           <p className="text-slate-400">Product categories. Sıra (order) determines order in app. Sürükleyip bırakın veya oklarla sıralayın.</p>
         </div>
-        <button onClick={() => openEdit()} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium">
-          <Plus className="w-4 h-4" /> New Category
-        </button>
+        <div className="flex gap-2 flex-wrap">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            className="hidden"
+            onChange={handleCategoryImport}
+          />
+          <button
+            onClick={exportCategoriesToExcel}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-medium"
+          >
+            <FileSpreadsheet className="w-4 h-4" /> Export Excel
+          </button>
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={importing}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-medium disabled:opacity-50"
+          >
+            {importing ? (
+              <div className="w-4 h-4 border-2 border-sky-500 border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <FileSpreadsheet className="w-4 h-4" />
+            )}
+            Import Excel/CSV
+          </button>
+          <button onClick={() => openEdit()} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium">
+            <Plus className="w-4 h-4" /> New Category
+          </button>
+        </div>
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-slate-700 mb-8 relative min-h-[120px]">
