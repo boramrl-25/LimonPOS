@@ -18,11 +18,36 @@ async function ensureData() {
   if (!db.data) db.data = { users: [], categories: [], products: [], printers: [], payment_methods: [], orders: [], order_items: [], payments: [], tables: [], void_logs: [], void_requests: [], zoho_config: {}, migrations: {}, devices: [] };
   if (!db.data.migrations) db.data.migrations = {};
   if (!Array.isArray(db.data.devices)) db.data.devices = [];
+  if (!db.data.floor_plan_sections) {
+    db.data.floor_plan_sections = { A: [29, 30, 31, 32, 33, 34, 35, 40], B: [24, 25, 26, 27, 28, 29, 36, 37, 38, 39], C: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], D: [11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21], E: [41, 42, 43] };
+    await db.write();
+  }
   if (!db.data.users?.length) {
     db.data.users = [DEFAULT_ADMIN];
+    await db.write();
+  }
+  // Migration: ensure admin with PIN 1234 exists (for web login)
+  if (!db.data.migrations.ensureAdminPin1234) {
+    const hasPin1234 = (db.data.users || []).some((u) => String(u.pin) === "1234");
+    if (!hasPin1234) {
+      const existing = db.data.users.find((u) => u.id === "u1");
+      if (existing) {
+        existing.pin = "1234";
+      } else {
+        db.data.users = [DEFAULT_ADMIN, ...(db.data.users || [])];
+      }
+      await db.write();
+    }
+    db.data.migrations.ensureAdminPin1234 = true;
+    await db.write();
   }
   // Migration: initial Zoho import set pos_enabled = 0 for all products.
   // For POS app to show products in Order screen, default all existing products to pos_enabled = 1 once.
+  // For existing DBs without setup_complete, treat as already set up
+  if (db.data.setup_complete === undefined) {
+    db.data.setup_complete = true;
+    await db.write();
+  }
   if (!db.data.migrations.posEnabledDefaultToOne) {
     db.data.products = (db.data.products || []).map((p) => {
       const val = p.pos_enabled;
@@ -71,6 +96,20 @@ app.post("/api/auth/login", async (req, res) => {
 app.post("/api/auth/verify-cash-drawer", authMiddleware, (req, res) => {
   if (!req.user.cash_drawer_permission) return res.status(403).json({ success: false, message: "No permission" });
   res.json({ success: true, message: null });
+});
+
+// Setup (first-time wizard)
+app.get("/api/setup/status", authMiddleware, async (req, res) => {
+  await ensureData();
+  const setupComplete = db.data.setup_complete === true;
+  res.json({ setupComplete });
+});
+
+app.post("/api/setup/complete", authMiddleware, async (req, res) => {
+  await ensureData();
+  db.data.setup_complete = true;
+  await db.write();
+  res.json({ setupComplete: true });
 });
 
 // Users
@@ -490,6 +529,25 @@ app.post("/api/tables/:id/close", authMiddleware, async (req, res) => {
   res.json(db.data.tables[idx]);
 });
 
+// Floor plan sections (A,B,C,D,E filters)
+app.get("/api/floor-plan-sections", authMiddleware, async (req, res) => {
+  await ensureData();
+  res.json(db.data.floor_plan_sections || {});
+});
+
+app.put("/api/floor-plan-sections", authMiddleware, async (req, res) => {
+  await ensureData();
+  const body = req.body || {};
+  if (typeof body !== "object") return res.status(400).json({ error: "Body must be object" });
+  db.data.floor_plan_sections = { A: [], B: [], C: [], D: [], E: [] };
+  for (const k of ["A", "B", "C", "D", "E"]) {
+    const arr = Array.isArray(body[k]) ? body[k].map((n) => (typeof n === "number" && n >= 1 && n <= 43 ? n : parseInt(n, 10))).filter((n) => !isNaN(n) && n >= 1 && n <= 43) : [];
+    db.data.floor_plan_sections[k] = [...new Set(arr)].sort((a, b) => a - b);
+  }
+  await db.write();
+  res.json(db.data.floor_plan_sections);
+});
+
 // Orders
 app.get("/api/orders/:id", authMiddleware, async (req, res) => {
   await ensureData();
@@ -723,12 +781,12 @@ app.post("/api/zoho/sync", authMiddleware, async (req, res) => {
   }
 });
 
-// Zoho tanı: token ve ürün sayısı (sync yapmadan)
+// Zoho tanı: token ve ürün sayısı (sync yapmadan) – env veya db'den okur
 app.get("/api/zoho/check", authMiddleware, async (req, res) => {
   try {
-    const { getZohoAccessToken, getZohoItems, getZohoItemGroups } = await import("./zoho.js");
+    const { getZohoConfig, getZohoAccessToken, getZohoItems, getZohoItemGroups } = await import("./zoho.js");
     await db.read();
-    const cfg = db.data?.zoho_config || {};
+    const cfg = getZohoConfig(db);
     const hasConfig = !!(cfg.organization_id && cfg.enabled === "true" && cfg.refresh_token && cfg.client_id && cfg.client_secret);
     if (!hasConfig) {
       return res.json({ ok: false, error: "Zoho ayarları eksik", hasToken: false, itemsCount: 0, groupsCount: 0 });
