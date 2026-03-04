@@ -106,13 +106,29 @@ fun FloorPlanScreen(
         }
     }
 
-    val tablesRaw = uiState.tablesByFloor[uiState.selectedFloor].orEmpty()
+    val sections by viewModel.floorPlanSections.collectAsState(initial = emptyMap())
+    val currentUserId by viewModel.currentUserId.collectAsState(initial = null)
+    var tablesRaw = uiState.tablesByFloor[uiState.selectedFloor].orEmpty()
+    val section = uiState.selectedSection
+    if (section != "Main" && sections.isNotEmpty()) {
+        val nums = sections[section].orEmpty()
+        if (nums.isNotEmpty()) {
+            tablesRaw = tablesRaw.filter { t -> t.number.toIntOrNull()?.let { nums.contains(it) } == true }
+        }
+    }
+    if (currentUserId != null) {
+        tablesRaw = tablesRaw.filter { t ->
+            t.status == "free" || t.waiterId == currentUserId
+        }
+    }
     val query = uiState.tableSearchQuery.trim().lowercase()
     val tables = if (query.isEmpty()) tablesRaw else tablesRaw.filter { t ->
         t.name.lowercase().contains(query) ||
         t.number.lowercase().contains(query) ||
         t.floor.lowercase().contains(query)
     }
+    val filteredFreeCount = tables.count { it.status == "free" }
+    val filteredOccupiedCount = tables.count { it.status == "occupied" || it.status == "bill" }
 
     Scaffold(
         topBar = {
@@ -294,6 +310,28 @@ fun FloorPlanScreen(
                     }
                 }
             }
+            if (sections.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    for (sec in listOf("Main") + sections.keys.sorted()) {
+                        FilterChip(
+                            selected = sec == uiState.selectedSection,
+                            onClick = { viewModel.selectSection(sec) },
+                            label = { Text(sec) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = LimonPrimary,
+                                selectedLabelColor = Color.Black,
+                                containerColor = LimonSurface,
+                                labelColor = LimonText
+                            )
+                        )
+                    }
+                }
+            }
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -344,8 +382,8 @@ fun FloorPlanScreen(
                     .padding(16.dp),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text("Free: ${uiState.freeCount}", color = LimonTextSecondary, fontSize = 14.sp)
-                Text("Occupied: ${uiState.occupiedCount}", color = LimonTextSecondary, fontSize = 14.sp)
+                Text("Free: $filteredFreeCount", color = LimonTextSecondary, fontSize = 14.sp)
+                Text("Occupied: $filteredOccupiedCount", color = LimonTextSecondary, fontSize = 14.sp)
             }
         }
         }
@@ -620,16 +658,19 @@ private fun TableCard(
                 verticalArrangement = Arrangement.Center
             ) {
                 Text(
-                    text = table.name,
+                    text = table.number,
                     fontWeight = FontWeight.Bold,
                     color = LimonText,
                     fontSize = 16.sp
                 )
-                Text(
-                    text = table.number,
-                    color = LimonTextSecondary,
-                    fontSize = 12.sp
-                )
+                table.waiterName?.takeIf { it.isNotBlank() }?.let { name ->
+                    Text(
+                        text = name,
+                        color = LimonTextSecondary,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
                 if (isOccupied) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(

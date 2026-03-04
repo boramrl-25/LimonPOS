@@ -26,6 +26,9 @@ interface ApiService {
     @GET("tables")
     suspend fun getTables(): Response<List<TableDto>>
 
+    @GET("floor-plan-sections")
+    suspend fun getFloorPlanSections(): Response<Map<String, List<Double>>>
+
     @POST("tables")
     suspend fun createTable(@Body table: TableDto): Response<TableDto>
 

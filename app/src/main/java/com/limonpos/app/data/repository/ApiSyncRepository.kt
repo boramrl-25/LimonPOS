@@ -5,9 +5,11 @@ import android.util.Log
 import com.google.gson.Gson
 import com.limonpos.app.data.local.dao.*
 import com.limonpos.app.data.local.entity.*
+import com.limonpos.app.data.prefs.FloorPlanSectionsPreferences
 import com.limonpos.app.data.remote.ApiService
 import com.limonpos.app.data.remote.dto.*
 import com.limonpos.app.util.NetworkMonitor
+import kotlinx.coroutines.flow.Flow
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
 import javax.inject.Inject
@@ -28,7 +30,8 @@ class ApiSyncRepository @Inject constructor(
     private val modifierOptionDao: ModifierOptionDao,
     private val voidLogDao: VoidLogDao,
     private val voidRequestDao: VoidRequestDao,
-    private val transferLogDao: TransferLogDao
+    private val transferLogDao: TransferLogDao,
+    private val floorPlanSectionsPreferences: FloorPlanSectionsPreferences
 ) {
     suspend fun isOnline(): Boolean = networkMonitor.isOnline.first()
 
@@ -62,6 +65,7 @@ class ApiSyncRepository @Inject constructor(
             syncUsers()
             syncModifierGroups()
             syncVoidRequests()
+            syncFloorPlanSections()
             true
         } catch (e: Exception) {
             Log.e("ApiSync", "syncFromApi error: ${e.message}", e)
@@ -511,6 +515,21 @@ class ApiSyncRepository @Inject constructor(
             Log.e("ApiSync", "syncVoidRequests error: ${e.message}", e)
         }
     }
+
+    private suspend fun syncFloorPlanSections() {
+        if (!isOnline()) return
+        try {
+            val response = apiService.getFloorPlanSections()
+            if (!response.isSuccessful) return
+            val body = response.body() ?: return
+            val map = body.mapValues { (_, list) -> list.map { it.toInt() } }
+            floorPlanSectionsPreferences.setSections(map)
+        } catch (e: Exception) {
+            Log.e("ApiSync", "syncFloorPlanSections error: ${e.message}", e)
+        }
+    }
+
+    fun getFloorPlanSections(): Flow<Map<String, List<Int>>> = floorPlanSectionsPreferences.sections
 
     suspend fun pushVoidRequest(entity: VoidRequestEntity): Boolean {
         if (!isOnline()) return false

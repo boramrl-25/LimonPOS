@@ -228,7 +228,7 @@ app.post("/api/categories", authMiddleware, async (req, res) => {
   await ensureData();
   const id = req.body.id || `cat_${uuid().slice(0, 8)}`;
   const body = req.body;
-  const cat = { id, name: body.name || "Category", color: body.color || "#84CC16", sort_order: body.sort_order ?? 0, active: body.active !== false ? 1 : 0, modifier_groups: JSON.stringify(body.modifier_groups || []), printers: JSON.stringify(body.printers || []) };
+  const cat = { id, name: body.name || "Category", color: body.color || "#84CC16", sort_order: body.sort_order ?? 0, active: body.active !== false ? 1 : 0, show_till: body.show_till ? 1 : 0, modifier_groups: JSON.stringify(body.modifier_groups || []), printers: JSON.stringify(body.printers || []) };
   db.data.categories = db.data.categories.filter((c) => c.id !== id);
   db.data.categories.push(cat);
   await db.write();
@@ -240,7 +240,7 @@ app.put("/api/categories/:id", authMiddleware, async (req, res) => {
   const idx = db.data.categories.findIndex((c) => c.id === req.params.id);
   if (idx < 0) return res.status(404).json({ error: "Not found" });
   const body = req.body;
-  db.data.categories[idx] = { ...db.data.categories[idx], name: body.name, color: body.color || "#84CC16", sort_order: body.sort_order ?? 0, active: body.active !== false ? 1 : 0, modifier_groups: JSON.stringify(body.modifier_groups || []), printers: JSON.stringify(body.printers || []) };
+  db.data.categories[idx] = { ...db.data.categories[idx], name: body.name, color: body.color || "#84CC16", sort_order: body.sort_order ?? 0, active: body.active !== false ? 1 : 0, show_till: body.show_till ? 1 : 0, modifier_groups: JSON.stringify(body.modifier_groups || []), printers: JSON.stringify(body.printers || []) };
   await db.write();
   res.json({ ...db.data.categories[idx], modifier_groups: JSON.parse(db.data.categories[idx].modifier_groups || "[]"), printers: JSON.parse(db.data.categories[idx].printers || "[]") });
 });
@@ -534,7 +534,13 @@ app.get("/api/dashboard/daily-sales", authMiddleware, async (req, res) => {
 // Tables
 app.get("/api/tables", authMiddleware, async (req, res) => {
   await ensureData();
-  res.json((db.data.tables || []).map((r) => ({ ...r, current_order_id: r.current_order_id || null })));
+  res.json((db.data.tables || []).map((r) => ({
+    ...r,
+    number: typeof r.number === "string" ? parseInt(r.number, 10) || 0 : (r.number ?? 0),
+    current_order_id: r.current_order_id || null,
+    waiter_id: r.waiter_id || null,
+    waiter_name: r.waiter_name || null,
+  })));
 });
 
 app.post("/api/tables", authMiddleware, async (req, res) => {

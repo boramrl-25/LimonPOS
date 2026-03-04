@@ -28,6 +28,7 @@ data class FloorPlanUiState(
     val tablesByFloor: Map<String, List<TableEntity>> = emptyMap(),
     val floors: List<String> = emptyList(),
     val selectedFloor: String = "Main",
+    val selectedSection: String = "Main",
     val tableSearchQuery: String = "",
     val waiterName: String? = null,
     val freeCount: Int = 0,
@@ -61,9 +62,15 @@ class FloorPlanViewModel @Inject constructor(
     val waiterName: StateFlow<String?> = authRepository.getCurrentUserName()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
+    val currentUserId: StateFlow<String?> = authRepository.getCurrentUserId()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
     val pendingVoidRequestCount: StateFlow<Int> = voidRequestRepository.getPendingRequests()
         .map { it.size }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    val floorPlanSections: StateFlow<Map<String, List<Int>>> = apiSyncRepository.getFloorPlanSections()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     init {
         loadTables()
@@ -117,6 +124,10 @@ class FloorPlanViewModel @Inject constructor(
                 occupiedCount = tablesOnFloor.count { it.status == "occupied" || it.status == "bill" }
             )
         }
+    }
+
+    fun selectSection(section: String) {
+        _uiState.update { it.copy(selectedSection = section) }
     }
 
     fun onTableClick(table: TableEntity, onNavigateToOrder: (String) -> Unit) {

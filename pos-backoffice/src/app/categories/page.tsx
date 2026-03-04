@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, Plus, Pencil, Trash2, ChevronUp, ChevronDown, GripVertical } from "lucide-react";
 import { getCategories, getModifierGroups, getPrinters, createCategory, updateCategory, deleteCategory } from "@/lib/api";
 
-type Category = { id: string; name: string; color: string; sort_order: number; modifier_groups?: string[]; printers?: string[] };
+type Category = { id: string; name: string; color: string; sort_order: number; show_till?: boolean | number; modifier_groups?: string[]; printers?: string[] };
 
 export default function CategoriesPage() {
   const [categories, setCategories] = useState<Category[]>([]);
@@ -13,7 +13,7 @@ export default function CategoriesPage() {
   const [printers, setPrinters] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Category | null | undefined>(undefined);
-  const [form, setForm] = useState({ name: "", color: "#84CC16", sort_order: 0, modifier_groups: [] as string[], printers: [] as string[] });
+  const [form, setForm] = useState({ name: "", color: "#84CC16", sort_order: 0, show_till: false, modifier_groups: [] as string[], printers: [] as string[] });
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
 
@@ -37,10 +37,33 @@ export default function CategoriesPage() {
   function openEdit(c?: Category) {
     if (c) {
       setEditing(c);
-      setForm({ name: c.name, color: c.color || "#84CC16", sort_order: c.sort_order || 0, modifier_groups: c.modifier_groups || [], printers: c.printers || [] });
+      const mg = Array.isArray(c.modifier_groups) ? c.modifier_groups : (typeof c.modifier_groups === "string" ? (() => { try { return JSON.parse(c.modifier_groups as string); } catch { return []; } })() : []);
+      const pr = Array.isArray(c.printers) ? c.printers : (typeof c.printers === "string" ? (() => { try { return JSON.parse(c.printers as string); } catch { return []; } })() : []);
+      setForm({ name: c.name, color: c.color || "#84CC16", sort_order: c.sort_order ?? 0, show_till: !!(c.show_till ?? 0), modifier_groups: mg, printers: pr });
     } else {
       setEditing(null);
-      setForm({ name: "", color: "#84CC16", sort_order: 0, modifier_groups: [], printers: [] });
+      setForm({ name: "", color: "#84CC16", sort_order: 0, show_till: false, modifier_groups: [], printers: [] });
+    }
+  }
+
+  async function toggleShowTill(c: Category, e: React.MouseEvent) {
+    e.stopPropagation();
+    e.preventDefault();
+    const next = !(c.show_till ?? 0);
+    const payload = {
+      name: c.name,
+      color: c.color || "#84CC16",
+      sort_order: c.sort_order ?? 0,
+      show_till: next,
+      active: true,
+      modifier_groups: Array.isArray(c.modifier_groups) ? c.modifier_groups : [],
+      printers: Array.isArray(c.printers) ? c.printers : [],
+    };
+    try {
+      await updateCategory(c.id, payload);
+      await load();
+    } catch (err) {
+      alert((err as Error).message);
     }
   }
 
@@ -60,7 +83,15 @@ export default function CategoriesPage() {
 
   async function save() {
     try {
-      const payload = { name: form.name, color: form.color, sort_order: form.sort_order, modifier_groups: form.modifier_groups, printers: form.printers };
+      const payload = {
+        name: form.name.trim() || "Category",
+        color: form.color || "#84CC16",
+        sort_order: Number(form.sort_order) || 0,
+        show_till: !!form.show_till,
+        active: true,
+        modifier_groups: Array.isArray(form.modifier_groups) ? form.modifier_groups : [],
+        printers: Array.isArray(form.printers) ? form.printers : [],
+      };
       if (editing) {
         await updateCategory(editing.id, payload);
       } else {
@@ -173,6 +204,7 @@ export default function CategoriesPage() {
               <th className="text-left p-4 font-medium w-20">Sıra</th>
               <th className="text-left p-4 font-medium">Name</th>
               <th className="text-left p-4 font-medium">Color</th>
+              <th className="text-left p-4 font-medium w-24">Show till</th>
               <th className="text-left p-4 font-medium">Actions</th>
             </tr>
           </thead>
@@ -180,14 +212,15 @@ export default function CategoriesPage() {
             {sortedCategories.map((c, index) => (
               <tr
                 key={c.id}
-                className={`border-b border-slate-700/50 transition-colors ${
+                className={`border-b border-slate-700/50 transition-colors cursor-pointer hover:bg-slate-800/50 ${
                   dragOverId === c.id ? "bg-sky-500/10 border-l-2 border-l-sky-500" : ""
                 } ${draggedId === c.id ? "opacity-50" : ""}`}
                 onDragOver={(e) => handleDragOver(e, c.id)}
                 onDragLeave={handleDragLeave}
                 onDrop={(e) => handleDrop(e, c.id)}
+                onClick={(e) => { if (!(e.target as HTMLElement).closest("button") && !(e.target as HTMLElement).closest("[draggable]")) openEdit(c); }}
               >
-                <td className="p-2 w-12">
+                <td className="p-2 w-12" onClick={(e) => e.stopPropagation()}>
                   <div
                     draggable
                     onDragStart={(e) => {
@@ -203,7 +236,7 @@ export default function CategoriesPage() {
                     <GripVertical className="w-5 h-5" />
                   </div>
                 </td>
-                <td className="p-4">
+                <td className="p-4" onClick={(e) => e.stopPropagation()}>
                   <div className="flex items-center gap-1">
                     <span className="text-slate-400 tabular-nums w-6">{c.sort_order ?? index}</span>
                     <div className="flex flex-col">
@@ -216,8 +249,17 @@ export default function CategoriesPage() {
                 <td className="p-4">
                   <span className="inline-block w-6 h-6 rounded border border-slate-600" style={{ backgroundColor: c.color }} />
                 </td>
-                <td className="p-4 flex gap-2">
-                  <button onClick={() => openEdit(c)} className="p-1.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-300"><Pencil className="w-4 h-4" /></button>
+                <td className="p-4" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    type="button"
+                    onClick={(e) => toggleShowTill(c, e)}
+                    className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors ${(c.show_till ?? 0) ? "bg-emerald-600 text-white" : "bg-slate-700 text-slate-400 hover:bg-slate-600"}`}
+                  >
+                    {(c.show_till ?? 0) ? "On" : "Off"}
+                  </button>
+                </td>
+                <td className="p-4 flex gap-2" onClick={(e) => e.stopPropagation()}>
+                  <button onClick={() => openEdit(c)} className="p-1.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-300" title="Edit"><Pencil className="w-4 h-4" /></button>
                   <button onClick={() => remove(c.id)} className="p-1.5 rounded bg-slate-700 hover:bg-red-600/30 text-red-400"><Trash2 className="w-4 h-4" /></button>
                 </td>
               </tr>
@@ -227,8 +269,15 @@ export default function CategoriesPage() {
       </div>
 
       {editing !== undefined && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-900 rounded-xl border border-slate-700 p-6 max-w-md w-full">
+        <div
+          className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"
+          onClick={() => setEditing(undefined)}
+          role="presentation"
+        >
+          <div
+            className="bg-slate-900 rounded-xl border border-slate-700 p-6 max-w-md w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h2 className="text-xl font-bold text-sky-400 mb-4">{editing ? "Edit Category" : "New Category"}</h2>
             <div className="space-y-4">
               <div>
@@ -242,6 +291,16 @@ export default function CategoriesPage() {
               <div>
                 <label className="block text-sm text-slate-400 mb-1">Sıra (App’te üstteki kategorilerde görünme sırası)</label>
                 <input type="number" min={0} value={form.sort_order} onChange={(e) => setForm((f) => ({ ...f, sort_order: parseInt(e.target.value, 10) || 0 }))} className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white" />
+              </div>
+              <div className="flex items-center gap-3">
+                <label className="block text-sm text-slate-400">Show till</label>
+                <button
+                  type="button"
+                  onClick={() => setForm((f) => ({ ...f, show_till: !f.show_till }))}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium ${form.show_till ? "bg-emerald-600 text-white" : "bg-slate-700 text-slate-400"}`}
+                >
+                  {form.show_till ? "On" : "Off"}
+                </button>
               </div>
               <div>
                 <label className="block text-sm text-slate-400 mb-1">Printers</label>

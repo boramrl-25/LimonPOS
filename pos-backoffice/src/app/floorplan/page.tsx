@@ -169,8 +169,7 @@ export default function FloorPlanPage() {
               key={t.id}
               className={`aspect-[0.9] rounded-xl border-2 flex flex-col items-center justify-center p-3 ${statusColors[t.status] || "bg-slate-800 border-slate-600"}`}
             >
-              <span className="font-bold text-white">{t.name || t.number}</span>
-              <span className="text-sm text-slate-300">{t.number}</span>
+              <span className="font-bold text-white text-lg">{t.number}</span>
               <span className="text-xs mt-1 font-medium">
                 {t.status === "free" && "Free"}
                 {t.status === "occupied" && "Occupied"}

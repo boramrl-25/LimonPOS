@@ -103,8 +103,11 @@ export async function importUsers(users: Array<{ User?: string; name?: string; r
 }
 
 export async function getCategories() {
-  const res = await fetch(`${API_URL}/categories`, { headers: headers() });
-  if (!res.ok) throw new Error("Failed to fetch categories");
+  const res = await fetchWithTimeout(`${API_URL}/categories`, { headers: headers() });
+  if (!res.ok) {
+    if (res.status === 401) throw new Error("Session expired. Please log in again.");
+    throw new Error("Failed to fetch categories");
+  }
   return res.json();
 }
 
@@ -124,7 +127,11 @@ export async function updateCategory(id: string, cat: Record<string, unknown>) {
     headers: headers(),
     body: JSON.stringify(cat),
   });
-  if (!res.ok) throw new Error("Failed to update category");
+  if (!res.ok) {
+    if (res.status === 401) throw new Error("Session expired. Please log in again.");
+    const err = await res.text();
+    throw new Error(err || "Failed to update category");
+  }
   return res.json();
 }
 
