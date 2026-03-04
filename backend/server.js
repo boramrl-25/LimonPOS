@@ -41,6 +41,51 @@ async function ensureData() {
     db.data.migrations.ensureAdminPin1234 = true;
     await db.write();
   }
+  // Migration: ensure default category and payment methods for empty DB (web shows products/users)
+  if (!db.data.migrations.ensureDefaultsForWeb) {
+    let changed = false;
+    if (!db.data.categories?.length) {
+      db.data.categories = [{ id: "cat1", name: "Beverages", color: "#84CC16", sort_order: 0, active: 1, modifier_groups: "[]", printers: "[]" }];
+      changed = true;
+    }
+    if (!db.data.payment_methods?.length) {
+      db.data.payment_methods = [
+        { id: "pm1", name: "Cash", code: "cash", active: 1, sort_order: 0 },
+        { id: "pm2", name: "Card", code: "card", active: 1, sort_order: 1 },
+      ];
+      changed = true;
+    }
+    if (!db.data.printers?.length) {
+      db.data.printers = [];
+    }
+    if (!Array.isArray(db.data.products)) db.data.products = [];
+    if (!Array.isArray(db.data.orders)) db.data.orders = [];
+    if (!Array.isArray(db.data.order_items)) db.data.order_items = [];
+    if (!Array.isArray(db.data.tables) || db.data.tables.length === 0) {
+      db.data.tables = Array.from({ length: 43 }, (_, i) => ({
+        id: `main-${i + 1}`,
+        number: String(i + 1),
+        name: `Table ${i + 1}`,
+        capacity: 4,
+        floor: "Main",
+        status: "free",
+        current_order_id: null,
+        guest_count: 0,
+        waiter_id: null,
+        waiter_name: null,
+        opened_at: null,
+        x: 100 + (i % 6) * 140,
+        y: 50 + Math.floor(i / 6) * 110,
+        width: 120,
+        height: 100,
+        shape: "square",
+      }));
+      changed = true;
+    }
+    if (changed) await db.write();
+    db.data.migrations.ensureDefaultsForWeb = true;
+    await db.write();
+  }
   // Migration: initial Zoho import set pos_enabled = 0 for all products.
   // For POS app to show products in Order screen, default all existing products to pos_enabled = 1 once.
   // For existing DBs without setup_complete, treat as already set up
