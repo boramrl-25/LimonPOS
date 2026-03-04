@@ -12,7 +12,11 @@ if (!process.env.DATA_DIR) {
   console.warn("[db] DATA_DIR tanımlı değil – veriler proje dizininde; Railway/redeploy'da SİLİNİR. Volume + DATA_DIR=/data ekleyin.");
 }
 if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  } catch (e) {
+    console.error("[db] DATA_DIR oluşturulamadı:", e.message);
+  }
 }
 const DATA_FILE = join(DATA_DIR, "data.json");
 
@@ -54,4 +58,15 @@ const defaultData = {
   setup_complete: false,
 };
 
-export const db = await JSONFilePreset(DATA_FILE, defaultData);
+let db;
+try {
+  db = await JSONFilePreset(DATA_FILE, defaultData);
+  console.log("[db] Veri dosyası:", DATA_FILE);
+} catch (e) {
+  console.error("[db] Veri dosyası açılamadı:", e.message);
+  const fallbackDir = __dirname;
+  const fallbackFile = join(fallbackDir, "data.json");
+  console.warn("[db] Yedek konum kullanılıyor:", fallbackFile);
+  db = await JSONFilePreset(fallbackFile, defaultData);
+}
+export { db };
