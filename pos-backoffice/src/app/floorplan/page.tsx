@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { ArrowLeft, Search, RefreshCw, Settings2 } from "lucide-react";
-import { getTables, getFloorPlanSections, updateFloorPlanSections, type FloorPlanSections } from "@/lib/api";
+import { ArrowLeft, Search, RefreshCw, Settings2, X } from "lucide-react";
+import { getTables, getFloorPlanSections, updateFloorPlanSections, getOrder, type FloorPlanSections, type Order } from "@/lib/api";
 
 type Table = {
   id: string;
@@ -27,6 +27,8 @@ export default function FloorPlanPage() {
   const [editSection, setEditSection] = useState<string | null>(null);
   const [addNum, setAddNum] = useState("");
   const [saving, setSaving] = useState(false);
+  const [selectedTableOrder, setSelectedTableOrder] = useState<{ table: Table; order: Order } | null>(null);
+  const [orderLoading, setOrderLoading] = useState(false);
 
   useEffect(() => {
     load();
@@ -104,6 +106,27 @@ export default function FloorPlanPage() {
     reserved: "bg-slate-700/60 border-slate-500",
   };
 
+  async function openTableOrder(t: Table) {
+    if (!t.current_order_id) return;
+    setOrderLoading(true);
+    try {
+      const order = await getOrder(t.current_order_id);
+      setSelectedTableOrder({ table: t, order });
+    } catch {
+      setSelectedTableOrder(null);
+    } finally {
+      setOrderLoading(false);
+    }
+  }
+
+  function minsAgo(sentAt: number | null): string {
+    if (sentAt == null) return "";
+    const mins = Math.floor((Date.now() - sentAt) / 60000);
+    if (mins < 1) return "Just now";
+    if (mins === 1) return "1 min ago";
+    return `${mins} min ago`;
+  }
+
   return (
     <div className="p-6 max-w-6xl mx-auto">
       <div className="flex items-center gap-4 mb-6">
@@ -165,9 +188,11 @@ export default function FloorPlanPage() {
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-4">
           {filtered.map((t) => (
-            <div
+            <button
               key={t.id}
-              className={`aspect-[0.9] rounded-xl border-2 flex flex-col items-center justify-center p-3 ${statusColors[t.status] || "bg-slate-800 border-slate-600"}`}
+              type="button"
+              onClick={() => openTableOrder(t)}
+              className={`aspect-[0.9] rounded-xl border-2 flex flex-col items-center justify-center p-3 text-left ${statusColors[t.status] || "bg-slate-800 border-slate-600"} hover:ring-2 hover:ring-sky-400 transition-all`}
             >
               <span className="font-bold text-white text-lg">{t.number}</span>
               <span className="text-xs mt-1 font-medium">
@@ -177,12 +202,62 @@ export default function FloorPlanPage() {
                 {t.status === "reserved" && "Reserved"}
                 {t.waiter_name && ` — ${t.waiter_name}`}
               </span>
-            </div>
+            </button>
           ))}
         </div>
       )}
       {!loading && filtered.length === 0 && (
         <p className="text-slate-400 py-8 text-center">No tables match filter</p>
+      )}
+
+      {orderLoading && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-slate-800 px-6 py-4 rounded-lg text-white">Loading order...</div>
+        </div>
+      )}
+
+      {selectedTableOrder && !orderLoading && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={() => setSelectedTableOrder(null)}>
+          <div className="bg-slate-900 border border-slate-700 rounded-xl max-w-md w-full max-h-[85vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-center p-4 border-b border-slate-700">
+              <h2 className="text-xl font-bold text-white">
+                Table {selectedTableOrder.table.number} — Cart
+                {selectedTableOrder.order.waiter_name && <span className="text-slate-400 font-normal text-sm ml-2">({selectedTableOrder.order.waiter_name})</span>}
+              </h2>
+              <button type="button" onClick={() => setSelectedTableOrder(null)} className="p-2 rounded-lg hover:bg-slate-700 text-slate-400">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 overflow-y-auto flex-1">
+              <p className="text-slate-400 text-sm mb-3">Sent to kitchen = mutfakta; Not sent = henüz gönderilmedi</p>
+              <ul className="space-y-3">
+                {(selectedTableOrder.order.items || []).map((item) => {
+                  const sent = item.status === "sent" && item.sent_at != null;
+                  const ago = minsAgo(item.sent_at ?? null);
+                  return (
+                    <li key={item.id} className={`flex justify-between items-start py-2 border-b border-slate-700/50 ${sent ? "text-slate-200" : "text-amber-200"}`}>
+                      <div>
+                        <span className="font-medium">{item.product_name}</span>
+                        {item.quantity > 1 && <span className="text-slate-400 ml-1">×{item.quantity}</span>}
+                        {item.notes && <span className="text-slate-500 text-sm block">{item.notes}</span>}
+                      </div>
+                      <div className="text-right text-sm">
+                        {sent ? (
+                          <span className="text-emerald-400">Sent to kitchen — {ago}</span>
+                        ) : (
+                          <span className="text-amber-400">Not sent to kitchen</span>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+              {(selectedTableOrder.order.items || []).length === 0 && (
+                <p className="text-slate-500 text-center py-4">No items in this order yet.</p>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {manageOpen && (

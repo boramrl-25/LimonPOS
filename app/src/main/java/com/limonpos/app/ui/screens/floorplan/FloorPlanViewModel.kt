@@ -22,7 +22,16 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.map
 import javax.inject.Inject
+
+private val DEFAULT_FLOOR_PLAN_SECTIONS = mapOf(
+    "A" to listOf(29, 30, 31, 32, 33, 34, 35, 40),
+    "B" to listOf(24, 25, 26, 27, 28, 29, 36, 37, 38, 39),
+    "C" to listOf(1, 2, 3, 4, 5, 6, 7, 8, 9, 10),
+    "D" to listOf(11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21),
+    "E" to listOf(41, 42, 43),
+)
 
 data class FloorPlanUiState(
     val tablesByFloor: Map<String, List<TableEntity>> = emptyMap(),
@@ -70,7 +79,8 @@ class FloorPlanViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     val floorPlanSections: StateFlow<Map<String, List<Int>>> = apiSyncRepository.getFloorPlanSections()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+        .map { if (it.isEmpty()) DEFAULT_FLOOR_PLAN_SECTIONS else it }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DEFAULT_FLOOR_PLAN_SECTIONS)
 
     init {
         loadTables()

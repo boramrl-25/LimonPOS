@@ -42,6 +42,12 @@ interface ApiService {
     @POST("tables/{id}/close")
     suspend fun closeTable(@Path("id") id: String): Response<TableDto>
 
+    @PUT("tables/{id}")
+    suspend fun updateTable(
+        @Path("id") id: String,
+        @Body body: Map<String, Any?>
+    ): Response<TableDto>
+
     @GET("categories")
     suspend fun getCategories(): Response<List<CategoryDto>>
 

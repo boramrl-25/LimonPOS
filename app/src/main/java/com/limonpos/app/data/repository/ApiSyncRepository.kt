@@ -96,11 +96,34 @@ class ApiSyncRepository @Inject constructor(
         for (table in tablesToPush) {
             val orderId = table.currentOrderId ?: continue
             ensureOrderExistsOnApi(orderId)
+            pushTableState(table)
         }
-        // Also push open/sent orders (covers edge cases where table state may differ)
         val openAndSentOrders = orderDao.getOpenAndSentOrders()
         for (order in openAndSentOrders) {
             ensureOrderExistsOnApi(order.id)
+        }
+        for (table in tablesToPush) {
+            pushTableState(table)
+        }
+    }
+
+    private suspend fun pushTableState(table: TableEntity) {
+        if (!isOnline()) return
+        try {
+            val body = mutableMapOf<String, Any?>(
+                "status" to table.status,
+                "current_order_id" to table.currentOrderId,
+                "waiter_id" to table.waiterId,
+                "waiter_name" to table.waiterName,
+                "guest_count" to table.guestCount
+            )
+            table.openedAt?.let { ms ->
+                body["opened_at"] = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US).apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }.format(java.util.Date(ms))
+            }
+            val res = apiService.updateTable(table.id, body)
+            if (!res.isSuccessful) Log.e("ApiSync", "updateTable ${table.id} failed: ${res.code()}")
+        } catch (e: Exception) {
+            Log.e("ApiSync", "pushTableState error: ${e.message}")
         }
     }
 

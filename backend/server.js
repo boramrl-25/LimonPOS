@@ -15,17 +15,56 @@ const DEFAULT_ADMIN = { id: "u1", name: "Admin", pin: "1234", role: "admin", act
 
 async function ensureData() {
   await db.read();
-  if (!db.data) db.data = { users: [], categories: [], products: [], printers: [], payment_methods: [], orders: [], order_items: [], payments: [], tables: [], void_logs: [], void_requests: [], zoho_config: {}, migrations: {}, devices: [] };
+  if (!db.data) db.data = { users: [], categories: [], products: [], printers: [], payment_methods: [], orders: [], order_items: [], payments: [], tables: [], void_logs: [], void_requests: [], zoho_config: {}, migrations: {}, devices: [], floor_plan_sections: null };
   if (!db.data.migrations) db.data.migrations = {};
   if (!Array.isArray(db.data.devices)) db.data.devices = [];
+  if (!Array.isArray(db.data.products)) db.data.products = [];
+  if (!Array.isArray(db.data.orders)) db.data.orders = [];
+  if (!Array.isArray(db.data.order_items)) db.data.order_items = [];
+  let needWrite = false;
   if (!db.data.floor_plan_sections) {
     db.data.floor_plan_sections = { A: [29, 30, 31, 32, 33, 34, 35, 40], B: [24, 25, 26, 27, 28, 29, 36, 37, 38, 39], C: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], D: [11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21], E: [41, 42, 43] };
-    await db.write();
+    needWrite = true;
   }
   if (!db.data.users?.length) {
     db.data.users = [DEFAULT_ADMIN];
-    await db.write();
+    needWrite = true;
   }
+  if (!db.data.categories?.length) {
+    db.data.categories = [{ id: "cat1", name: "Beverages", color: "#84CC16", sort_order: 0, active: 1, show_till: 0, modifier_groups: "[]", printers: "[]" }];
+    needWrite = true;
+  }
+  if (!db.data.payment_methods?.length) {
+    db.data.payment_methods = [
+      { id: "pm1", name: "Cash", code: "cash", active: 1, sort_order: 0 },
+      { id: "pm2", name: "Card", code: "card", active: 1, sort_order: 1 },
+    ];
+    needWrite = true;
+  }
+  if (!Array.isArray(db.data.tables) || db.data.tables.length === 0) {
+    db.data.tables = Array.from({ length: 43 }, (_, i) => ({
+      id: `main-${i + 1}`,
+      number: String(i + 1),
+      name: `Table ${i + 1}`,
+      capacity: 4,
+      floor: "Main",
+      status: "free",
+      current_order_id: null,
+      guest_count: 0,
+      waiter_id: null,
+      waiter_name: null,
+      opened_at: null,
+      x: 100 + (i % 6) * 140,
+      y: 50 + Math.floor(i / 6) * 110,
+      width: 120,
+      height: 100,
+      shape: "square",
+    }));
+    needWrite = true;
+  }
+  if (!Array.isArray(db.data.printers)) db.data.printers = [];
+  if (!Array.isArray(db.data.modifier_groups)) db.data.modifier_groups = [];
+  if (needWrite) await db.write();
   // Migration: ensure admin with PIN 1234 exists (for web login)
   if (!db.data.migrations.ensureAdminPin1234) {
     const hasPin1234 = (db.data.users || []).some((u) => String(u.pin) === "1234");
@@ -41,48 +80,18 @@ async function ensureData() {
     db.data.migrations.ensureAdminPin1234 = true;
     await db.write();
   }
-  // Migration: ensure default category and payment methods for empty DB (web shows products/users)
+  // Migration: ensure default category has show_till and structure (one-time fix for old DBs)
   if (!db.data.migrations.ensureDefaultsForWeb) {
-    let changed = false;
-    if (!db.data.categories?.length) {
-      db.data.categories = [{ id: "cat1", name: "Beverages", color: "#84CC16", sort_order: 0, active: 1, modifier_groups: "[]", printers: "[]" }];
-      changed = true;
-    }
-    if (!db.data.payment_methods?.length) {
-      db.data.payment_methods = [
-        { id: "pm1", name: "Cash", code: "cash", active: 1, sort_order: 0 },
-        { id: "pm2", name: "Card", code: "card", active: 1, sort_order: 1 },
-      ];
-      changed = true;
-    }
-    if (!db.data.printers?.length) {
-      db.data.printers = [];
-    }
-    if (!Array.isArray(db.data.products)) db.data.products = [];
-    if (!Array.isArray(db.data.orders)) db.data.orders = [];
-    if (!Array.isArray(db.data.order_items)) db.data.order_items = [];
-    if (!Array.isArray(db.data.tables) || db.data.tables.length === 0) {
-      db.data.tables = Array.from({ length: 43 }, (_, i) => ({
-        id: `main-${i + 1}`,
-        number: String(i + 1),
-        name: `Table ${i + 1}`,
-        capacity: 4,
-        floor: "Main",
-        status: "free",
-        current_order_id: null,
-        guest_count: 0,
-        waiter_id: null,
-        waiter_name: null,
-        opened_at: null,
-        x: 100 + (i % 6) * 140,
-        y: 50 + Math.floor(i / 6) * 110,
-        width: 120,
-        height: 100,
-        shape: "square",
+    if (db.data.categories?.length) {
+      db.data.categories = db.data.categories.map((c) => ({
+        ...c,
+        show_till: c.show_till !== undefined ? c.show_till : 0,
+        modifier_groups: c.modifier_groups ?? "[]",
+        printers: c.printers ?? "[]",
       }));
-      changed = true;
     }
-    if (changed) await db.write();
+    if (!Array.isArray(db.data.printers)) db.data.printers = [];
+    if (!Array.isArray(db.data.modifier_groups)) db.data.modifier_groups = [];
     db.data.migrations.ensureDefaultsForWeb = true;
     await db.write();
   }
@@ -221,7 +230,12 @@ app.post("/api/users/import", authMiddleware, async (req, res) => {
 app.get("/api/categories", authMiddleware, async (req, res) => {
   await ensureData();
   const cats = (db.data.categories || []).filter((c) => c.active).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
-  res.json(cats.map((c) => ({ ...c, modifier_groups: JSON.parse(c.modifier_groups || "[]"), printers: JSON.parse(c.printers || "[]") })));
+  res.json(cats.map((c) => ({
+    ...c,
+    show_till: c.show_till !== undefined && c.show_till !== null ? Number(c.show_till) : 0,
+    modifier_groups: JSON.parse(c.modifier_groups || "[]"),
+    printers: JSON.parse(c.printers || "[]"),
+  })));
 });
 
 app.post("/api/categories", authMiddleware, async (req, res) => {
@@ -580,6 +594,22 @@ app.post("/api/tables/:id/close", authMiddleware, async (req, res) => {
   res.json(db.data.tables[idx]);
 });
 
+app.put("/api/tables/:id", authMiddleware, async (req, res) => {
+  await ensureData();
+  const idx = db.data.tables.findIndex((t) => t.id === req.params.id);
+  if (idx < 0) return res.status(404).json({ error: "Not found" });
+  const body = req.body || {};
+  const t = db.data.tables[idx];
+  if (body.status != null) t.status = body.status;
+  if (body.current_order_id != null) t.current_order_id = body.current_order_id;
+  if (body.waiter_id != null) t.waiter_id = body.waiter_id;
+  if (body.waiter_name != null) t.waiter_name = body.waiter_name;
+  if (body.guest_count != null) t.guest_count = body.guest_count;
+  if (body.opened_at != null) t.opened_at = body.opened_at;
+  await db.write();
+  res.json({ ...t, number: typeof t.number === "string" ? parseInt(t.number, 10) || 0 : (t.number ?? 0), current_order_id: t.current_order_id || null, waiter_id: t.waiter_id || null, waiter_name: t.waiter_name || null });
+});
+
 // Floor plan sections (A,B,C,D,E filters)
 app.get("/api/floor-plan-sections", authMiddleware, async (req, res) => {
   await ensureData();
@@ -617,8 +647,14 @@ app.post("/api/orders", authMiddleware, async (req, res) => {
   const tbl = db.data.tables.find((t) => t.id === body.table_id);
   db.data.orders.push({ id: orderId, table_id: body.table_id, table_number: tbl?.number?.toString() || "1", waiter_id: waiterId, waiter_name: waiter?.name || "Waiter", status: "open", subtotal: 0, tax_amount: 0, discount_percent: 0, discount_amount: 0, total: 0, created_at: Date.now(), paid_at: null, zoho_receipt_id: null });
   const tidx = db.data.tables.findIndex((t) => t.id === body.table_id);
-  if (tidx >= 0) db.data.tables[tidx].status = "occupied";
-  if (tidx >= 0) db.data.tables[tidx].current_order_id = orderId;
+  if (tidx >= 0) {
+    db.data.tables[tidx].status = "occupied";
+    db.data.tables[tidx].current_order_id = orderId;
+    db.data.tables[tidx].waiter_id = waiterId;
+    db.data.tables[tidx].waiter_name = waiter?.name || "Waiter";
+    db.data.tables[tidx].guest_count = body.guest_count ?? 1;
+    db.data.tables[tidx].opened_at = new Date().toISOString();
+  }
   await db.write();
   const order = db.data.orders.find((o) => o.id === orderId);
   const items = (db.data.order_items || []).filter((i) => i.order_id === orderId);

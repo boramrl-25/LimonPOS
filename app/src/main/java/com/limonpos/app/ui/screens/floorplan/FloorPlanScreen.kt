@@ -310,26 +310,24 @@ fun FloorPlanScreen(
                     }
                 }
             }
-            if (sections.isNotEmpty()) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    for (sec in listOf("Main") + sections.keys.sorted()) {
-                        FilterChip(
-                            selected = sec == uiState.selectedSection,
-                            onClick = { viewModel.selectSection(sec) },
-                            label = { Text(sec) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = LimonPrimary,
-                                selectedLabelColor = Color.Black,
-                                containerColor = LimonSurface,
-                                labelColor = LimonText
-                            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                for (sec in listOf("Main", "A", "B", "C", "D", "E")) {
+                    FilterChip(
+                        selected = sec == uiState.selectedSection,
+                        onClick = { viewModel.selectSection(sec) },
+                        label = { Text(sec) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = LimonPrimary,
+                            selectedLabelColor = Color.Black,
+                            containerColor = LimonSurface,
+                            labelColor = LimonText
                         )
-                    }
+                    )
                 }
             }
             Row(
