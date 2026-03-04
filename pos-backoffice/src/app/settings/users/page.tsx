@@ -88,9 +88,9 @@ export default function UsersSettingsPage() {
       const sheet = wb.Sheets[sheetName];
       const rows = XLSX.utils.sheet_to_json(sheet) as Array<Record<string, unknown>>;
       const users = rows.map((r) => ({
-        User: r.User ?? r.name,
-        role: r.role ?? r.Role,
-        "Phone Number": r["Phone Number"] ?? r.phone,
+        User: (r.User ?? r.name) as string | undefined,
+        role: (r.role ?? r.Role) as string | undefined,
+        "Phone Number": (r["Phone Number"] ?? r.phone) as string | undefined,
       }));
       await importUsers(users);
       await load();

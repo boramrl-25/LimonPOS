@@ -58,6 +58,26 @@ export default function ZohoSettingsPage() {
     }
   }
 
+  async function handleExchangeCode(e?: React.MouseEvent) {
+    e?.preventDefault();
+    if (!authCode.trim() || !config.client_id || !config.client_secret) {
+      alert("Authorization code, Client ID and Client Secret are required");
+      return;
+    }
+    setExchanging(true);
+    try {
+      const result = await exchangeZohoCode(authCode.trim(), config.client_id, config.client_secret);
+      if (result.refresh_token) {
+        setConfig((c) => ({ ...c, refresh_token: result.refresh_token }));
+        setAuthCode("");
+      }
+    } catch (err) {
+      alert((err as Error).message);
+    } finally {
+      setExchanging(false);
+    }
+  }
+
   return (
     <div className="p-6 max-w-2xl relative">
       <Link href="/settings" className="inline-flex items-center gap-2 text-slate-400 hover:text-white mb-6">
@@ -111,7 +131,7 @@ export default function ZohoSettingsPage() {
               placeholder="1000.xxxxx..."
               className="flex-1 px-3 py-2 rounded-lg bg-slate-900 border border-slate-600 text-white text-sm"
             />
-            <button type="button" onClick={(e) => exchangeCode(e)} disabled={exchanging} className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm">
+            <button type="button" onClick={handleExchangeCode} disabled={exchanging} className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm">
               {exchanging ? "..." : "Token Al"}
             </button>
           </div>

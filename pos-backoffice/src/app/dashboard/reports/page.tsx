@@ -1,10 +1,11 @@
 "use client";
 
+import { Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 
-export default function ReportsDrillDownPage() {
+function ReportsContent() {
   const searchParams = useSearchParams();
   const type = searchParams.get("type") || "sales";
   const method = searchParams.get("method");
@@ -97,5 +98,13 @@ export default function ReportsDrillDownPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function ReportsDrillDownPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-slate-400">Loading...</div>}>
+      <ReportsContent />
+    </Suspense>
   );
 }

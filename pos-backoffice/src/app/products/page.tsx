@@ -36,7 +36,7 @@ export default function ProductsPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Product | null | undefined>(undefined);
-  const [form, setForm] = useState({ name: "", name_arabic: "", name_turkish: "", sku: "", category_id: "", price: 0, tax_rate: 0, printers: [] as string[], modifier_groups: [] as string[], pos_enabled: true });
+  const [form, setForm] = useState({ name: "", name_arabic: "", name_turkish: "", sku: "", category_id: "", price: 0, tax_rate: 0, image_url: "", printers: [] as string[], modifier_groups: [] as string[], pos_enabled: true });
   const [showZohoPicker, setShowZohoPicker] = useState(false);
   const [zohoItems, setZohoItems] = useState<ZohoItem[]>([]);
   const [zohoLoading, setZohoLoading] = useState(false);
@@ -113,11 +113,11 @@ export default function ProductsPage() {
         image_url: p.image_url || "",
         printers: p.printers || [],
         modifier_groups: p.modifier_groups || [],
-        pos_enabled: p.pos_enabled === 1 || p.pos_enabled === true,
+        pos_enabled: Boolean(p.pos_enabled),
       });
     } else {
       setEditing(null);
-      setForm({ name: "", name_arabic: "", name_turkish: "", sku: "", category_id: "", price: 0, tax_rate: 0, printers: [] as string[], modifier_groups: [] as string[], pos_enabled: true });
+      setForm({ name: "", name_arabic: "", name_turkish: "", sku: "", category_id: "", price: 0, tax_rate: 0, image_url: "", printers: [] as string[], modifier_groups: [] as string[], pos_enabled: true });
     }
   }
 
@@ -178,7 +178,7 @@ export default function ProductsPage() {
   }
 
   async function toggleTill(p: Product) {
-    const isOn = p.pos_enabled === 1 || p.pos_enabled === true;
+    const isOn = Boolean(p.pos_enabled);
     try {
       await updateProduct(p.id, {
         name: p.name,
@@ -395,12 +395,12 @@ export default function ProductsPage() {
                   <button
                     type="button"
                     onClick={() => toggleTill(p)}
-                    className={`relative inline-flex h-6 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-slate-900 ${(p.pos_enabled === 1 || p.pos_enabled === true) ? "bg-emerald-600" : "bg-slate-600"}`}
-                    title={(p.pos_enabled === 1 || p.pos_enabled === true) ? "Till'de gösteriliyor (Off yap)" : "Till'de gizli (On yap)"}
+                    className={`relative inline-flex h-6 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-slate-900 ${Boolean(p.pos_enabled) ? "bg-emerald-600" : "bg-slate-600"}`}
+                    title={Boolean(p.pos_enabled) ? "Till'de gösteriliyor (Off yap)" : "Till'de gizli (On yap)"}
                   >
-                    <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition ${(p.pos_enabled === 1 || p.pos_enabled === true) ? "translate-x-4" : "translate-x-0.5"}`} />
+                    <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition ${Boolean(p.pos_enabled) ? "translate-x-4" : "translate-x-0.5"}`} />
                   </button>
-                  <span className="ml-2 text-xs text-slate-500">{(p.pos_enabled === 1 || p.pos_enabled === true) ? "On" : "Off"}</span>
+                  <span className="ml-2 text-xs text-slate-500">{Boolean(p.pos_enabled) ? "On" : "Off"}</span>
                 </td>
                 <td className="p-3" onClick={(e) => e.stopPropagation()}>
                   <button onClick={() => remove(p.id)} className="p-1.5 rounded bg-slate-700 hover:bg-red-600/30 text-red-400">

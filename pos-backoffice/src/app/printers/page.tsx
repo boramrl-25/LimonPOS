@@ -30,7 +30,7 @@ export default function PrintersPage() {
   function openEdit(p?: Printer) {
     if (p) {
       setEditing(p);
-      setForm({ name: p.name, printer_type: p.printer_type, ip_address: p.ip_address, port: p.port, kds_enabled: p.kds_enabled !== false && p.kds_enabled !== 0 });
+      setForm({ name: p.name, printer_type: p.printer_type, ip_address: p.ip_address, port: p.port, kds_enabled: Boolean(p.kds_enabled) });
     } else {
       setEditing(null);
       setForm({ name: "", printer_type: "kitchen", ip_address: "", port: 9100, kds_enabled: true });
@@ -100,8 +100,8 @@ export default function PrintersPage() {
                 <td className="p-4">{p.name}</td>
                 <td className="p-4">{p.printer_type === "kitchen" ? "Kitchen" : "Receipt"}</td>
                 <td className="p-4">
-                  <span className={`px-2 py-0.5 rounded text-xs ${(p.kds_enabled !== false && p.kds_enabled !== 0 && p.printer_type === "kitchen") ? "bg-emerald-600/30 text-emerald-400" : p.printer_type === "kitchen" ? "bg-slate-600/30 text-slate-500" : "bg-slate-700/50 text-slate-500"}`}>
-                    {p.printer_type === "kitchen" ? (p.kds_enabled !== false && p.kds_enabled !== 0 ? "On" : "Off") : "-"}
+                  <span className={`px-2 py-0.5 rounded text-xs ${(Boolean(p.kds_enabled) && p.printer_type === "kitchen") ? "bg-emerald-600/30 text-emerald-400" : p.printer_type === "kitchen" ? "bg-slate-600/30 text-slate-500" : "bg-slate-700/50 text-slate-500"}`}>
+                    {p.printer_type === "kitchen" ? (Boolean(p.kds_enabled) ? "On" : "Off") : "-"}
                   </span>
                 </td>
                 <td className="p-4">{p.ip_address || "-"}</td>
