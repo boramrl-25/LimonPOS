@@ -9,8 +9,10 @@ import com.limonpos.app.data.local.entity.*
 import com.limonpos.app.data.prefs.FloorPlanSectionsPreferences
 import com.limonpos.app.data.prefs.ServerPreferences
 import com.limonpos.app.data.remote.ApiService
+import com.limonpos.app.data.remote.AuthTokenProvider
 import com.limonpos.app.data.remote.dto.*
 import com.limonpos.app.util.NetworkMonitor
+import com.limonpos.app.util.SessionManager
 import kotlinx.coroutines.flow.Flow
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
@@ -34,9 +36,18 @@ class ApiSyncRepository @Inject constructor(
     private val voidRequestDao: VoidRequestDao,
     private val transferLogDao: TransferLogDao,
     private val floorPlanSectionsPreferences: FloorPlanSectionsPreferences,
-    private val serverPreferences: ServerPreferences
+    private val serverPreferences: ServerPreferences,
+    private val sessionManager: SessionManager,
+    private val authTokenProvider: AuthTokenProvider
 ) {
     suspend fun isOnline(): Boolean = networkMonitor.isOnline.first()
+
+    /** Uygulama yeniden başlayınca token bellekten silinir; SessionManager'daki PIN ile geri yükle ki sync 401 almasın. */
+    private suspend fun restoreAuthTokenIfNeeded() {
+        if (!authTokenProvider.getToken().isNullOrBlank()) return
+        val pin = sessionManager.getUserPin()
+        if (!pin.isNullOrBlank()) authTokenProvider.setToken(pin)
+    }
 
     /** Clears all sales data from local database (orders, items, payments, voids, transfer logs) and resets tables. */
     suspend fun clearLocalSales() {
@@ -52,6 +63,7 @@ class ApiSyncRepository @Inject constructor(
     /** Full bidirectional sync: orders, tables, catalog, users, printers, modifiers, void requests. */
     suspend fun syncFromApi(): Boolean {
         if (!isOnline()) return false
+        restoreAuthTokenIfNeeded()
         return try {
             // Heartbeat: web’de “POS Cihazları” sayfasında bu cihazı çevrimiçi göster
             sendHeartbeat()
@@ -80,6 +92,7 @@ class ApiSyncRepository @Inject constructor(
     /** Fast catalog sync for manual refresh: only categories + products (+ printers/users if needed). */
     suspend fun syncCatalog(): Boolean {
         if (!isOnline()) return false
+        restoreAuthTokenIfNeeded()
         return try {
             syncCategories()
             syncProducts()
@@ -611,6 +624,7 @@ class ApiSyncRepository @Inject constructor(
 
     suspend fun pushVoidRequest(entity: VoidRequestEntity): Boolean {
         if (!isOnline()) return false
+        restoreAuthTokenIfNeeded()
         return try {
             val req = CreateVoidRequestDto(
                 id = entity.id,
@@ -633,6 +647,7 @@ class ApiSyncRepository @Inject constructor(
 
     suspend fun pushVoidRequestUpdate(entity: VoidRequestEntity): Boolean {
         if (!isOnline()) return false
+        restoreAuthTokenIfNeeded()
         return try {
             val dto = VoidRequestDto(
                 id = entity.id,
@@ -718,6 +733,7 @@ class ApiSyncRepository @Inject constructor(
 
     suspend fun pushAddOrderItem(orderId: String, item: OrderItemEntity): Boolean {
         if (!isOnline()) return false
+        restoreAuthTokenIfNeeded()
         return try {
             val req = AddOrderItemRequest(
                 productId = item.productId,
@@ -765,6 +781,7 @@ class ApiSyncRepository @Inject constructor(
 
     suspend fun pushSendToKitchen(orderId: String): Boolean {
         if (!isOnline()) return false
+        restoreAuthTokenIfNeeded()
         return try {
             val response = apiService.sendOrderToKitchen(orderId)
             response.isSuccessful
@@ -780,6 +797,7 @@ class ApiSyncRepository @Inject constructor(
 
     suspend fun fetchOrderFromApi(orderId: String): Boolean {
         if (!isOnline()) return false
+        restoreAuthTokenIfNeeded()
         return try {
             val response = apiService.getOrder(orderId)
             if (!response.isSuccessful) return false
@@ -834,6 +852,7 @@ class ApiSyncRepository @Inject constructor(
 
     private suspend fun pushVoid(v: VoidLogEntity): Boolean {
         if (!isOnline()) return false
+        restoreAuthTokenIfNeeded()
         return try {
             val req = CreateVoidRequest(
                 type = v.type,
@@ -876,6 +895,7 @@ class ApiSyncRepository @Inject constructor(
 
     suspend fun pushCloseTable(tableId: String): Boolean {
         if (!isOnline()) return false
+        restoreAuthTokenIfNeeded()
         return try {
             val response = apiService.closeTable(tableId)
             response.isSuccessful
