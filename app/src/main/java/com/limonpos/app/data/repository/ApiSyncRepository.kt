@@ -43,6 +43,43 @@ class ApiSyncRepository @Inject constructor(
 ) {
     suspend fun isOnline(): Boolean = networkMonitor.isOnline.first()
 
+    private var cachedOverdueMinutes: Int? = null
+    private var cachedOverdueMinutesAt: Long = 0L
+    private val OVERDUE_CACHE_MS = 5 * 60 * 1000L
+
+    /** Web’deki Ayarlar’da tanımlı “masaya gitmeyen ürün uyarı süresi” (dakika). Offline veya hata durumunda 10. */
+    suspend fun getOverdueUndeliveredMinutes(): Int {
+        val now = System.currentTimeMillis()
+        if (cachedOverdueMinutes != null && (now - cachedOverdueMinutesAt) < OVERDUE_CACHE_MS) {
+            return cachedOverdueMinutes!!
+        }
+        if (!isOnline()) {
+            cachedOverdueMinutes = 10
+            cachedOverdueMinutesAt = now
+            return 10
+        }
+        restoreAuthTokenIfNeeded()
+        return try {
+            val res = apiService.getSettings()
+            if (res.isSuccessful) {
+                val body = res.body()
+                val minutes = (body?.overdueUndeliveredMinutes ?: 10).coerceIn(1, 1440)
+                cachedOverdueMinutes = minutes
+                cachedOverdueMinutesAt = now
+                minutes
+            } else {
+                cachedOverdueMinutes = 10
+                cachedOverdueMinutesAt = now
+                10
+            }
+        } catch (e: Exception) {
+            Log.e("ApiSync", "getSettings error: ${e.message}")
+            cachedOverdueMinutes = 10
+            cachedOverdueMinutesAt = now
+            10
+        }
+    }
+
     /** Uygulama yeniden başlayınca token bellekten silinir; SessionManager'daki PIN ile geri yükle ki sync 401 almasın. */
     private suspend fun restoreAuthTokenIfNeeded() {
         if (!authTokenProvider.getToken().isNullOrBlank()) return

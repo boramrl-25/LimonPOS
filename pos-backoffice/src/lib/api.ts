@@ -295,13 +295,13 @@ export async function deletePaymentMethod(id: string) {
   if (!res.ok) throw new Error("Failed to delete payment method");
 }
 
-export async function getSettings(): Promise<{ timezone_offset_minutes: number }> {
+export async function getSettings(): Promise<{ timezone_offset_minutes: number; overdue_undelivered_minutes: number }> {
   const res = await fetchWithTimeout(`${API_URL}/settings`, { headers: headers() });
   if (!res.ok) throw new Error("Failed to fetch settings");
   return res.json();
 }
 
-export async function updateSettings(settings: { timezone_offset_minutes?: number }) {
+export async function updateSettings(settings: { timezone_offset_minutes?: number; overdue_undelivered_minutes?: number }) {
   const res = await fetchWithTimeout(`${API_URL}/settings`, {
     method: "PATCH",
     headers: headers(),

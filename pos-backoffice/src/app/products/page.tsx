@@ -21,6 +21,8 @@ type Product = {
   modifier_groups: string[];
   active: boolean;
   pos_enabled?: boolean;
+  /** Masaya gitmeyen ürün uyarı süresi (dakika). Varsa kategorideki/ayarlardaki süre yok sayılır. */
+  overdue_undelivered_minutes?: number | null;
   /** API'dan gelen Sellable kolonu (true/false/string vb.) */
   sellable_from_api?: unknown;
   /** Zoho'da artık yok – silinecek önerisi; onay verilene kadar satışta kalır */
@@ -40,7 +42,7 @@ export default function ProductsPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Product | null | undefined>(undefined);
-  const [form, setForm] = useState({ name: "", name_arabic: "", name_turkish: "", sku: "", category_id: "", price: 0, tax_rate: 0, image_url: "", printers: [] as string[], modifier_groups: [] as string[], pos_enabled: true });
+  const [form, setForm] = useState({ name: "", name_arabic: "", name_turkish: "", sku: "", category_id: "", price: 0, tax_rate: 0, image_url: "", printers: [] as string[], modifier_groups: [] as string[], pos_enabled: true, overdue_undelivered_minutes: "" as string | number });
   const [showZohoPicker, setShowZohoPicker] = useState(false);
   const [zohoItems, setZohoItems] = useState<ZohoItem[]>([]);
   const [zohoLoading, setZohoLoading] = useState(false);
@@ -128,6 +130,7 @@ export default function ProductsPage() {
   function openEdit(p?: Product) {
     if (p) {
       setEditing(p);
+      const od = p.overdue_undelivered_minutes != null && p.overdue_undelivered_minutes !== "" ? String(p.overdue_undelivered_minutes) : "";
       setForm({
         name: p.name,
         name_arabic: p.name_arabic || "",
@@ -140,10 +143,11 @@ export default function ProductsPage() {
         printers: p.printers || [],
         modifier_groups: p.modifier_groups || [],
         pos_enabled: Boolean(p.pos_enabled),
+        overdue_undelivered_minutes: od,
       });
     } else {
       setEditing(null);
-      setForm({ name: "", name_arabic: "", name_turkish: "", sku: "", category_id: "", price: 0, tax_rate: 0, image_url: "", printers: [] as string[], modifier_groups: [] as string[], pos_enabled: true });
+      setForm({ name: "", name_arabic: "", name_turkish: "", sku: "", category_id: "", price: 0, tax_rate: 0, image_url: "", printers: [] as string[], modifier_groups: [] as string[], pos_enabled: true, overdue_undelivered_minutes: "" });
     }
   }
 
@@ -180,6 +184,7 @@ export default function ProductsPage() {
         printers: form.printers,
         modifier_groups: form.modifier_groups,
         pos_enabled: form.pos_enabled,
+        overdue_undelivered_minutes: form.overdue_undelivered_minutes === "" ? undefined : (Number(form.overdue_undelivered_minutes) || undefined),
       };
       if (editing) {
         await updateProduct(editing.id, payload);
@@ -912,6 +917,19 @@ export default function ProductsPage() {
                   onChange={(e) => setForm((f) => ({ ...f, tax_rate: parseFloat(e.target.value) || 0 }))}
                   className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white"
                 />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-400 mb-1">Masaya gitmeyen ürün uyarı süresi (dakika)</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={1440}
+                  placeholder="Boş = kategori / varsayılan"
+                  value={form.overdue_undelivered_minutes === "" ? "" : form.overdue_undelivered_minutes}
+                  onChange={(e) => setForm((f) => ({ ...f, overdue_undelivered_minutes: e.target.value === "" ? "" : (parseInt(e.target.value, 10) || 0) }))}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white"
+                />
+                <p className="text-slate-500 text-xs mt-1">Varsa kategorideki ve varsayılan süre yok sayılır; sadece bu ürün için bu dakika kullanılır. Boş = kategorideki süre, o da yoksa Ayarlar’daki varsayılan (10 dk).</p>
               </div>
               <div>
                 <label className="block text-sm text-slate-400 mb-1">Printers</label>

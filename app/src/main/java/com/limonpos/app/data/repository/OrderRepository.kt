@@ -150,6 +150,9 @@ class OrderRepository @Inject constructor(
             if (order.status == "paid") continue
             val table = tableRepository.getTableById(order.tableId)
             if (table == null || table.status == "free") continue
+            // Ödeme alındıysa (toplam ödeme >= sipariş tutarı) uyarı gösterme
+            val totalPaid = paymentDao.getPaymentsSumByOrder(order.id)
+            if (totalPaid >= order.total - 0.01) continue
             val items = orderItemDao.getOrderItems(order.id).first()
             val overdue = items.filter { it.sentAt != null && it.deliveredAt == null && it.sentAt < cutoff }
             if (overdue.isNotEmpty()) {

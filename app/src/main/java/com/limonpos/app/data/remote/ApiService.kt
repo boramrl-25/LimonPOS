@@ -161,5 +161,8 @@ interface ApiService {
     @POST("devices/heartbeat")
     suspend fun sendHeartbeat(@Body request: HeartbeatRequest): Response<Unit>
 
+    @GET("settings")
+    suspend fun getSettings(): Response<SettingsDto>
+
     /** POS cihazını web’de “çevrimiçi” göstermek için heartbeat (senkron sırasında çağrılır). */
 }

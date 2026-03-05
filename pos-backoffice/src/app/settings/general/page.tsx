@@ -21,6 +21,7 @@ const TIMEZONE_OPTIONS = [
 export default function GeneralSettingsPage() {
   const [timezoneOffsetMinutes, setTimezoneOffsetMinutes] = useState(180);
   const [manualOffset, setManualOffset] = useState("");
+  const [overdueUndeliveredMinutes, setOverdueUndeliveredMinutes] = useState(10);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -33,6 +34,7 @@ export default function GeneralSettingsPage() {
     try {
       const s = await getSettings();
       setTimezoneOffsetMinutes(s.timezone_offset_minutes ?? 0);
+      setOverdueUndeliveredMinutes(Math.min(1440, Math.max(1, s.overdue_undelivered_minutes ?? 10)));
       setManualOffset("");
     } catch {
       window.location.href = "/login";
@@ -51,8 +53,10 @@ export default function GeneralSettingsPage() {
         alert("Saat dilimi -720 ile 840 dakika arasında olmalı (GMT-12 ile GMT+14).");
         return;
       }
-      await updateSettings({ timezone_offset_minutes: offset });
+      const overdue = Math.min(1440, Math.max(1, overdueUndeliveredMinutes));
+      await updateSettings({ timezone_offset_minutes: offset, overdue_undelivered_minutes: overdue });
       setTimezoneOffsetMinutes(offset);
+      setOverdueUndeliveredMinutes(overdue);
       setManualOffset("");
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
@@ -122,6 +126,32 @@ export default function GeneralSettingsPage() {
             UTC&apos;den fark: dakika cinsinden (örn. 180 = GMT+3, -300 = GMT-5). Boş bırakırsanız yukarıdaki seçenek kullanılır.
           </p>
 
+          <button
+            type="button"
+            onClick={save}
+            disabled={saving}
+            className="px-4 py-2 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 rounded-lg text-white font-medium"
+          >
+            {saving ? "Kaydediliyor..." : "Kaydet"}
+          </button>
+          {saved && <span className="ml-3 text-green-400">Kaydedildi.</span>}
+        </div>
+
+        <div className="rounded-xl bg-slate-800/50 border border-slate-700 p-6 mt-6">
+          <h2 className="text-lg font-semibold text-white mb-2">Masaya gitmeyen ürün uyarısı (varsayılan süre)</h2>
+          <p className="text-slate-400 text-sm mb-4">
+            Mutfağa gidip belirtilen süre (dakika) içinde masaya ulaşmayan ürünler için uygulama uyarı verir. Ürün veya kategoride ayrı süre tanımlıysa o kullanılır; yoksa bu varsayılan süre geçerli olur.
+          </p>
+          <label className="block text-sm text-slate-300 mb-2">Varsayılan süre (dakika)</label>
+          <input
+            type="number"
+            min={1}
+            max={1440}
+            value={overdueUndeliveredMinutes}
+            onChange={(e) => setOverdueUndeliveredMinutes(Math.min(1440, Math.max(1, parseInt(e.target.value, 10) || 10)))}
+            className="w-full max-w-[120px] bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white mb-4"
+          />
+          <p className="text-slate-500 text-xs mb-4">1–1440 dakika (örn. 10 = 10 dakika sonra uyarı)</p>
           <button
             type="button"
             onClick={save}

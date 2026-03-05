@@ -143,6 +143,9 @@ async function ensureData() {
     db.data.settings = db.data.settings || {};
     db.data.settings.timezone_offset_minutes = (db.data.settings.timezone_offset_minutes ?? 0) | 0;
   }
+  if (typeof db.data.settings.overdue_undelivered_minutes !== "number") {
+    db.data.settings.overdue_undelivered_minutes = Math.min(1440, Math.max(1, (db.data.settings.overdue_undelivered_minutes ?? 10) | 0));
+  }
   if (db.data.tables.length === 0) {
     const defaultTable = (i) => ({
       id: `main-${i + 1}`,
@@ -430,7 +433,7 @@ app.post("/api/categories", authMiddleware, async (req, res) => {
   await ensureData();
   const id = req.body.id || `cat_${uuid().slice(0, 8)}`;
   const body = req.body;
-  const cat = { id, name: body.name || "Category", color: body.color || "#84CC16", sort_order: body.sort_order ?? 0, active: body.active !== false ? 1 : 0, show_till: body.show_till ? 1 : 0, modifier_groups: JSON.stringify(body.modifier_groups || []), printers: JSON.stringify(body.printers || []) };
+  const cat = { id, name: body.name || "Category", color: body.color || "#84CC16", sort_order: body.sort_order ?? 0, active: body.active !== false ? 1 : 0, show_till: body.show_till ? 1 : 0, modifier_groups: JSON.stringify(body.modifier_groups || []), printers: JSON.stringify(body.printers || []), overdue_undelivered_minutes: body.overdue_undelivered_minutes != null && body.overdue_undelivered_minutes !== "" ? Math.min(1440, Math.max(1, Number(body.overdue_undelivered_minutes) || 10)) : null };
   db.data.categories = db.data.categories.filter((c) => c.id !== id);
   db.data.categories.push(cat);
   await db.write();
@@ -442,7 +445,7 @@ app.put("/api/categories/:id", authMiddleware, async (req, res) => {
   const idx = db.data.categories.findIndex((c) => c.id === req.params.id);
   if (idx < 0) return res.status(404).json({ error: "Not found" });
   const body = req.body;
-  db.data.categories[idx] = { ...db.data.categories[idx], name: body.name, color: body.color || "#84CC16", sort_order: body.sort_order ?? 0, active: body.active !== false ? 1 : 0, show_till: body.show_till ? 1 : 0, modifier_groups: JSON.stringify(body.modifier_groups || []), printers: JSON.stringify(body.printers || []) };
+  db.data.categories[idx] = { ...db.data.categories[idx], name: body.name, color: body.color || "#84CC16", sort_order: body.sort_order ?? 0, active: body.active !== false ? 1 : 0, show_till: body.show_till ? 1 : 0, modifier_groups: JSON.stringify(body.modifier_groups || []), printers: JSON.stringify(body.printers || []), overdue_undelivered_minutes: body.overdue_undelivered_minutes != null && body.overdue_undelivered_minutes !== "" ? Math.min(1440, Math.max(1, Number(body.overdue_undelivered_minutes) || 10)) : (db.data.categories[idx].overdue_undelivered_minutes ?? null) };
   await db.write();
   res.json({ ...db.data.categories[idx], modifier_groups: JSON.parse(db.data.categories[idx].modifier_groups || "[]"), printers: JSON.parse(db.data.categories[idx].printers || "[]") });
 });
@@ -477,7 +480,7 @@ app.post("/api/products", authMiddleware, async (req, res) => {
   await ensureData();
   const id = req.body.id || `p_${uuid().slice(0, 8)}`;
   const body = req.body;
-  const prod = { id, name: body.name || "Product", name_arabic: body.name_arabic || "", name_turkish: body.name_turkish || "", sku: body.sku || "", category_id: body.category_id || null, price: body.price ?? 0, tax_rate: body.tax_rate ?? 0, image_url: body.image_url || "", printers: JSON.stringify(body.printers || []), modifier_groups: JSON.stringify(body.modifier_groups || []), active: body.active !== false ? 1 : 0, pos_enabled: body.pos_enabled !== false ? 1 : 0, sellable: true };
+  const prod = { id, name: body.name || "Product", name_arabic: body.name_arabic || "", name_turkish: body.name_turkish || "", sku: body.sku || "", category_id: body.category_id || null, price: body.price ?? 0, tax_rate: body.tax_rate ?? 0, image_url: body.image_url || "", printers: JSON.stringify(body.printers || []), modifier_groups: JSON.stringify(body.modifier_groups || []), active: body.active !== false ? 1 : 0, pos_enabled: body.pos_enabled !== false ? 1 : 0, sellable: true, overdue_undelivered_minutes: body.overdue_undelivered_minutes != null && body.overdue_undelivered_minutes !== "" ? Math.min(1440, Math.max(1, Number(body.overdue_undelivered_minutes) || 10)) : null };
   db.data.products = db.data.products.filter((p) => p.id !== id);
   db.data.products.push(prod);
   await db.write();
@@ -490,7 +493,7 @@ app.put("/api/products/:id", authMiddleware, async (req, res) => {
   const idx = db.data.products.findIndex((p) => p.id === req.params.id);
   if (idx < 0) return res.status(404).json({ error: "Not found" });
   const body = req.body;
-  db.data.products[idx] = { ...db.data.products[idx], name: body.name, name_arabic: body.name_arabic || "", name_turkish: body.name_turkish || "", sku: body.sku || "", category_id: body.category_id || null, price: body.price ?? 0, tax_rate: body.tax_rate ?? 0, image_url: body.image_url ?? db.data.products[idx].image_url ?? "", printers: JSON.stringify(body.printers || []), modifier_groups: JSON.stringify(body.modifier_groups || []), active: body.active !== false ? 1 : 0, pos_enabled: body.pos_enabled !== false ? 1 : 0 };
+  db.data.products[idx] = { ...db.data.products[idx], name: body.name, name_arabic: body.name_arabic || "", name_turkish: body.name_turkish || "", sku: body.sku || "", category_id: body.category_id || null, price: body.price ?? 0, tax_rate: body.tax_rate ?? 0, image_url: body.image_url ?? db.data.products[idx].image_url ?? "", printers: JSON.stringify(body.printers || []), modifier_groups: JSON.stringify(body.modifier_groups || []), active: body.active !== false ? 1 : 0, pos_enabled: body.pos_enabled !== false ? 1 : 0, overdue_undelivered_minutes: body.overdue_undelivered_minutes != null && body.overdue_undelivered_minutes !== "" ? Math.min(1440, Math.max(1, Number(body.overdue_undelivered_minutes) || 10)) : (db.data.products[idx].overdue_undelivered_minutes ?? null) };
   await db.write();
   const cats = Object.fromEntries((db.data.categories || []).map((r) => [r.id, r.name]));
   res.json({ ...db.data.products[idx], category: cats[db.data.products[idx].category_id] || "", printers: JSON.parse(db.data.products[idx].printers || "[]"), modifier_groups: JSON.parse(db.data.products[idx].modifier_groups || "[]") });
@@ -666,7 +669,10 @@ app.delete("/api/modifier-groups/:id", authMiddleware, async (req, res) => {
 app.get("/api/settings", authMiddleware, async (req, res) => {
   await ensureData();
   const settings = db.data.settings || {};
-  res.json({ timezone_offset_minutes: settings.timezone_offset_minutes ?? 0 });
+  res.json({
+    timezone_offset_minutes: settings.timezone_offset_minutes ?? 0,
+    overdue_undelivered_minutes: Math.min(1440, Math.max(1, (settings.overdue_undelivered_minutes ?? 10) | 0)),
+  });
 });
 
 app.patch("/api/settings", authMiddleware, async (req, res) => {
@@ -677,8 +683,15 @@ app.patch("/api/settings", authMiddleware, async (req, res) => {
     if (db.data.settings.timezone_offset_minutes < -720) db.data.settings.timezone_offset_minutes = -720;
     if (db.data.settings.timezone_offset_minutes > 840) db.data.settings.timezone_offset_minutes = 840;
   }
+  if (typeof req.body.overdue_undelivered_minutes === "number") {
+    const v = Math.round(req.body.overdue_undelivered_minutes);
+    db.data.settings.overdue_undelivered_minutes = Math.min(1440, Math.max(1, v));
+  }
   await db.write();
-  res.json({ timezone_offset_minutes: db.data.settings.timezone_offset_minutes ?? 0 });
+  res.json({
+    timezone_offset_minutes: db.data.settings.timezone_offset_minutes ?? 0,
+    overdue_undelivered_minutes: Math.min(1440, Math.max(1, (db.data.settings.overdue_undelivered_minutes ?? 10) | 0)),
+  });
 });
 
 // End of Day (Günü Kapat) – gece 12 sonrası satışlar için; açık masalar varsa uyarı veya kapatıp ödeme alınmış say

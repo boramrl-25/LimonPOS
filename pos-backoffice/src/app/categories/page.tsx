@@ -6,7 +6,7 @@ import { ArrowLeft, Plus, Pencil, Trash2, ChevronUp, ChevronDown, GripVertical, 
 import * as XLSX from "xlsx";
 import { getCategories, getModifierGroups, getPrinters, createCategory, updateCategory, deleteCategory } from "@/lib/api";
 
-type Category = { id: string; name: string; color: string; sort_order: number; show_till?: boolean | number; modifier_groups?: string[]; printers?: string[] };
+type Category = { id: string; name: string; color: string; sort_order: number; show_till?: boolean | number; modifier_groups?: string[]; printers?: string[]; overdue_undelivered_minutes?: number | null };
 
 export default function CategoriesPage() {
   const [categories, setCategories] = useState<Category[]>([]);
@@ -14,7 +14,7 @@ export default function CategoriesPage() {
   const [printers, setPrinters] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Category | null | undefined>(undefined);
-  const [form, setForm] = useState({ name: "", color: "#84CC16", sort_order: 0, show_till: false, modifier_groups: [] as string[], printers: [] as string[] });
+  const [form, setForm] = useState({ name: "", color: "#84CC16", sort_order: 0, show_till: false, modifier_groups: [] as string[], printers: [] as string[], overdue_undelivered_minutes: "" as string | number });
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
@@ -42,10 +42,11 @@ export default function CategoriesPage() {
       setEditing(c);
       const mg = Array.isArray(c.modifier_groups) ? c.modifier_groups : (typeof c.modifier_groups === "string" ? (() => { try { return JSON.parse(c.modifier_groups as string); } catch { return []; } })() : []);
       const pr = Array.isArray(c.printers) ? c.printers : (typeof c.printers === "string" ? (() => { try { return JSON.parse(c.printers as string); } catch { return []; } })() : []);
-      setForm({ name: c.name, color: c.color || "#84CC16", sort_order: c.sort_order ?? 0, show_till: !!(c.show_till ?? 0), modifier_groups: mg, printers: pr });
+      const od = c.overdue_undelivered_minutes != null && c.overdue_undelivered_minutes !== "" ? String(c.overdue_undelivered_minutes) : "";
+      setForm({ name: c.name, color: c.color || "#84CC16", sort_order: c.sort_order ?? 0, show_till: !!(c.show_till ?? 0), modifier_groups: mg, printers: pr, overdue_undelivered_minutes: od });
     } else {
       setEditing(null);
-      setForm({ name: "", color: "#84CC16", sort_order: 0, show_till: false, modifier_groups: [], printers: [] });
+      setForm({ name: "", color: "#84CC16", sort_order: 0, show_till: false, modifier_groups: [], printers: [], overdue_undelivered_minutes: "" });
     }
   }
 
@@ -61,6 +62,7 @@ export default function CategoriesPage() {
       active: true,
       modifier_groups: Array.isArray(c.modifier_groups) ? c.modifier_groups : [],
       printers: Array.isArray(c.printers) ? c.printers : [],
+      overdue_undelivered_minutes: c.overdue_undelivered_minutes ?? undefined,
     };
     try {
       await updateCategory(c.id, payload);
@@ -94,6 +96,7 @@ export default function CategoriesPage() {
         active: true,
         modifier_groups: Array.isArray(form.modifier_groups) ? form.modifier_groups : [],
         printers: Array.isArray(form.printers) ? form.printers : [],
+        overdue_undelivered_minutes: form.overdue_undelivered_minutes === "" ? undefined : (Number(form.overdue_undelivered_minutes) || undefined),
       };
       if (editing) {
         await updateCategory(editing.id, payload);
@@ -242,6 +245,7 @@ export default function CategoriesPage() {
           active: true,
           modifier_groups: existing?.modifier_groups ?? [],
           printers: existing?.printers ?? [],
+          overdue_undelivered_minutes: existing?.overdue_undelivered_minutes ?? undefined,
         };
 
         if (existing) {
@@ -424,6 +428,19 @@ export default function CategoriesPage() {
                 >
                   {form.show_till ? "On" : "Off"}
                 </button>
+              </div>
+              <div>
+                <label className="block text-sm text-slate-400 mb-1">Masaya gitmeyen ürün uyarı süresi (dakika)</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={1440}
+                  placeholder="Boş = varsayılan (Ayarlar)"
+                  value={form.overdue_undelivered_minutes === "" ? "" : form.overdue_undelivered_minutes}
+                  onChange={(e) => setForm((f) => ({ ...f, overdue_undelivered_minutes: e.target.value === "" ? "" : (parseInt(e.target.value, 10) || 0) }))}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white"
+                />
+                <p className="text-slate-500 text-xs mt-1">Bu kategorideki ürünler için: mutfağa gidip bu dakika içinde masaya ulaşmazsa uyarı. Boş bırakırsanız Ayarlar’daki varsayılan süre kullanılır. Ürün kendi süresine sahipse ürün süresi geçerli olur.</p>
               </div>
               <div>
                 <label className="block text-sm text-slate-400 mb-1">Printers</label>

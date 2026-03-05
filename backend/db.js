@@ -60,7 +60,7 @@ const defaultData = {
   devices: [],
   setup_complete: false,
   audit_log: [],
-  settings: { timezone_offset_minutes: 0 },
+  settings: { timezone_offset_minutes: 0, overdue_undelivered_minutes: 10 },
   eod_logs: [],
 };
 

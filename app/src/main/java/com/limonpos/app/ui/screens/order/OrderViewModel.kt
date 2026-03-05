@@ -488,7 +488,8 @@ class OrderViewModel @Inject constructor(
     private fun startOverdueCheckLoop() {
         viewModelScope.launch {
             while (true) {
-                val list = orderRepository.getOverdueUndelivered(10 * 60 * 1000L)
+                val minutes = apiSyncRepository.getOverdueUndeliveredMinutes()
+                val list = orderRepository.getOverdueUndelivered(minutes * 60 * 1000L)
                 if (list.isNotEmpty()) _overdueWarning.value = list
                 delay(60 * 1000L) // re-check every 1 minute
             }
