@@ -80,7 +80,10 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (ready) loadSummary();
+    if (!ready) return;
+    loadSummary();
+    const id = setInterval(loadSummary, 15_000);
+    return () => clearInterval(id);
   }, [ready, loadSummary]);
 
   if (!ready) {

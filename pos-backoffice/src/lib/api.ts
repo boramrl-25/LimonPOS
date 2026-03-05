@@ -323,6 +323,21 @@ export async function getDailySales() {
   return res.json();
 }
 
+export type DeviceInfo = {
+  id: string;
+  name: string;
+  app_version: string | null;
+  last_seen: number;
+  user_id: string | null;
+  online: boolean;
+};
+
+export async function getDevices(): Promise<DeviceInfo[]> {
+  const res = await fetchWithTimeout(`${API_URL}/devices`, { headers: headers() });
+  if (!res.ok) throw new Error("Failed to fetch devices");
+  return res.json();
+}
+
 export type EodStatus = {
   lastEod: { ran_at: number; user_name: string; tables_closed_count: number; orders_closed_count: number } | null;
   openTablesNow: Array<{ table_id: string; table_number: string | number; order_id: string; order_total: number }>;

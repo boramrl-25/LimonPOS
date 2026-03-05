@@ -19,3 +19,9 @@ data class CashDrawerVerifyResponse(
     @SerializedName("success") val success: Boolean,
     @SerializedName("message") val message: String?
 )
+
+data class HeartbeatRequest(
+    @SerializedName("device_id") val deviceId: String,
+    @SerializedName("device_name") val deviceName: String? = null,
+    @SerializedName("app_version") val appVersion: String? = null
+)

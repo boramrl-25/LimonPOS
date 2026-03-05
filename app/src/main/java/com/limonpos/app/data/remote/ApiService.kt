@@ -149,5 +149,8 @@ interface ApiService {
     @PATCH("void-requests/{id}")
     suspend fun updateVoidRequest(@Path("id") id: String, @Body request: VoidRequestDto): Response<VoidRequestDto>
 
+    @POST("devices/heartbeat")
+    suspend fun sendHeartbeat(@Body request: HeartbeatRequest): Response<Unit>
+
     /** POS cihazını web’de “çevrimiçi” göstermek için heartbeat (senkron sırasında çağrılır). */
 }

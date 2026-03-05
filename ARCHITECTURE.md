@@ -35,6 +35,9 @@ Bu dokümanda: backend teknolojisi, veritabanı, Android–web senkronizasyonu, 
 - **Senkronizasyon mantığı:**
   - App çevrimiçi olduğunda periyodik (örn. 30 sn) **tam senkron**: önce açık siparişleri/masaları API’ye **push**, sonra tablolar/siparişler/katalog (categories, products, users, printers, modifier groups) **pull**.
   - Web tarafı sadece API’den veri çeker/günceller; app ile doğrudan bağlantı yok, her ikisi de backend üzerinden senkron olur.
+- **Yakın gerçek zamanlı güncelleme (WebSocket yok, polling):**
+  - **Web:** Ana sayfa ve Dashboard ~8–15 sn’de bir, Floor Plan 5 sn’de bir tablolar/istatistikler yenilenir. Böylece Android’de açılan masa veya alınan sipariş kısa sürede görünür.
+  - **Android:** Floor Plan ekranı açıkken her ~25 sn’de tam senkron çalışır; Web’den yapılan masa/sipariş değişiklikleri bu ekranda güncellenir.
 - **Kimlik doğrulama:** API’de `Authorization: Bearer <token>`; web’de PIN ile giriş sonrası token saklanır; app’te kullanıcı PIN’i ile benzer şekilde token/oturum kullanılır.
 
 ---

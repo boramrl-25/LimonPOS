@@ -39,8 +39,11 @@ function getTodaySalesSummary() {
   const payments = db.data.payments || [];
   const voidLogs = db.data.void_logs || [];
   const todayTs = getTodayStartTimestamp();
+  const todayVoidsForExclusion = voidLogs.filter((v) => v.created_at >= todayTs && (v.type === "refund_full" || v.type === "recalled_void"));
+  const fullyVoidedOrderIds = new Set(todayVoidsForExclusion.map((v) => v.order_id).filter(Boolean));
   const paidToday = orders.filter((o) => {
     if (o.status !== "paid") return false;
+    if (fullyVoidedOrderIds.has(o.id)) return false;
     const paidAt = o.paid_at ?? o.updated_at ?? o.created_at ?? 0;
     return paidAt >= todayTs;
   });
@@ -266,6 +269,45 @@ app.post("/api/setup/complete", authMiddleware, async (req, res) => {
   db.data.setup_complete = true;
   await db.write();
   res.json({ setupComplete: true });
+});
+
+/** Cihaz heartbeat: Android senkron sırasında çağırır; web "çevrimiçi" listesi için last_seen güncellenir. */
+const HEARTBEAT_TIMEOUT_MS = 3 * 60 * 1000; // 3 dakika içinde heartbeat alan cihaz çevrimiçi sayılır
+app.post("/api/devices/heartbeat", authMiddleware, async (req, res) => {
+  await ensureData();
+  const body = req.body || {};
+  const deviceId = String(body.device_id || body.deviceId || "").trim();
+  if (!deviceId) return res.status(400).json({ error: "device_id required" });
+  const now = Date.now();
+  const device = {
+    id: deviceId,
+    name: body.device_name || body.deviceName || "Android POS",
+    app_version: body.app_version || body.appVersion || null,
+    last_seen: now,
+    user_id: req.user?.id || null,
+  };
+  const idx = db.data.devices.findIndex((d) => d.id === deviceId);
+  if (idx >= 0) {
+    db.data.devices[idx] = { ...db.data.devices[idx], ...device };
+  } else {
+    db.data.devices.push(device);
+  }
+  await db.write();
+  res.json({ ok: true, last_seen: now });
+});
+
+app.get("/api/devices", authMiddleware, async (req, res) => {
+  await ensureData();
+  const now = Date.now();
+  const list = (db.data.devices || []).map((d) => ({
+    id: d.id,
+    name: d.name || "POS",
+    app_version: d.app_version || null,
+    last_seen: d.last_seen || 0,
+    user_id: d.user_id || null,
+    online: (now - (d.last_seen || 0)) <= HEARTBEAT_TIMEOUT_MS,
+  }));
+  res.json(list);
 });
 
 // Users
@@ -791,10 +833,20 @@ app.post("/api/tables/:id/open", authMiddleware, async (req, res) => {
   const guestCount = parseInt(req.query.guest_count) || 1;
   const waiterId = req.query.waiter_id || req.user?.id;
   const waiter = db.data.users.find((u) => u.id === waiterId);
-  const orderId = `ord_${uuid().slice(0, 12)}`;
-  const now = Date.now();
   const tbl = db.data.tables.find((t) => t.id === id);
   if (!tbl) return res.status(404).json({ error: "Not found" });
+  const existingOrderId = tbl.current_order_id || null;
+  const existingOrder = existingOrderId ? db.data.orders.find((o) => o.id === existingOrderId) : null;
+  if (existingOrder && existingOrder.status !== "paid") {
+    return res.status(409).json({
+      error: "table_already_occupied",
+      message: "Masa zaten açık; mevcut siparişi kullanın.",
+      current_order_id: existingOrderId,
+      table: { ...tbl, number: typeof tbl.number === "string" ? parseInt(tbl.number, 10) || 0 : (tbl.number ?? 0) },
+    });
+  }
+  const orderId = `ord_${uuid().slice(0, 12)}`;
+  const now = Date.now();
   db.data.orders.push({ id: orderId, table_id: id, table_number: String(tbl.number), waiter_id: waiterId, waiter_name: waiter?.name || "Waiter", status: "open", subtotal: 0, tax_amount: 0, discount_percent: 0, discount_amount: 0, total: 0, created_at: now, paid_at: null, zoho_receipt_id: null });
   const tidx = db.data.tables.findIndex((t) => t.id === id);
   db.data.tables[tidx] = { ...db.data.tables[tidx], status: "occupied", current_order_id: orderId, guest_count: guestCount, waiter_id: waiterId, waiter_name: waiter?.name || "Waiter", opened_at: new Date(now).toISOString() };
@@ -858,10 +910,22 @@ app.get("/api/orders/:id", authMiddleware, async (req, res) => {
 app.post("/api/orders", authMiddleware, async (req, res) => {
   await ensureData();
   const body = req.body;
-  const orderId = body.id || `ord_${uuid().slice(0, 12)}`;
   const waiterId = req.query.waiter_id || req.user?.id;
   const waiter = db.data.users.find((u) => u.id === waiterId);
   const tbl = db.data.tables.find((t) => t.id === body.table_id);
+  if (tbl?.current_order_id) {
+    const existingOrder = db.data.orders.find((o) => o.id === tbl.current_order_id);
+    if (existingOrder && existingOrder.status !== "paid") {
+      const items = (db.data.order_items || []).filter((i) => i.order_id === existingOrder.id);
+      return res.status(409).json({
+        error: "table_already_occupied",
+        message: "Bu masada zaten açık sipariş var.",
+        current_order_id: existingOrder.id,
+        order: { ...existingOrder, items },
+      });
+    }
+  }
+  const orderId = body.id || `ord_${uuid().slice(0, 12)}`;
   db.data.orders.push({ id: orderId, table_id: body.table_id, table_number: tbl?.number?.toString() || "1", waiter_id: waiterId, waiter_name: waiter?.name || "Waiter", status: "open", subtotal: 0, tax_amount: 0, discount_percent: 0, discount_amount: 0, total: 0, created_at: Date.now(), paid_at: null, zoho_receipt_id: null });
   const tidx = db.data.tables.findIndex((t) => t.id === body.table_id);
   if (tidx >= 0) {

@@ -176,7 +176,7 @@ export default function ModifiersPage() {
         }
       }
 
-      for (const [name, data] of byGroup) {
+      for (const [name, data] of Array.from(byGroup)) {
         const existing = groups.find((g) => g.name.toLowerCase() === name.toLowerCase());
         const opts = data.options.length ? data.options : [{ name: "Option", price: 0 }];
         const payload = { name, min_select: data.min_select, max_select: data.max_select, required: data.required, options: opts };

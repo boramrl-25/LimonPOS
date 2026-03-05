@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import java.util.UUID
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -24,6 +25,7 @@ class ServerPreferences @Inject constructor(
 ) {
     private object Keys {
         val API_BASE_URL = stringPreferencesKey("api_base_url")
+        val DEVICE_ID = stringPreferencesKey("device_id")
     }
 
     private fun isBlockedUrl(url: String): Boolean {
@@ -73,6 +75,16 @@ class ServerPreferences @Inject constructor(
             }
         }
         context.serverDataStore.edit { it[Keys.API_BASE_URL] = normalized }
+    }
+
+    /** Stable device id for heartbeat; generated once per install. */
+    suspend fun getDeviceId(): String {
+        var id = context.serverDataStore.data.first()[Keys.DEVICE_ID]
+        if (id.isNullOrBlank()) {
+            id = "android_${UUID.randomUUID().toString().take(12)}"
+            context.serverDataStore.edit { it[Keys.DEVICE_ID] = id }
+        }
+        return id
     }
 
     companion object {

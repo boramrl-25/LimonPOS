@@ -1,11 +1,13 @@
 package com.limonpos.app.data.repository
 
 import android.content.Context
+import android.os.Build
 import android.util.Log
 import com.google.gson.Gson
 import com.limonpos.app.data.local.dao.*
 import com.limonpos.app.data.local.entity.*
 import com.limonpos.app.data.prefs.FloorPlanSectionsPreferences
+import com.limonpos.app.data.prefs.ServerPreferences
 import com.limonpos.app.data.remote.ApiService
 import com.limonpos.app.data.remote.dto.*
 import com.limonpos.app.util.NetworkMonitor
@@ -31,7 +33,8 @@ class ApiSyncRepository @Inject constructor(
     private val voidLogDao: VoidLogDao,
     private val voidRequestDao: VoidRequestDao,
     private val transferLogDao: TransferLogDao,
-    private val floorPlanSectionsPreferences: FloorPlanSectionsPreferences
+    private val floorPlanSectionsPreferences: FloorPlanSectionsPreferences,
+    private val serverPreferences: ServerPreferences
 ) {
     suspend fun isOnline(): Boolean = networkMonitor.isOnline.first()
 
@@ -51,6 +54,7 @@ class ApiSyncRepository @Inject constructor(
         if (!isOnline()) return false
         return try {
             // Heartbeat: web’de “POS Cihazları” sayfasında bu cihazı çevrimiçi göster
+            sendHeartbeat()
             pushOpenOrdersAndTables()
             pushOrderItemStatusUpdates()
             pushPendingPayments()
@@ -95,6 +99,22 @@ class ApiSyncRepository @Inject constructor(
             pushOpenOrdersAndTables()
         } catch (e: Exception) {
             Log.e("ApiSync", "pushTableStatesNow error: ${e.message}", e)
+        }
+    }
+
+    private suspend fun sendHeartbeat() {
+        if (!isOnline()) return
+        try {
+            val deviceId = serverPreferences.getDeviceId()
+            val request = HeartbeatRequest(
+                deviceId = deviceId,
+                deviceName = Build.MODEL?.takeIf { it.isNotBlank() } ?: "Android POS",
+                appVersion = null
+            )
+            val res = apiService.sendHeartbeat(request)
+            if (!res.isSuccessful) Log.e("ApiSync", "heartbeat failed: ${res.code()}")
+        } catch (e: Exception) {
+            Log.e("ApiSync", "sendHeartbeat error: ${e.message}")
         }
     }
 

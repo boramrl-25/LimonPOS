@@ -87,10 +87,26 @@ class FloorPlanViewModel @Inject constructor(
     private val _overdueWarning = MutableStateFlow<List<OverdueUndelivered>?>(null)
     val overdueWarning: StateFlow<List<OverdueUndelivered>?> = _overdueWarning.asStateFlow()
 
+    companion object {
+        private const val POLL_INTERVAL_MS = 25_000L
+    }
+
     init {
         loadTables()
         syncFromApi()
         startOverdueCheckLoop()
+        startPeriodicSync()
+    }
+
+    private fun startPeriodicSync() {
+        viewModelScope.launch {
+            while (true) {
+                delay(POLL_INTERVAL_MS)
+                if (apiSyncRepository.isOnline()) {
+                    apiSyncRepository.syncFromApi()
+                }
+            }
+        }
     }
 
     private fun startOverdueCheckLoop() {
