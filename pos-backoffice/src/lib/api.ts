@@ -388,6 +388,7 @@ export async function getClosedBillChanges(date?: string, dateFrom?: string, dat
 
 export async function getOrder(orderId: string) {
   const res = await fetchWithTimeout(`${API_URL}/orders/${encodeURIComponent(orderId)}`, { headers: headers() });
+  if (res.status === 404) throw new Error("Order not found (may have been deleted).");
   if (!res.ok) throw new Error("Failed to fetch order");
   return res.json();
 }

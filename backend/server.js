@@ -895,9 +895,10 @@ app.get("/api/dashboard/daily-sales", authMiddleware, async (req, res) => {
   const categorySalesList = Object.values(categorySales).sort((a, b) => b.totalAmount - a.totalAmount);
   const itemSalesList = Object.values(itemSales).sort((a, b) => b.totalAmount - a.totalAmount);
 
+  const orderIdsSet = new Set(orders.map((o) => o.id));
   const todayVoids = voidLogs.filter((v) => v.created_at >= dayStartTs && v.created_at < dayEndTs);
-  const voids = todayVoids.filter((v) => v.type === "pre_void" || v.type === "post_void" || v.type === "recalled_void");
-  const refunds = todayVoids.filter((v) => v.type === "refund" || v.type === "refund_full");
+  const voids = todayVoids.filter((v) => (v.type === "pre_void" || v.type === "post_void" || v.type === "recalled_void") && (v.order_id == null || orderIdsSet.has(v.order_id)));
+  const refunds = todayVoids.filter((v) => (v.type === "refund" || v.type === "refund_full") && (v.order_id == null || orderIdsSet.has(v.order_id)));
 
   const paymentMethods = db.data.payment_methods || [];
   const paymentsByOrder = (db.data.payments || []).reduce((acc, p) => {
@@ -1299,8 +1300,9 @@ app.get("/api/dashboard/closed-bill-changes", authMiddleware, async (req, res) =
   }
   const voidLogs = db.data.void_logs || [];
   const orders = db.data.orders || [];
+  const orderIds = new Set(orders.map((o) => o.id));
   const changes = voidLogs
-    .filter((v) => v.created_at >= startTs && v.created_at < endTs && (v.type === "refund" || v.type === "refund_full" || v.type === "payment_method_change"))
+    .filter((v) => v.created_at >= startTs && v.created_at < endTs && (v.type === "refund" || v.type === "refund_full" || v.type === "payment_method_change") && orderIds.has(v.order_id))
     .map((v) => {
       const order = orders.find((o) => o.id === v.order_id);
       return {

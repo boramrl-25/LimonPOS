@@ -52,10 +52,16 @@ export default function OrderDetailPage() {
   if (error || !order) {
     return (
       <div className="min-h-screen bg-black p-6">
-        <Link href="/dailysales" className="inline-flex items-center gap-2 text-slate-400 hover:text-white mb-6">
-          <ArrowLeft className="w-4 h-4" /> Back
-        </Link>
-        <p className="text-red-400">{error || "Order not found"}</p>
+        <div className="flex flex-wrap gap-4 mb-6">
+          <Link href="/dailysales" className="inline-flex items-center gap-2 text-slate-400 hover:text-white">
+            <ArrowLeft className="w-4 h-4" /> Back to Daily Sales
+          </Link>
+          <Link href="/" className="inline-flex items-center gap-2 text-sky-400 hover:text-sky-300">
+            Dashboard
+          </Link>
+        </div>
+        <p className="text-amber-400 font-medium">{error || "Order not found"}</p>
+        <p className="text-slate-500 text-sm mt-2">This order may have been removed by Clear test data. Use the links above to go back.</p>
       </div>
     );
   }
