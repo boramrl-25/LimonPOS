@@ -42,7 +42,7 @@ export default function CategoriesPage() {
       setEditing(c);
       const mg = Array.isArray(c.modifier_groups) ? c.modifier_groups : (typeof c.modifier_groups === "string" ? (() => { try { return JSON.parse(c.modifier_groups as string); } catch { return []; } })() : []);
       const pr = Array.isArray(c.printers) ? c.printers : (typeof c.printers === "string" ? (() => { try { return JSON.parse(c.printers as string); } catch { return []; } })() : []);
-      const od = c.overdue_undelivered_minutes != null ? String(c.overdue_undelivered_minutes) : "";
+      const od = c.overdue_undelivered_minutes != null && typeof c.overdue_undelivered_minutes === "number" ? String(c.overdue_undelivered_minutes) : "";
       setForm({ name: c.name, color: c.color || "#84CC16", sort_order: c.sort_order ?? 0, show_till: !!(c.show_till ?? 0), modifier_groups: mg, printers: pr, overdue_undelivered_minutes: od });
     } else {
       setEditing(null);
