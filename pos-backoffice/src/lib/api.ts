@@ -379,12 +379,6 @@ export async function getTables() {
 export type OrderItem = { id: string; product_name: string; quantity: number; price: number; notes?: string; status: string; sent_at: number | null };
 export type Order = { id: string; table_id: string; table_number: string; status: string; items: OrderItem[]; waiter_name?: string };
 
-export async function getOrder(orderId: string): Promise<Order> {
-  const res = await fetchWithTimeout(`${API_URL}/orders/${orderId}`, { headers: headers() });
-  if (!res.ok) throw new Error("Failed to fetch order");
-  return res.json();
-}
-
 export async function createTable(table: Record<string, unknown>) {
   const res = await fetch(`${API_URL}/tables`, {
     method: "POST",
