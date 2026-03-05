@@ -124,8 +124,24 @@ class OrderViewModel @Inject constructor(
         startOverdueCheckLoop()
         viewModelScope.launch {
             if (apiSyncRepository.isOnline()) {
-                apiSyncRepository.syncCatalog()
+                _uiState.update { it.copy(syncInProgress = true) }
+                apiSyncRepository.syncFromApi()
                 loadCategoriesWithProducts()
+                _uiState.update { it.copy(syncInProgress = false) }
+                if (_uiState.value.categoriesWithProducts.isEmpty()) {
+                    delay(2000)
+                    apiSyncRepository.syncFromApi()
+                    loadCategoriesWithProducts()
+                }
+            }
+        }
+        viewModelScope.launch {
+            while (true) {
+                delay(10000)
+                if (_uiState.value.categoriesWithProducts.isEmpty() && apiSyncRepository.isOnline()) {
+                    apiSyncRepository.syncFromApi()
+                    loadCategoriesWithProducts()
+                }
             }
         }
         viewModelScope.launch {

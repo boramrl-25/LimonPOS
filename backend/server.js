@@ -370,10 +370,11 @@ app.post("/api/users/import", authMiddleware, async (req, res) => {
   res.json({ added: created.length, users: db.data.users });
 });
 
-// Categories
+// Categories — en az bir kategori don (app liste bos kalmasin); active olmayanlari da gonder, app filtreler
 app.get("/api/categories", authMiddleware, async (req, res) => {
   await ensureData();
-  const cats = (db.data.categories || []).filter((c) => c.active).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+  let cats = (db.data.categories || []).filter((c) => c.active).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+  if (cats.length === 0) cats = (db.data.categories || []).slice().sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
   res.json(cats.map((c) => ({
     ...c,
     show_till: c.show_till !== undefined && c.show_till !== null ? Number(c.show_till) : 0,
