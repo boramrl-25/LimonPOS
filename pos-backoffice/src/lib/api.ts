@@ -317,9 +317,17 @@ export async function getDashboardStats() {
   return res.json();
 }
 
-export async function getDailySales() {
-  const res = await fetchWithTimeout(`${API_URL}/dashboard/daily-sales`, { headers: headers() });
+/** @param date YYYY-MM-DD; empty = today */
+export async function getDailySales(date?: string) {
+  const url = date ? `${API_URL}/dashboard/daily-sales?date=${encodeURIComponent(date)}` : `${API_URL}/dashboard/daily-sales`;
+  const res = await fetchWithTimeout(url, { headers: headers() });
   if (!res.ok) throw new Error("Failed to fetch daily sales");
+  return res.json();
+}
+
+export async function getOpenOrders() {
+  const res = await fetchWithTimeout(`${API_URL}/dashboard/open-orders`, { headers: headers() });
+  if (!res.ok) throw new Error("Failed to fetch open orders");
   return res.json();
 }
 

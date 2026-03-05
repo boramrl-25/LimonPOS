@@ -11,17 +11,18 @@ import {
   Package,
   Printer,
   FolderOpen,
-  BarChart3,
   Banknote,
   Map,
   LogOut,
+  FileText,
+  TrendingUp,
+  XCircle,
 } from "lucide-react";
 import { logout } from "@/lib/api";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/floorplan", label: "Floor Plan", icon: Map },
-  { href: "/dailysales", label: "Daily Sales", icon: BarChart3 },
   { href: "/dashboard/logs/cash-drawer", label: "Kasa / Cash Drawer", icon: Banknote },
   { href: "/settings", label: "Settings", icon: Settings },
   { href: "/settings/payment", label: "Payment Methods", icon: CreditCard },
@@ -30,6 +31,12 @@ const navItems = [
   { href: "/products", label: "Products", icon: Package },
   { href: "/categories", label: "Categories", icon: FolderOpen },
   { href: "/printers", label: "Printers", icon: Printer },
+];
+
+const reportItems = [
+  { href: "/reports/sales", label: "Sales Report", icon: TrendingUp },
+  { href: "/reports/voids", label: "Void Report", icon: XCircle },
+  { href: "/reports/daily-summary", label: "Daily Summary", icon: FileText },
 ];
 
 export default function Sidebar() {
@@ -64,6 +71,26 @@ export default function Sidebar() {
             </Link>
           );
         })}
+        <div className="pt-4 mt-2 border-t border-slate-800">
+          <p className="px-3 py-1 text-xs font-semibold text-slate-500 uppercase tracking-wider">Reports</p>
+          {reportItems.map((item) => {
+            const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                  isActive
+                    ? "bg-sky-500/20 text-sky-400 border border-sky-500/30"
+                    : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+                }`}
+              >
+                <item.icon className="w-4 h-4 flex-shrink-0" />
+                {item.label}
+              </Link>
+            );
+          })}
+        </div>
       </nav>
       <button
         onClick={handleLogout}

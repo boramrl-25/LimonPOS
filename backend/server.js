@@ -33,6 +33,57 @@ function getTodayStartTimestamp() {
   return Math.floor(localNow / dayMs) * dayMs - offsetMin * 60 * 1000;
 }
 
+/** Verilen gün (YYYY-MM-DD) için timezone'a göre başlangıç ve bitiş timestamp'leri. */
+function getDayBounds(dateStr) {
+  const offsetMin = (db.data?.settings?.timezone_offset_minutes ?? 0) | 0;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+  if (!match) return null;
+  const y = parseInt(match[1], 10);
+  const m = parseInt(match[2], 10) - 1;
+  const d = parseInt(match[3], 10);
+  const dayMs = 24 * 60 * 60 * 1000;
+  const startTs = Date.UTC(y, m, d) - offsetMin * 60 * 1000;
+  const endTs = startTs + dayMs;
+  return { startTs, endTs };
+}
+
+/** Belirli gün aralığı [startTs, endTs) için satış özeti. */
+function getSalesSummaryForRange(startTs, endTs) {
+  const orders = db.data.orders || [];
+  const payments = db.data.payments || [];
+  const paymentMethods = db.data.payment_methods || [];
+  const voidLogs = db.data.void_logs || [];
+  const rangeVoidsForExclusion = voidLogs.filter((v) => v.created_at >= startTs && v.created_at < endTs && (v.type === "refund_full" || v.type === "recalled_void"));
+  const fullyVoidedOrderIds = new Set(rangeVoidsForExclusion.map((v) => v.order_id).filter(Boolean));
+  const paidInRange = orders.filter((o) => {
+    if (o.status !== "paid") return false;
+    if (fullyVoidedOrderIds.has(o.id)) return false;
+    const paidAt = o.paid_at ?? o.updated_at ?? o.created_at ?? 0;
+    return paidAt >= startTs && paidAt < endTs;
+  });
+  const paidOrderIds = new Set(paidInRange.map((o) => o.id));
+  let totalCash = 0;
+  let totalCard = 0;
+  for (const p of payments) {
+    if (!paidOrderIds.has(p.order_id)) continue;
+    const code = resolvePaymentMethodCode(p.method, paymentMethods);
+    if (code === "cash") totalCash += p.amount || 0;
+    else if (code === "card") totalCard += p.amount || 0;
+  }
+  const totalFromPayments = totalCash + totalCard;
+  const totalFromOrders = paidInRange.reduce((s, o) => s + (Number(o.total) || 0), 0);
+  const totalSales = totalFromPayments > 0 ? totalFromPayments : totalFromOrders;
+  if (totalFromPayments === 0 && totalFromOrders > 0) {
+    totalCash = totalFromOrders;
+    totalCard = 0;
+  }
+  const rangeVoids = voidLogs.filter((v) => v.created_at >= startTs && v.created_at < endTs);
+  const totalVoidAmount = rangeVoids.filter((v) => v.type !== "refund_full" && v.type !== "recalled_void").reduce((s, v) => s + (v.amount || 0), 0);
+  const totalRefundAmount = rangeVoids.filter((v) => v.type === "refund_full" || v.type === "refund").reduce((s, v) => s + (v.amount || 0), 0);
+  const netSales = totalSales - totalRefundAmount;
+  return { startTs, endTs, paidOrderIds, totalCash, totalCard, totalSales, totalVoidAmount, totalRefundAmount, netSales, paidToday: paidInRange };
+}
+
 /** Resolve payment method to cash/card from id, code or name. */
 function resolvePaymentMethodCode(method, paymentMethods) {
   if (!method) return null;
@@ -50,42 +101,10 @@ function resolvePaymentMethodCode(method, paymentMethods) {
 
 /** Tek kaynak: bugünkü ödemeler + iade/void. Dashboard ve daily-sales aynı mantığı kullanır. */
 function getTodaySalesSummary() {
-  const orders = db.data.orders || [];
-  const payments = db.data.payments || [];
-  const paymentMethods = db.data.payment_methods || [];
-  const voidLogs = db.data.void_logs || [];
   const todayTs = getTodayStartTimestamp();
   const dayMs = 24 * 60 * 60 * 1000;
-  const todayEndTs = todayTs + dayMs;
-  const todayVoidsForExclusion = voidLogs.filter((v) => v.created_at >= todayTs && v.created_at < todayEndTs && (v.type === "refund_full" || v.type === "recalled_void"));
-  const fullyVoidedOrderIds = new Set(todayVoidsForExclusion.map((v) => v.order_id).filter(Boolean));
-  const paidToday = orders.filter((o) => {
-    if (o.status !== "paid") return false;
-    if (fullyVoidedOrderIds.has(o.id)) return false;
-    const paidAt = o.paid_at ?? o.updated_at ?? o.created_at ?? 0;
-    return paidAt >= todayTs && paidAt < todayEndTs;
-  });
-  const paidOrderIds = new Set(paidToday.map((o) => o.id));
-  let totalCash = 0;
-  let totalCard = 0;
-  for (const p of payments) {
-    if (!paidOrderIds.has(p.order_id)) continue;
-    const code = resolvePaymentMethodCode(p.method, paymentMethods);
-    if (code === "cash") totalCash += p.amount || 0;
-    else if (code === "card") totalCard += p.amount || 0;
-  }
-  const totalFromPayments = totalCash + totalCard;
-  const totalFromOrders = paidToday.reduce((s, o) => s + (Number(o.total) || 0), 0);
-  const totalSales = totalFromPayments > 0 ? totalFromPayments : totalFromOrders;
-  if (totalFromPayments === 0 && totalFromOrders > 0) {
-    totalCash = totalFromOrders;
-    totalCard = 0;
-  }
-  const todayVoids = voidLogs.filter((v) => v.created_at >= todayTs && v.created_at < todayEndTs);
-  const totalVoidAmount = todayVoids.filter((v) => v.type !== "refund_full" && v.type !== "recalled_void").reduce((s, v) => s + (v.amount || 0), 0);
-  const totalRefundAmount = todayVoids.filter((v) => v.type === "refund_full" || v.type === "refund").reduce((s, v) => s + (v.amount || 0), 0);
-  const netSales = totalSales - totalRefundAmount;
-  return { todayTs, todayEndTs, paidOrderIds, totalCash, totalCard, totalSales, totalVoidAmount, totalRefundAmount, netSales, paidToday };
+  const summary = getSalesSummaryForRange(todayTs, todayTs + dayMs);
+  return { ...summary, todayTs, todayEndTs: todayTs + dayMs };
 }
 
 async function ensureData() {
@@ -749,18 +768,17 @@ app.post("/api/eod/run", authMiddleware, async (req, res) => {
   });
 });
 
-// Dashboard stats (tek kaynak: getTodaySalesSummary)
+// Dashboard stats (tek kaynak: getTodaySalesSummary). Open Tables = Open Checks (same: open orders count).
 app.get("/api/dashboard/stats", authMiddleware, async (req, res) => {
   await ensureData();
   const summary = getTodaySalesSummary();
-  const tables = db.data.tables || [];
   const orders = db.data.orders || [];
   const voidLogs = db.data.void_logs || [];
   const paymentByMethod = {};
   if (summary.totalCash) paymentByMethod.cash = summary.totalCash;
   if (summary.totalCard) paymentByMethod.card = summary.totalCard;
-  const openTables = tables.filter((t) => t.status === "occupied" || t.current_order_id).length;
-  const openChecks = orders.filter((o) => o.status === "open" || o.status === "sent").length;
+  const openOrders = orders.filter((o) => o.status === "open" || o.status === "sent");
+  const openCount = openOrders.length;
   const preVoids = voidLogs.filter((v) => v.type === "pre_void").length;
   const postVoids = voidLogs.filter((v) => v.type === "post_void").length;
   const eodLogs = db.data.eod_logs || [];
@@ -768,20 +786,52 @@ app.get("/api/dashboard/stats", authMiddleware, async (req, res) => {
   res.json({
     todaySales: summary.netSales,
     orderCount: summary.paidToday.length,
-    openTables,
-    openChecks,
+    openTables: openCount,
+    openChecks: openCount,
+    openOrdersCount: openCount,
     paymentBreakdown: paymentByMethod,
     prePrintVoids: preVoids,
     postPrintVoids: postVoids,
     lastEod: lastEod ? { ran_at: lastEod.ran_at, user_name: lastEod.user_name, tables_closed_count: lastEod.tables_closed?.length ?? 0 } : null,
-    openTablesCount: tables.filter((t) => t.status === "occupied" || t.current_order_id).length,
+    openTablesCount: openCount,
   });
 });
 
-// Daily Sales (tek kaynak: getTodaySalesSummary, timezone + void düzgün)
+// Open orders (open + sent) — for "Open Tables / Checks" block: list with Receipt #, Table, Total, Waiter, Date
+app.get("/api/dashboard/open-orders", authMiddleware, async (req, res) => {
+  await ensureData();
+  const orders = (db.data.orders || []).filter((o) => o.status === "open" || o.status === "sent");
+  const list = orders.map((o) => ({
+    order_id: o.id,
+    receipt_no: `#${(o.table_number || o.id).toString().slice(-6)}`,
+    table_number: o.table_number || "",
+    total: Number(o.total) || 0,
+    waiter_name: o.waiter_name || "—",
+    created_at: o.created_at ?? o.updated_at ?? 0,
+    status: o.status,
+  }));
+  res.json(list);
+});
+
+// Daily Sales: ?date=YYYY-MM-DD ile herhangi bir gün; yoksa bugün. Fiş: receipt_no, date, waiter_name.
 app.get("/api/dashboard/daily-sales", authMiddleware, async (req, res) => {
   await ensureData();
-  const summary = getTodaySalesSummary();
+  const dateStr = (req.query.date || "").toString().trim();
+  let summary;
+  let dayStartTs;
+  let dayEndTs;
+  if (dateStr) {
+    const bounds = getDayBounds(dateStr);
+    if (!bounds) return res.status(400).json({ error: "invalid_date", message: "date must be YYYY-MM-DD" });
+    summary = getSalesSummaryForRange(bounds.startTs, bounds.endTs);
+    dayStartTs = bounds.startTs;
+    dayEndTs = bounds.endTs;
+  } else {
+    const todaySummary = getTodaySalesSummary();
+    summary = todaySummary;
+    dayStartTs = todaySummary.todayTs;
+    dayEndTs = todaySummary.todayEndTs;
+  }
   const orders = db.data.orders || [];
   const orderItems = db.data.order_items || [];
   const products = db.data.products || [];
@@ -811,8 +861,7 @@ app.get("/api/dashboard/daily-sales", authMiddleware, async (req, res) => {
   const categorySalesList = Object.values(categorySales).sort((a, b) => b.totalAmount - a.totalAmount);
   const itemSalesList = Object.values(itemSales).sort((a, b) => b.totalAmount - a.totalAmount);
 
-  const todayEndTs = summary.todayEndTs || summary.todayTs + 24 * 60 * 60 * 1000;
-  const todayVoids = voidLogs.filter((v) => v.created_at >= summary.todayTs && v.created_at < todayEndTs);
+  const todayVoids = voidLogs.filter((v) => v.created_at >= dayStartTs && v.created_at < dayEndTs);
   const voids = todayVoids.filter((v) => v.type === "pre_void" || v.type === "post_void" || v.type === "recalled_void");
   const refunds = todayVoids.filter((v) => v.type === "refund" || v.type === "refund_full");
 
@@ -832,11 +881,14 @@ app.get("/api/dashboard/daily-sales", authMiddleware, async (req, res) => {
       else if (code === "card") cardAmount += p.amount || 0;
     }
     if (cashAmount === 0 && cardAmount === 0) cashAmount = Number(o.total) || 0;
+    const paidAt = o.paid_at ?? o.updated_at ?? o.created_at ?? 0;
     return {
       order_id: o.id,
+      receipt_no: `#${String(o.table_number || o.id).slice(-8)}`,
       table_number: o.table_number || "",
       total: Number(o.total) || 0,
-      paid_at: o.paid_at ?? o.updated_at ?? o.created_at,
+      paid_at: paidAt,
+      waiter_name: o.waiter_name || "—",
       cash_amount: cashAmount,
       card_amount: cardAmount,
       discount_amount: Number(o.discount_amount) || 0,
@@ -847,6 +899,7 @@ app.get("/api/dashboard/daily-sales", authMiddleware, async (req, res) => {
   const lastEod = eodLogs.length > 0 ? eodLogs[eodLogs.length - 1] : null;
   const openTablesCount = (db.data.tables || []).filter((t) => t.current_order_id).length;
   res.json({
+    date: dateStr || null,
     totalCash: summary.totalCash,
     totalCard: summary.totalCard,
     totalSales: summary.totalSales,

@@ -13,10 +13,15 @@ import {
   Moon,
   ChevronRight,
 } from "lucide-react";
-import { getDashboardStats, getDailySales } from "@/lib/api";
+import { getDashboardStats, getDailySales, getOpenOrders, runEod } from "@/lib/api";
 
-type PaidTicket = { order_id: string; table_number: string; total: number; paid_at: number; cash_amount: number; card_amount: number; discount_amount?: number };
-type TicketModalType = "cash" | "card" | "all" | "void" | "refund" | null;
+type PaidTicket = { order_id: string; receipt_no?: string; table_number: string; total: number; paid_at: number; waiter_name?: string; cash_amount: number; card_amount: number; discount_amount?: number };
+type OpenOrderRow = { order_id: string; receipt_no: string; table_number: string; total: number; waiter_name: string; created_at: number; status: string };
+type TicketModalType = "cash" | "card" | "all" | "void" | "refund" | "open" | null;
+
+function toYYYYMMDD(d: Date) {
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+}
 const blockButtonClass = "flex items-center gap-4 p-5 rounded-xl bg-slate-800/60 border border-slate-700 hover:border-sky-500/50 hover:bg-slate-800/80 transition-colors text-left cursor-pointer w-full";
 
 function fmt(n: number) {
@@ -54,13 +59,18 @@ export default function DashboardPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const [ticketModalType, setTicketModalType] = useState<TicketModalType>(null);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [openOrders, setOpenOrders] = useState<OpenOrderRow[]>([]);
+  const [openOrdersLoading, setOpenOrdersLoading] = useState(false);
+  const [eodConfirmOpen, setEodConfirmOpen] = useState(false);
   const router = useRouter();
 
   const fetchData = useCallback(async () => {
     try {
+      const dateParam = selectedDate || undefined;
       const [statsRes, dailyRes] = await Promise.all([
         getDashboardStats(),
-        getDailySales(),
+        getDailySales(dateParam),
       ]);
       setStats({
         todaySales: statsRes.todaySales ?? 0,
@@ -79,7 +89,20 @@ export default function DashboardPage() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [selectedDate]);
+
+  async function handleOpenTablesClick() {
+    setTicketModalType("open");
+    setOpenOrdersLoading(true);
+    try {
+      const list = await getOpenOrders();
+      setOpenOrders(list);
+    } catch {
+      setOpenOrders([]);
+    } finally {
+      setOpenOrdersLoading(false);
+    }
+  }
 
   async function handleRefresh() {
     setRefreshing(true);
@@ -92,26 +115,30 @@ export default function DashboardPage() {
     return () => clearInterval(id);
   }, [fetchData]);
 
+  const todayStr = toYYYYMMDD(new Date());
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = toYYYYMMDD(yesterday);
+
   return (
     <div className="min-h-screen bg-slate-950">
-      <header className="border-b border-slate-800 bg-slate-900 px-6 py-4 flex items-center justify-between">
+      <header className="border-b border-slate-800 bg-slate-900 px-6 py-4 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-4">
-          <Link
-            href="/"
-            className="p-2 rounded-lg hover:bg-slate-800 transition-colors"
-          >
+          <Link href="/" className="p-2 rounded-lg hover:bg-slate-800 transition-colors">
             <ArrowLeft className="w-5 h-5 text-slate-300" />
           </Link>
           <div>
             <h1 className="text-xl font-bold text-sky-400">Dashboard</h1>
-            <p className="text-slate-400 text-sm">Live sync with app · Auto-refresh every 8s</p>
+            <p className="text-slate-400 text-sm">Sales, open checks, reports · Auto-refresh 8s</p>
           </div>
         </div>
-        <button
-          onClick={handleRefresh}
-          disabled={refreshing}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors disabled:opacity-50"
-        >
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-slate-400 text-sm">Date:</span>
+          <button type="button" onClick={() => setSelectedDate(null)} className={`px-3 py-1.5 rounded-lg text-sm font-medium ${selectedDate === null ? "bg-sky-600 text-white" : "bg-slate-700 text-slate-300 hover:bg-slate-600"}`}>Today</button>
+          <button type="button" onClick={() => setSelectedDate(yesterdayStr)} className={`px-3 py-1.5 rounded-lg text-sm font-medium ${selectedDate === yesterdayStr ? "bg-sky-600 text-white" : "bg-slate-700 text-slate-300 hover:bg-slate-600"}`}>Yesterday</button>
+          <input type="date" value={selectedDate ?? ""} max={todayStr} onChange={(e) => setSelectedDate(e.target.value || null)} className="px-3 py-1.5 rounded-lg bg-slate-700 text-slate-200 border border-slate-600 text-sm" />
+        </div>
+        <button onClick={handleRefresh} disabled={refreshing} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors disabled:opacity-50">
           <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />
           Refresh
         </button>
@@ -136,20 +163,13 @@ export default function DashboardPage() {
                 <p className="text-xl font-bold text-white">{loading ? "..." : stats.orderCount}</p>
               </div>
             </button>
-            <div className="flex items-center gap-4 p-5 rounded-xl bg-slate-800/60 border border-slate-700">
+            <button type="button" className={blockButtonClass} onClick={handleOpenTablesClick}>
               <UtensilsCrossed className="w-8 h-8 text-amber-400 shrink-0" />
               <div>
-                <p className="text-slate-400 text-sm">Open Tables</p>
+                <p className="text-slate-400 text-sm">Open Tables / Checks</p>
                 <p className="text-xl font-bold text-white">{loading ? "..." : stats.openTables}</p>
               </div>
-            </div>
-            <div className="flex items-center gap-4 p-5 rounded-xl bg-slate-800/60 border border-slate-700">
-              <Receipt className="w-8 h-8 text-violet-400 shrink-0" />
-              <div>
-                <p className="text-slate-400 text-sm">Open Checks</p>
-                <p className="text-xl font-bold text-white">{loading ? "..." : stats.openChecks}</p>
-              </div>
-            </div>
+            </button>
           </div>
           {lastRefresh && (
             <p className="text-slate-500 text-xs mt-2">Last updated: {lastRefresh.toLocaleTimeString()}</p>
@@ -171,22 +191,23 @@ export default function DashboardPage() {
               )}
               {stats.openTablesCount > 0 && (
                 <p className="text-amber-400 text-sm mt-1">
-                  <strong>{stats.openTablesCount}</strong> masa açık. Günü kapatmak için Daily Sales sayfasında &quot;Günü Kapat&quot; kullanın.
+                  <strong>{stats.openTablesCount}</strong> open check(s). Scroll to End of Day to close.
                 </p>
               )}
             </div>
-            <Link
-              href="/dailysales"
-              className="px-3 py-1.5 rounded-lg bg-amber-600/80 hover:bg-amber-500 text-white text-sm font-medium"
-            >
-              Daily Sales / Günü Kapat
-            </Link>
+            {selectedDate === null && (
+              <a href="#eod" className="px-3 py-1.5 rounded-lg bg-amber-600/80 hover:bg-amber-500 text-white text-sm font-medium">
+                End of Day / Günü Kapat
+              </a>
+            )}
           </div>
         </section>
 
-        {/* Daily Sales - tap blocks to view tickets */}
+        {/* Daily Sales — tap blocks to view tickets (Receipt #, Date, Who) */}
         <section>
-          <h2 className="text-lg font-semibold text-slate-200 mb-4">Today&apos;s Summary (tap to view tickets)</h2>
+          <h2 className="text-lg font-semibold text-slate-200 mb-4">
+            {selectedDate === null ? "Today" : selectedDate === yesterdayStr ? "Yesterday" : selectedDate} — Summary (tap to view tickets)
+          </h2>
           {loading && !dailySales ? (
             <p className="text-slate-400 py-8">Loading...</p>
           ) : dailySales ? (
@@ -312,12 +333,31 @@ export default function DashboardPage() {
                 </>
               )}
 
+              {selectedDate === null && (
+                <section id="eod" className="rounded-xl bg-slate-800/60 border border-slate-700 p-5 mt-6">
+                  <h3 className="text-lg font-semibold text-slate-200 mb-3 flex items-center gap-2">
+                    <Moon className="w-5 h-5 text-amber-400" />
+                    End of Day / Günü Kapat
+                  </h3>
+                  <p className="text-slate-400 text-sm mb-4">Close the business day. If there are open checks, you can mark them as paid and close.</p>
+                  {dailySales?.lastEod && (
+                    <p className="text-slate-400 text-sm mb-3">Last run: <strong className="text-slate-200">{formatEodTime(dailySales.lastEod.ran_at)}</strong></p>
+                  )}
+                  {(dailySales?.openTablesCount ?? 0) > 0 && (
+                    <p className="text-amber-400 text-sm mb-3"><strong>{dailySales.openTablesCount}</strong> open check(s) will be marked as paid.</p>
+                  )}
+                  <button type="button" onClick={() => setEodConfirmOpen(true)} className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-medium">
+                    Run End of Day
+                  </button>
+                </section>
+              )}
+
               {dailySales.categorySales.length === 0 &&
                 dailySales.itemSales.length === 0 &&
                 dailySales.voids.length === 0 &&
                 dailySales.refunds.length === 0 &&
                 dailySales.totalSales === 0 && (
-                  <p className="text-slate-500 py-8 text-center">No sales data today yet. Sync from the app to see data.</p>
+                  <p className="text-slate-500 py-8 text-center">No sales data for this day.</p>
                 )}
             </div>
           ) : (
@@ -325,6 +365,20 @@ export default function DashboardPage() {
           )}
         </section>
       </main>
+
+      {/* EOD confirm modal */}
+      {eodConfirmOpen && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-900 rounded-xl border border-slate-700 p-6 max-w-md w-full">
+            <h3 className="text-lg font-semibold text-amber-400 mb-2">End of Day</h3>
+            <p className="text-slate-400 text-sm mb-4">Close the day? Open checks will be marked as paid.</p>
+            <div className="flex gap-2 justify-end">
+              <button type="button" onClick={() => setEodConfirmOpen(false)} className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white">Cancel</button>
+              <button type="button" onClick={async () => { setEodConfirmOpen(false); try { await runEod(true); await fetchData(); } catch (e) { alert((e as Error).message); } }} className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white">Run EOD</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Ticket list modal */}
       {ticketModalType && (
@@ -335,13 +389,33 @@ export default function DashboardPage() {
                 {ticketModalType === "cash" && "Cash tickets"}
                 {ticketModalType === "card" && "Card tickets"}
                 {ticketModalType === "all" && "All tickets"}
+                {ticketModalType === "open" && "Open Tables / Checks"}
                 {ticketModalType === "void" && "Void entries"}
                 {ticketModalType === "refund" && "Refund entries"}
               </h3>
               <button type="button" onClick={() => setTicketModalType(null)} className="text-slate-400 hover:text-white">Close</button>
             </div>
             <div className="overflow-y-auto flex-1 p-4">
-              {ticketModalType !== "void" && ticketModalType !== "refund" && (() => {
+              {ticketModalType === "open" && (openOrdersLoading ? (
+                <p className="text-slate-500 py-4">Loading...</p>
+              ) : openOrders.length === 0 ? (
+                <p className="text-slate-500 py-4">No open checks</p>
+              ) : (
+                <ul className="space-y-2">
+                  {openOrders.map((o) => (
+                    <li key={o.order_id}>
+                      <button type="button" onClick={() => { setTicketModalType(null); router.push(`/orders/${o.order_id}`); }} className="w-full p-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-left">
+                        <div className="flex justify-between items-center">
+                          <span className="font-medium text-slate-200">{o.receipt_no} · Table {o.table_number}</span>
+                          <span className="text-sky-400">{fmt(o.total)} AED</span>
+                        </div>
+                        <p className="text-slate-500 text-xs mt-1">Date: {new Date(o.created_at).toLocaleString("en-GB")} · By: {o.waiter_name}</p>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ))}
+              {ticketModalType !== "void" && ticketModalType !== "refund" && ticketModalType !== "open" && (() => {
                 const tickets = dailySales?.paidTickets || [];
                 const filtered = ticketModalType === "cash" ? tickets.filter((t) => (t.cash_amount || 0) > 0)
                   : ticketModalType === "card" ? tickets.filter((t) => (t.card_amount || 0) > 0)
@@ -351,11 +425,13 @@ export default function DashboardPage() {
                   <ul className="space-y-2">
                     {filtered.map((t) => (
                       <li key={t.order_id}>
-                        <button type="button" onClick={() => { setTicketModalType(null); router.push(`/orders/${t.order_id}`); }} className="w-full flex items-center justify-between p-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-left">
-                          <span className="text-slate-200">Table {t.table_number} · {fmt(t.total)} AED</span>
-                          <ChevronRight className="w-5 h-5 text-slate-400" />
+                        <button type="button" onClick={() => { setTicketModalType(null); router.push(`/orders/${t.order_id}`); }} className="w-full p-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-left relative">
+                          <div className="flex justify-between items-center">
+                            <span className="font-medium text-slate-200">{t.receipt_no || t.table_number} · Table {t.table_number} · {fmt(t.total)} AED</span>
+                            <ChevronRight className="w-5 h-5 text-slate-400 shrink-0" />
+                          </div>
+                          <p className="text-slate-500 text-xs mt-1">Date: {new Date(t.paid_at).toLocaleString("en-GB")} · By: {t.waiter_name ?? "—"}</p>
                         </button>
-                        <p className="text-slate-500 text-xs mt-0.5 ml-3">{new Date(t.paid_at).toLocaleString("en-GB")}</p>
                       </li>
                     ))}
                   </ul>
