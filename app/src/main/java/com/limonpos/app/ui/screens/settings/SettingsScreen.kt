@@ -19,15 +19,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.limonpos.app.ui.theme.*
 import kotlinx.coroutines.delay
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -45,13 +41,10 @@ fun SettingsScreen(
 ) {
     val userRole by viewModel.userRole.collectAsState(null)
     val isManager by viewModel.isManager.collectAsState(false)
+    val isKdsOnly = userRole == "kds"
     val message by viewModel.message.collectAsState()
     var menuExpanded by remember { mutableStateOf(false) }
     var showClearSalesConfirm by remember { mutableStateOf(false) }
-    var showClearRangeConfirm by remember { mutableStateOf(false) }
-    val dateFormat = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()) }
-    var fromDateStr by remember { mutableStateOf("") }
-    var toDateStr by remember { mutableStateOf(dateFormat.format(Date())) }
 
     LaunchedEffect(message) {
         message?.let {
@@ -63,7 +56,7 @@ fun SettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Settings", fontWeight = FontWeight.Bold, color = LimonText) },
+                title = { Text(if (isKdsOnly) "KDS" else "Settings", fontWeight = FontWeight.Bold, color = LimonText) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = LimonText)
@@ -107,7 +100,7 @@ fun SettingsScreen(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = LimonSurface, titleContentColor = LimonText)
             )
         }
-    ) { padding ->
+        ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -118,87 +111,75 @@ fun SettingsScreen(
             message?.let { msg ->
                 Text(msg, color = LimonPrimary, modifier = Modifier.padding(bottom = 16.dp), fontSize = 14.sp)
             }
-            Text("POS Actions", fontWeight = FontWeight.Bold, color = LimonText, fontSize = 16.sp, modifier = Modifier.padding(bottom = 12.dp))
-            OutlinedButton(
-                onClick = onNavigateToPrinters,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Default.Print, contentDescription = null, modifier = Modifier.size(20.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Printer Setup", color = LimonText)
-            }
-            Spacer(modifier = Modifier.height(12.dp))
-            OutlinedButton(
-                onClick = onNavigateToVoidReport,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Default.Cancel, contentDescription = null, modifier = Modifier.size(20.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Void Report", color = LimonText)
-            }
-            Spacer(modifier = Modifier.height(12.dp))
-            OutlinedButton(
-                onClick = onNavigateToServerSettings,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Default.Wifi, contentDescription = null, modifier = Modifier.size(20.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Server URL (WiFi)", color = LimonText)
-            }
-            Spacer(modifier = Modifier.height(12.dp))
-            OutlinedButton(
-                onClick = { showClearSalesConfirm = true },
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = LimonError)
-            ) {
-                Icon(Icons.Default.DeleteForever, contentDescription = null, modifier = Modifier.size(20.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Clear Local Sales", color = LimonError)
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-            Text("Clear by date range", fontWeight = FontWeight.Medium, color = LimonText, fontSize = 14.sp, modifier = Modifier.padding(bottom = 8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedTextField(
-                    value = fromDateStr,
-                    onValueChange = { fromDateStr = it },
-                    modifier = Modifier.weight(1f),
-                    placeholder = { Text("From (YYYY-MM-DD)", color = LimonTextSecondary, fontSize = 12.sp) },
-                    singleLine = true
-                )
-                OutlinedTextField(
-                    value = toDateStr,
-                    onValueChange = { toDateStr = it },
-                    modifier = Modifier.weight(1f),
-                    placeholder = { Text("To (YYYY-MM-DD)", color = LimonTextSecondary, fontSize = 12.sp) },
-                    singleLine = true
-                )
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            OutlinedButton(
-                onClick = {
-                    if (fromDateStr.isNotBlank() && toDateStr.isNotBlank()) showClearRangeConfirm = true
-                },
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = LimonError),
-                enabled = fromDateStr.isNotBlank() && toDateStr.isNotBlank()
-            ) {
-                Icon(Icons.Default.DeleteForever, contentDescription = null, modifier = Modifier.size(20.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Clear local sales in date range", color = LimonError)
-            }
-            Spacer(modifier = Modifier.height(24.dp))
-            Button(
-                onClick = { viewModel.logout() },
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = LimonError)
-            ) {
-                Icon(Icons.Default.Logout, contentDescription = null, modifier = Modifier.size(20.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Logout", color = LimonText)
+            if (isKdsOnly) {
+                Text("Kitchen Display", fontWeight = FontWeight.Bold, color = LimonText, fontSize = 16.sp, modifier = Modifier.padding(bottom = 12.dp))
+                Button(
+                    onClick = onNavigateToKds,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = LimonPrimary)
+                ) {
+                    Icon(Icons.Default.Restaurant, contentDescription = null, modifier = Modifier.size(24.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text("KDS Aç / Open Kitchen Display", color = LimonText, fontSize = 16.sp)
+                }
+                Spacer(modifier = Modifier.height(24.dp))
+                Button(
+                    onClick = { viewModel.logout() },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = LimonError)
+                ) {
+                    Icon(Icons.Default.Logout, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Logout", color = LimonText)
+                }
+            } else {
+                Text("POS Actions", fontWeight = FontWeight.Bold, color = LimonText, fontSize = 16.sp, modifier = Modifier.padding(bottom = 12.dp))
+                OutlinedButton(
+                    onClick = onNavigateToPrinters,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Print, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Printer Setup", color = LimonText)
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = onNavigateToVoidReport,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Cancel, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Void Report", color = LimonText)
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = onNavigateToServerSettings,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Wifi, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Server URL (WiFi)", color = LimonText)
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = { showClearSalesConfirm = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = LimonError)
+                ) {
+                    Icon(Icons.Default.DeleteForever, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Clear Local Sales", color = LimonError)
+                }
+                Spacer(modifier = Modifier.height(24.dp))
+                Button(
+                    onClick = { viewModel.logout() },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = LimonError)
+                ) {
+                    Icon(Icons.Default.Logout, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Logout", color = LimonText)
+                }
             }
         }
     }
@@ -222,23 +203,5 @@ fun SettingsScreen(
         )
     }
 
-    if (showClearRangeConfirm) {
-        AlertDialog(
-            onDismissRequest = { showClearRangeConfirm = false },
-            title = { Text("Clear sales in date range?", fontWeight = FontWeight.Bold) },
-            text = { Text("Delete orders created from $fromDateStr to $toDateStr from this device. Related payments, voids and table links will be removed. Continue?", color = LimonText) },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        viewModel.clearLocalSalesInDateRange(fromDateStr, toDateStr)
-                        showClearRangeConfirm = false
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = LimonError)
-                ) { Text("Clear") }
-            },
-            dismissButton = { TextButton(onClick = { showClearRangeConfirm = false }) { Text("Cancel", color = LimonTextSecondary) } },
-            containerColor = LimonSurface
-        )
-    }
 }
 

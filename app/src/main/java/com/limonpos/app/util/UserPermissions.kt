@@ -27,10 +27,11 @@ fun UserEntity.permissionsSet(): Set<String> {
 fun UserEntity.toUserPermissions(): UserPermissions {
     val perms = permissionsSet()
     val isManagerOrAdmin = role in listOf("admin", "manager", "supervisor")
+    val isKdsOnlyRole = role == "kds"
     return UserPermissions(
         viewAllOrders = perms.contains("view_all_orders"),
         cashDrawer = this.cashDrawerPermission,
-        kdsModeAccess = perms.contains("kds_mode") || isManagerOrAdmin,
+        kdsModeAccess = perms.contains("kds_mode") || isManagerOrAdmin || isKdsOnlyRole,
         preVoid = perms.contains("pre_void") || isManagerOrAdmin,
         postVoid = perms.contains("post_void") || isManagerOrAdmin,
         tableTransferVoid = perms.contains("table_transfer_void") || isManagerOrAdmin,

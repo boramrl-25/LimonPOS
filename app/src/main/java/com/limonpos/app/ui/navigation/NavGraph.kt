@@ -11,8 +11,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.limonpos.app.ui.theme.LimonPrimary
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -46,6 +48,7 @@ import java.time.LocalTime
 import java.time.ZoneId
 
 object Routes {
+    const val GATE = "gate"
     const val FLOOR_PLAN = "floor_plan"
     const val ORDER = "order/{tableId}"
     const val PAYMENT = "order/{tableId}/payment"
@@ -120,8 +123,21 @@ fun NavGraph(
         }
         NavHost(
             navController = navController,
-            startDestination = Routes.FLOOR_PLAN
+            startDestination = Routes.GATE
         ) {
+            composable(Routes.GATE) {
+                LaunchedEffect(Unit) {
+                    val user = authRepository.getCurrentUser()
+                    val dest = if (user?.role == "kds") Routes.SETTINGS else Routes.FLOOR_PLAN
+                    navController.navigate(dest) {
+                        popUpTo(Routes.GATE) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                }
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = LimonPrimary)
+                }
+            }
             composable(Routes.FLOOR_PLAN) {
                 val scope = rememberCoroutineScope()
                 val canAccessKds by authRepository.canAccessKds().collectAsState(initial = false)
