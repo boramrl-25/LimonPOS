@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { LayoutDashboard, Settings, Package, Users, Printer, FolderOpen, BarChart3, SlidersHorizontal, Map, RefreshCw, LogOut } from "lucide-react";
+import { LayoutDashboard, Settings, Package, Users, Printer, FolderOpen, BarChart3, SlidersHorizontal, Map, RefreshCw, LogOut, Wallet, CreditCard, Banknote, UtensilsCrossed } from "lucide-react";
 import { getToken, getSetupStatus, getTables, getProducts, getCategories, getModifierGroups, getPrinters, getUsers, getDashboardStats, logout } from "@/lib/api";
 
 function fmt(n: number) {
@@ -13,18 +13,11 @@ function fmt(n: number) {
 export default function Home() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
-  const [summary, setSummary] = useState<{
-    tablesTotal: number;
-    tablesFree: number;
-    tablesOccupied: number;
-    products: number;
-    categories: number;
-    modifiers: number;
-    printers: number;
-    users: number;
+  const [stats, setStats] = useState<{
     todaySales: number;
+    totalCash: number;
+    totalCard: number;
     openTables: number;
-    openChecks: number;
   } | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
@@ -47,33 +40,17 @@ export default function Home() {
     setSummaryLoading(true);
     setSummaryError(null);
     try {
-      const [tables, products, categories, modifiers, printers, users, stats] = await Promise.all([
-        getTables(),
-        getProducts(),
-        getCategories(),
-        getModifierGroups(),
-        getPrinters(),
-        getUsers(),
-        getDashboardStats(),
-      ]);
-      const tablesFree = tables.filter((t: { status: string }) => t.status === "free").length;
-      const tablesOccupied = tables.filter((t: { status: string }) => t.status === "occupied" || t.status === "bill").length;
-      setSummary({
-        tablesTotal: tables.length,
-        tablesFree,
-        tablesOccupied,
-        products: products.length,
-        categories: categories.length,
-        modifiers: modifiers.length,
-        printers: printers.length,
-        users: users.length,
-        todaySales: stats.todaySales ?? 0,
-        openTables: stats.openTables ?? 0,
-        openChecks: stats.openChecks ?? 0,
+      const res = await getDashboardStats();
+      const pb = res.paymentBreakdown || {};
+      setStats({
+        todaySales: res.todaySales ?? 0,
+        totalCash: pb.cash ?? 0,
+        totalCard: pb.card ?? 0,
+        openTables: res.openTables ?? 0,
       });
     } catch (e) {
       setSummaryError((e as Error).message || "Veri yüklenemedi");
-      setSummary(null);
+      setStats(null);
     } finally {
       setSummaryLoading(false);
     }
@@ -109,69 +86,65 @@ export default function Home() {
         </button>
       </header>
 
-      <main className="flex-1 p-6">
-        {/* Bütün bilgiler özeti */}
-        <section className="mb-8">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-slate-200">Bütün bilgiler (özet)</h2>
+      <main className="flex-1 p-4 sm:p-6">
+        {summaryError && (
+          <p className="text-amber-400 text-sm mb-3">{summaryError}</p>
+        )}
+        {/* Total Sales, Card, Cash, Open Tables — küçük ikonlar, okunaklı yazı (mobil) */}
+        <section className="mb-6">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-sm font-medium text-slate-400">Bugün</h2>
             <button
               type="button"
               onClick={loadSummary}
               disabled={summaryLoading}
-              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm disabled:opacity-50"
+              className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 disabled:opacity-50"
+              aria-label="Yenile"
             >
               <RefreshCw className={`w-4 h-4 ${summaryLoading ? "animate-spin" : ""}`} />
-              Yenile
             </button>
           </div>
-          {summaryError && (
-            <p className="text-amber-400 text-sm mb-3">{summaryError}</p>
-          )}
-          {summaryLoading && !summary ? (
-            <p className="text-slate-500 py-4">Yükleniyor...</p>
-          ) : summary ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-              <div className="p-4 rounded-xl bg-slate-800/60 border border-slate-700">
-                <p className="text-slate-400 text-xs">Masalar</p>
-                <p className="text-lg font-bold text-white">{summary.tablesTotal} <span className="text-slate-500 font-normal text-sm">(Boş: {summary.tablesFree}, Dolu: {summary.tablesOccupied})</span></p>
+          <div className="grid grid-cols-4 gap-2 sm:gap-3">
+            <div className="p-3 rounded-lg bg-slate-800/60 border border-slate-700 flex flex-col gap-0.5">
+              <div className="flex items-center gap-1.5">
+                <Wallet className="w-4 h-4 text-emerald-400 shrink-0" aria-hidden />
+                <span className="text-[11px] sm:text-xs text-slate-400 truncate">Total Sales</span>
               </div>
-              <div className="p-4 rounded-xl bg-slate-800/60 border border-slate-700">
-                <p className="text-slate-400 text-xs">Ürünler</p>
-                <p className="text-lg font-bold text-white">{summary.products}</p>
-              </div>
-              <div className="p-4 rounded-xl bg-slate-800/60 border border-slate-700">
-                <p className="text-slate-400 text-xs">Kategoriler</p>
-                <p className="text-lg font-bold text-white">{summary.categories}</p>
-              </div>
-              <div className="p-4 rounded-xl bg-slate-800/60 border border-slate-700">
-                <p className="text-slate-400 text-xs">Modifier grupları</p>
-                <p className="text-lg font-bold text-white">{summary.modifiers}</p>
-              </div>
-              <div className="p-4 rounded-xl bg-slate-800/60 border border-slate-700">
-                <p className="text-slate-400 text-xs">Yazıcılar</p>
-                <p className="text-lg font-bold text-white">{summary.printers}</p>
-              </div>
-              <div className="p-4 rounded-xl bg-slate-800/60 border border-slate-700">
-                <p className="text-slate-400 text-xs">Kullanıcılar</p>
-                <p className="text-lg font-bold text-white">{summary.users}</p>
-              </div>
-              <div className="p-4 rounded-xl bg-slate-800/60 border border-slate-700">
-                <p className="text-slate-400 text-xs">Bugünkü satış</p>
-                <p className="text-lg font-bold text-emerald-400">{fmt(summary.todaySales)} AED</p>
-              </div>
-              <div className="p-4 rounded-xl bg-slate-800/60 border border-slate-700">
-                <p className="text-slate-400 text-xs">Açık masa</p>
-                <p className="text-lg font-bold text-amber-400">{summary.openTables}</p>
-              </div>
-              <div className="p-4 rounded-xl bg-slate-800/60 border border-slate-700">
-                <p className="text-slate-400 text-xs">Açık hesap</p>
-                <p className="text-lg font-bold text-sky-400">{summary.openChecks}</p>
-              </div>
+              <p className="text-sm font-semibold text-white leading-tight truncate" title={stats ? `${fmt(stats.todaySales)} AED` : ""}>
+                {summaryLoading && !stats ? "…" : stats ? `${fmt(stats.todaySales)}` : "0.00"} <span className="text-[10px] font-normal text-slate-500">AED</span>
+              </p>
             </div>
-          ) : null}
+            <div className="p-3 rounded-lg bg-slate-800/60 border border-slate-700 flex flex-col gap-0.5">
+              <div className="flex items-center gap-1.5">
+                <CreditCard className="w-4 h-4 text-sky-400 shrink-0" aria-hidden />
+                <span className="text-[11px] sm:text-xs text-slate-400 truncate">Card</span>
+              </div>
+              <p className="text-sm font-semibold text-white leading-tight truncate">
+                {summaryLoading && !stats ? "…" : stats ? `${fmt(stats.totalCard)}` : "0.00"} <span className="text-[10px] font-normal text-slate-500">AED</span>
+              </p>
+            </div>
+            <div className="p-3 rounded-lg bg-slate-800/60 border border-slate-700 flex flex-col gap-0.5">
+              <div className="flex items-center gap-1.5">
+                <Banknote className="w-3.5 h-3.5 text-amber-400 shrink-0" aria-hidden />
+                <span className="text-[11px] sm:text-xs text-slate-400 truncate">Cash</span>
+              </div>
+              <p className="text-sm font-semibold text-white leading-tight truncate">
+                {summaryLoading && !stats ? "…" : stats ? `${fmt(stats.totalCash)}` : "0.00"} <span className="text-[10px] font-normal text-slate-500">AED</span>
+              </p>
+            </div>
+            <div className="p-3 rounded-lg bg-slate-800/60 border border-slate-700 flex flex-col gap-0.5">
+              <div className="flex items-center gap-1.5">
+                <UtensilsCrossed className="w-4 h-4 text-slate-400 shrink-0" aria-hidden />
+                <span className="text-[11px] sm:text-xs text-slate-400 truncate">Open</span>
+              </div>
+              <p className="text-sm font-semibold text-white leading-tight">
+                {summaryLoading && !stats ? "…" : stats ? stats.openTables : 0}
+              </p>
+            </div>
+          </div>
         </section>
 
-        <h2 className="text-lg font-semibold text-slate-200 mb-4">Menü</h2>
+        <h2 className="text-sm font-semibold text-slate-200 mb-3">Menü</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <Link
             href="/dashboard"
