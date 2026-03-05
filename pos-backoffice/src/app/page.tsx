@@ -93,8 +93,8 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <header className="border-b border-slate-800 bg-slate-900 px-6 py-4">
+    <div className="min-h-screen flex flex-col bg-black">
+      <header className="border-b border-slate-800 bg-black px-6 py-4">
         <h1 className="text-xl font-bold text-sky-400">Limon POS Back-Office</h1>
         <p className="text-slate-400 text-sm mt-1">Dashboard & Settings</p>
       </header>

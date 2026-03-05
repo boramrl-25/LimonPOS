@@ -28,7 +28,7 @@ function LoginForm() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-950">
+    <div className="min-h-screen flex items-center justify-center bg-black">
       <form onSubmit={handleSubmit} className="w-full max-w-sm p-8 rounded-xl bg-slate-900 border border-slate-700">
         <h1 className="text-xl font-bold text-sky-400 mb-2">Limon POS Back-Office</h1>
         <p className="text-slate-400 text-sm mb-6">Admin login</p>
@@ -52,7 +52,7 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-slate-950 text-slate-400">Yükleniyor...</div>}>
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-black text-slate-400">Yükleniyor...</div>}>
       <LoginForm />
     </Suspense>
   );

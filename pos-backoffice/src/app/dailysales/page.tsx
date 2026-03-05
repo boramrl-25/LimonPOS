@@ -9,7 +9,7 @@ export default function DailySalesPage() {
     router.replace("/dashboard");
   }, [router]);
   return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400">
+    <div className="min-h-screen bg-black flex items-center justify-center text-slate-400">
       Redirecting to Dashboard...
     </div>
   );

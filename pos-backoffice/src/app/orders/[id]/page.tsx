@@ -44,14 +44,14 @@ export default function OrderDetailPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+      <div className="min-h-screen bg-black flex items-center justify-center">
         <div className="w-10 h-10 border-2 border-sky-500 border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
   if (error || !order) {
     return (
-      <div className="min-h-screen bg-slate-950 p-6">
+      <div className="min-h-screen bg-black p-6">
         <Link href="/dailysales" className="inline-flex items-center gap-2 text-slate-400 hover:text-white mb-6">
           <ArrowLeft className="w-4 h-4" /> Back
         </Link>
@@ -63,7 +63,7 @@ export default function OrderDetailPage() {
   const totalItems = order.items.reduce((s, i) => s + (i.quantity || 0) * (i.price || 0), 0);
 
   return (
-    <div className="min-h-screen bg-slate-950">
+    <div className="min-h-screen bg-black">
       <header className="border-b border-slate-800 bg-slate-900 px-6 py-4">
         <div className="flex items-center justify-between flex-wrap gap-4">
           <Link href="/dailysales" className="inline-flex items-center gap-2 text-slate-400 hover:text-white">

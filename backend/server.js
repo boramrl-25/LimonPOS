@@ -768,17 +768,19 @@ app.post("/api/eod/run", authMiddleware, async (req, res) => {
   });
 });
 
-// Dashboard stats (tek kaynak: getTodaySalesSummary). Open Tables = Open Checks (same: open orders count).
+// Dashboard stats. Open Tables = only tables that have an order with status open/sent (masaya bağlı açık hesap).
 app.get("/api/dashboard/stats", authMiddleware, async (req, res) => {
   await ensureData();
   const summary = getTodaySalesSummary();
   const orders = db.data.orders || [];
+  const tables = db.data.tables || [];
   const voidLogs = db.data.void_logs || [];
   const paymentByMethod = {};
   if (summary.totalCash) paymentByMethod.cash = summary.totalCash;
   if (summary.totalCard) paymentByMethod.card = summary.totalCard;
-  const openOrders = orders.filter((o) => o.status === "open" || o.status === "sent");
-  const openCount = openOrders.length;
+  const orderIdsOpenOrSent = new Set(orders.filter((o) => o.status === "open" || o.status === "sent").map((o) => o.id));
+  const tablesWithOpenCheck = tables.filter((t) => t.current_order_id && orderIdsOpenOrSent.has(t.current_order_id));
+  const openCount = tablesWithOpenCheck.length;
   const preVoids = voidLogs.filter((v) => v.type === "pre_void").length;
   const postVoids = voidLogs.filter((v) => v.type === "post_void").length;
   const eodLogs = db.data.eod_logs || [];
@@ -797,11 +799,14 @@ app.get("/api/dashboard/stats", authMiddleware, async (req, res) => {
   });
 });
 
-// Open orders (open + sent) — for "Open Tables / Checks" block: list with Receipt #, Table, Total, Waiter, Date
+// Open orders: only orders that are linked to a table (current_order_id). App ile uyumlu.
 app.get("/api/dashboard/open-orders", authMiddleware, async (req, res) => {
   await ensureData();
-  const orders = (db.data.orders || []).filter((o) => o.status === "open" || o.status === "sent");
-  const list = orders.map((o) => ({
+  const orders = db.data.orders || [];
+  const tables = db.data.tables || [];
+  const orderIdsLinkedToTable = new Set(tables.filter((t) => t.current_order_id).map((t) => t.current_order_id));
+  const openOrders = orders.filter((o) => (o.status === "open" || o.status === "sent") && orderIdsLinkedToTable.has(o.id));
+  const list = openOrders.map((o) => ({
     order_id: o.id,
     receipt_no: `#${(o.table_number || o.id).toString().slice(-6)}`,
     table_number: o.table_number || "",

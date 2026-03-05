@@ -68,7 +68,7 @@ export default function DailySummaryReportPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 p-6">
+    <div className="min-h-screen bg-black p-6">
       <header className="flex flex-wrap items-center justify-between gap-4 mb-6">
         <div className="flex items-center gap-4">
           <Link href="/dashboard" className="p-2 rounded-lg hover:bg-slate-800 text-slate-400">

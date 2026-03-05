@@ -123,7 +123,7 @@ export default function DashboardPage() {
   const yesterdayStr = toYYYYMMDD(yesterday);
 
   return (
-    <div className="min-h-screen bg-slate-950">
+    <div className="min-h-screen bg-black">
       <header className="border-b border-slate-800 bg-slate-900 px-6 py-4 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-4">
           <Link href="/" className="p-2 rounded-lg hover:bg-slate-800 transition-colors">

@@ -17,6 +17,9 @@ import {
   FileText,
   TrendingUp,
   XCircle,
+  RotateCcw,
+  BarChart2,
+  ShoppingBag,
 } from "lucide-react";
 import { logout } from "@/lib/api";
 
@@ -36,6 +39,9 @@ const navItems = [
 const reportItems = [
   { href: "/reports/sales", label: "Sales Report", icon: TrendingUp },
   { href: "/reports/voids", label: "Void Report", icon: XCircle },
+  { href: "/reports/refunds", label: "Refund Report", icon: RotateCcw },
+  { href: "/reports/category-sales", label: "Category Sales", icon: BarChart2 },
+  { href: "/reports/product-sales", label: "Product Sales", icon: ShoppingBag },
   { href: "/reports/daily-summary", label: "Daily Summary", icon: FileText },
 ];
 
@@ -48,7 +54,7 @@ export default function Sidebar() {
     router.refresh();
   }
   return (
-    <aside className="w-64 border-r border-slate-800 bg-slate-900/50 min-h-screen p-4 flex flex-col">
+    <aside className="w-64 border-r border-slate-800 bg-black min-h-screen p-4 flex flex-col">
       <Link href="/" className="block mb-6">
         <h1 className="text-lg font-bold text-sky-400">Limon POS</h1>
         <p className="text-xs text-slate-400">Back-Office</p>
