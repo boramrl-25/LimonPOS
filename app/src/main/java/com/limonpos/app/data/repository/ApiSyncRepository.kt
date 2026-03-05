@@ -407,8 +407,8 @@ class ApiSyncRepository @Inject constructor(
         if (response.isSuccessful) {
             val dtos = response.body() ?: return
             if (dtos.isEmpty()) {
-                // API returned no categories; keep existing local categories to avoid wiping UI.
                 Log.w("ApiSync", "syncCategories: empty list from API, keeping local categories")
+                ensureAllCategoryExists()
                 return
             }
             categoryDao.deleteAll()
@@ -434,10 +434,29 @@ class ApiSyncRepository @Inject constructor(
                 })
             }
             categoryDao.insertCategories(entities)
+        } else {
+            ensureAllCategoryExists()
+        }
+    }
+
+    private suspend fun ensureAllCategoryExists() {
+        val categories = categoryDao.getAllCategories().first()
+        if (categories.none { it.id == "all" }) {
+            categoryDao.insertCategory(CategoryEntity("all", "All", "#84CC16", 0, true, true, "SYNCED", "[]"))
+        }
+    }
+
+    private fun parseDouble(value: Any?, default: Double): Double {
+        if (value == null) return default
+        return when (value) {
+            is Number -> value.toDouble()
+            is String -> value.toDoubleOrNull() ?: default
+            else -> default
         }
     }
 
     private suspend fun syncProducts() {
+        ensureAllCategoryExists()
         val response = apiService.getProducts()
         if (!response.isSuccessful) {
             Log.w("ApiSync", "syncProducts: API failed ${response.code()}, keeping local products")
@@ -460,8 +479,7 @@ class ApiSyncRepository @Inject constructor(
                 val catId = dto.categoryId?.takeIf { it.isNotEmpty() }
                     ?: dto.categoryName?.let { categoryByName[it]?.id }
                     ?: defaultCategoryId
-                val rawTax = dto.taxRate
-                val taxRate = if (rawTax == null || rawTax.isNaN()) 0.0 else rawTax
+                val taxRate = parseDouble(dto.taxRate, 0.0)
                 val showInTill = when (dto.posEnabled) {
                     is Boolean -> dto.posEnabled
                     is Number -> (dto.posEnabled as Number).toInt() != 0
@@ -478,7 +496,7 @@ class ApiSyncRepository @Inject constructor(
                     nameArabic = dto.nameArabic ?: "",
                     nameTurkish = dto.nameTurkish ?: "",
                     categoryId = catId,
-                    price = dto.price ?: 0.0,
+                    price = parseDouble(dto.price, 0.0),
                     taxRate = taxRate,
                     printers = (dto.printers ?: emptyList()).let { Gson().toJson(it) },
                     modifierGroups = (dto.modifierGroups ?: emptyList()).let { Gson().toJson(it) },

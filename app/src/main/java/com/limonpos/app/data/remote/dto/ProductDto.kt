@@ -9,8 +9,8 @@ data class ProductDto(
     @SerializedName("name_turkish") val nameTurkish: String? = null,
     @SerializedName("category_id") val categoryId: String? = null,
     @SerializedName("category") val categoryName: String? = null,
-    @SerializedName("price") val price: Double? = null,
-    @SerializedName("tax_rate") val taxRate: Double? = null,  // from web; null = use 0
+    @SerializedName("price") val price: Any? = null,
+    @SerializedName("tax_rate") val taxRate: Any? = null,
     @SerializedName("printers") val printers: List<String>? = null,
     @SerializedName("modifier_groups") val modifierGroups: List<String>? = null,
     @SerializedName("active") val active: Any? = true,  // API may send 0/1 or boolean
