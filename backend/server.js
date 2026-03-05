@@ -2,7 +2,7 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import { v4 as uuid } from "uuid";
-import { db } from "./db.js";
+import { db, getDataFileInfo } from "./db.js";
 import { pushToZohoBooks, getZohoItems, getZohoItemGroups, syncFromZoho } from "./zoho.js";
 
 // Railway / production: yakalanmamış hatalar loglansın, process çökmesin veya net exit ile yeniden başlasın
@@ -54,6 +54,7 @@ async function ensureData() {
   }
   // Tables: only fill defaults when truly empty AND no orders (first run). If we have orders but tables empty (e.g. bad restart), rebuild from orders so data is not lost.
   if (!Array.isArray(db.data.tables)) db.data.tables = [];
+  if (!Array.isArray(db.data.audit_log)) db.data.audit_log = [];
   if (db.data.tables.length === 0) {
     const defaultTable = (i) => ({
       id: `main-${i + 1}`,
@@ -180,12 +181,17 @@ const authMiddleware = (req, res, next) => {
 // No auth — telefondan tarayıcıda açıp bağlantı testi: http://192.168.1.169:3002/api/health
 app.get("/api/health", (req, res) => {
   const dataDir = process.env.DATA_DIR || "";
+  const fileInfo = getDataFileInfo();
   res.json({
     ok: true,
     message: "LimonPOS API",
     ts: Date.now(),
     data_dir: dataDir || "(not set)",
     persistent_storage: !!dataDir,
+    data_file: fileInfo.path,
+    data_file_ok: !fileInfo.inMemory && fileInfo.size != null,
+    data_file_size: fileInfo.size ?? undefined,
+    data_file_mtime: fileInfo.mtime ?? undefined,
   });
 });
 
