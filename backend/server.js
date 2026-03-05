@@ -1327,7 +1327,7 @@ app.get("/api/dashboard/closed-bill-changes", authMiddleware, async (req, res) =
   });
 });
 
-// Clear sales (test data) by date range: deletes orders with created_at in [dateFrom start, dateTo end] and related data.
+// Clear sales (test data) by date range: deletes orders with created_at in [dateFrom start, dateTo end], related data, and all void_logs in that date range.
 app.post("/api/settings/clear-sales-by-date-range", authMiddleware, async (req, res) => {
   await ensureData();
   const dateFromStr = (req.body?.dateFrom || req.query?.dateFrom || "").toString().trim();
@@ -1350,14 +1350,22 @@ app.post("/api/settings/clear-sales-by-date-range", authMiddleware, async (req, 
     const created = o.created_at ?? o.updated_at ?? 0;
     return created >= startTs && created <= endTs;
   }).map((o) => o.id));
-  if (orderIdsInRange.size === 0) {
-    return res.json({ deletedOrders: 0, message: "No orders in date range" });
-  }
-  const ids = Array.from(orderIdsInRange);
+
+  // Remove order_items, payments for orders in range; remove orders in range
   db.data.order_items = (db.data.order_items || []).filter((i) => !orderIdsInRange.has(i.order_id));
   db.data.payments = (db.data.payments || []).filter((p) => !orderIdsInRange.has(p.order_id));
-  db.data.void_logs = (db.data.void_logs || []).filter((v) => !orderIdsInRange.has(v.order_id));
   db.data.orders = (db.data.orders || []).filter((o) => !orderIdsInRange.has(o.id));
+
+  // Remove void_logs: either belonging to deleted orders OR created_at in the date range (so Total Void drops for that period)
+  const voidLogsBefore = (db.data.void_logs || []).length;
+  db.data.void_logs = (db.data.void_logs || []).filter((v) => {
+    if (orderIdsInRange.has(v.order_id)) return false;
+    const created = v.created_at ?? 0;
+    if (created >= startTs && created <= endTs) return false;
+    return true;
+  });
+  const deletedVoids = voidLogsBefore - (db.data.void_logs || []).length;
+
   const tables = db.data.tables || [];
   for (let i = 0; i < tables.length; i++) {
     if (tables[i].current_order_id && orderIdsInRange.has(tables[i].current_order_id)) {
@@ -1373,7 +1381,11 @@ app.post("/api/settings/clear-sales-by-date-range", authMiddleware, async (req, 
     }
   }
   await db.write();
-  res.json({ deletedOrders: ids.length, message: `Deleted ${ids.length} order(s) and related data in date range` });
+  const msg = [
+    orderIdsInRange.size > 0 && `Deleted ${orderIdsInRange.size} order(s) and related data`,
+    deletedVoids > 0 && `Deleted ${deletedVoids} void log(s) in date range`,
+  ].filter(Boolean).join(". ") || "No orders or voids in date range";
+  res.json({ deletedOrders: orderIdsInRange.size, deletedVoids, message: msg });
 });
 
 // Zoho config
