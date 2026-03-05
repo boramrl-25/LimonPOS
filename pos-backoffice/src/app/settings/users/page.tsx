@@ -82,8 +82,14 @@ export default function UsersSettingsPage() {
     if (!file) return;
     setImporting(true);
     try {
-      const data = await file.arrayBuffer();
-      const wb = XLSX.read(data, { type: "array" });
+      let wb: XLSX.WorkBook;
+      if (file.name.toLowerCase().endsWith(".csv")) {
+        const text = await file.text();
+        wb = XLSX.read(text, { type: "string", raw: true });
+      } else {
+        const data = await file.arrayBuffer();
+        wb = XLSX.read(data, { type: "array" });
+      }
       const sheetName = wb.SheetNames.find((n) => n.toLowerCase().includes("sheet")) || wb.SheetNames[0];
       const sheet = wb.Sheets[sheetName];
       const rows = XLSX.utils.sheet_to_json(sheet) as Array<Record<string, unknown>>;
@@ -139,6 +145,7 @@ export default function UsersSettingsPage() {
 
       <h1 className="text-2xl font-bold text-sky-400 mb-2">Users</h1>
       <p className="text-slate-400 mb-8">Staff management. Tap row to edit. Default admin PIN: 1234</p>
+      <p className="text-slate-500 text-sm mb-4">Excel veya CSV: Örnek dosyayı indir, doldur, yükle.</p>
 
       <div className="flex justify-between items-center mb-8 flex-wrap gap-4">
         <span className="text-slate-400">Staff list</span>
@@ -147,9 +154,9 @@ export default function UsersSettingsPage() {
           <button
             onClick={downloadUsersTemplate}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-medium"
-            title="Import için Excel şablonu indir"
+            title="Import için örnek Excel/CSV indir"
           >
-            <FileDown className="w-4 h-4" /> Şablon indir
+            <FileDown className="w-4 h-4" /> Örnek dosya indir
           </button>
           <button
             onClick={exportUsersToExcel}
@@ -164,7 +171,7 @@ export default function UsersSettingsPage() {
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-medium disabled:opacity-50"
           >
             {importing ? <div className="w-4 h-4 border-2 border-sky-500 border-t-transparent rounded-full animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
-            Import Excel
+            Yükle (Excel/CSV)
           </button>
           <button onClick={() => openEdit()} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium">
             <Plus className="w-4 h-4" /> New User

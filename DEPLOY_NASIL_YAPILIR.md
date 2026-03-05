@@ -4,6 +4,19 @@ Bu rehberde **backend (API)** ve **web (pos.the-limon.com)** deploy adımları v
 
 ---
 
+## Senin yapacakların (kısa liste)
+
+| Ne durumdasın? | Ne yapacaksın? |
+|----------------|----------------|
+| **Vercel / Railway hiç kurmadım** | Aşağıdaki **1. Web** ve **2. Backend** bölümlerini sırayla yap (her biri bir kez). |
+| **İkisini de kurduk, sadece kodu güncellemek istiyorum** | Bilgisayarda `git push origin main` yap (veya Cursor’da “Push” de). Sonrası otomatik. |
+| **pos.the-limon.com / api.the-limon.com açılmıyor** | Domain’i Vercel ve Railway’e bağla; domain sağlayıcında CNAME kayıtlarını ekle (aşağıda anlatıldı). |
+| **Veriler yine silindi** | Railway’de **Volume** (mount: `/data`) ve **DATA_DIR=/data** tanımlı mı kontrol et. Yoksa ekle, redeploy et. |
+
+**Özet:** İlk seferde Vercel + Railway’i kurup domain’leri bağlarsan, sonra sadece `git push` yeter; deploy’u sen yapmıyorsun, otomatik olur.
+
+---
+
 ## Genel mimari
 
 | Bileşen | Adres | Nerede deploy | Not |
@@ -17,13 +30,16 @@ Bu rehberde **backend (API)** ve **web (pos.the-limon.com)** deploy adımları v
 
 ### İlk kurulum (bir kez)
 
-1. [Vercel](https://vercel.com) → giriş yap → **Add New** → **Project**
-2. **Import** ile GitHub repo’yu seç: `boramrl-25/LimonPOS`
-3. **Root Directory** → `pos-backoffice` seç
-4. **Environment Variables** ekle:
-   - `NEXT_PUBLIC_API_URL` = `https://api.the-limon.com/api`  
-   (Backend’i deploy ettikten sonra bu adres çalışır.)
-5. **Deploy** tıkla.
+1. [Vercel](https://vercel.com) → giriş yap.
+2. Sol menüden **Projects**’e tıkla (Integrations değil).
+3. Sağ üstte **Add New** → **Project** (veya **Import Git Repository**).
+4. **Import** ile GitHub repo’yu seç: `boramrl-25/LimonPOS`. (GitHub hesabını bağlaman istenirse “Connect GitHub” de.)
+5. **Configure Project** ekranında:
+   - **Root Directory** → **Edit** → `pos-backoffice` yaz, seç (sadece bu klasör deploy edilsin).
+   - **Environment Variables** → Name: `NEXT_PUBLIC_API_URL`, Value: `https://api.the-limon.com/api`
+6. **Deploy** tıkla.
+
+Not: **Integrations** sayfasına girme; proje deploy’u **Projects** → **Add New** → **Project** ile yapılır.
 
 ### Sonraki deploy’lar
 

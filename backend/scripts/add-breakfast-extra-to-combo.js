@@ -34,9 +34,10 @@ async function run() {
   for (const p of db.data.products) {
     if (p.category_id !== categoryId) continue;
     const arr = JSON.parse(p.modifier_groups || "[]");
-    if (arr.includes(mg.id)) continue;
-    const next = [...arr, mg.id];
-    p.modifier_groups = JSON.stringify(next);
+    const without = arr.filter((id) => id !== mg.id);
+    const at = Math.min(1, without.length);
+    without.splice(at, 0, mg.id);
+    p.modifier_groups = JSON.stringify(without);
     count++;
   }
 

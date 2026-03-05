@@ -49,7 +49,9 @@ export default function ProductsPage() {
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [zohoCheckResult, setZohoCheckResult] = useState<{ ok: boolean; itemsCount: number; groupsCount: number; error?: string } | null>(null);
   const [importing, setImporting] = useState(false);
+  const [importingModifierPrinter, setImportingModifierPrinter] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const modifierPrinterFileInputRef = useRef<HTMLInputElement | null>(null);
   const [pendingRemoval, setPendingRemoval] = useState<Product[]>([]);
   const [selectedRemovalIds, setSelectedRemovalIds] = useState<Set<string>>(new Set());
   const [removalLoading, setRemovalLoading] = useState(false);
@@ -97,8 +99,16 @@ export default function ProductsPage() {
         getModifierGroups(),
         getPendingZohoRemovalProducts().catch(() => []),
       ]);
-      setProducts(prods);
-      setCategories(cats);
+      const byId = new Map<string, Product>();
+      for (const p of prods) {
+        if (p?.id && !byId.has(p.id)) byId.set(p.id, p as Product);
+      }
+      setProducts(Array.from(byId.values()));
+      const catsById = new Map<string, { id: string; name: string }>();
+      for (const c of cats || []) {
+        if (c?.id && !catsById.has(c.id)) catsById.set(c.id, { id: c.id, name: c.name || "" });
+      }
+      setCategories(Array.from(catsById.values()));
       setPrinters(prts);
       setModifierGroups(mgs.map((m) => ({ id: m.id, name: m.name })));
       setPendingRemoval((pending as Product[]) || []);
@@ -343,8 +353,14 @@ export default function ProductsPage() {
     if (!file) return;
     setImporting(true);
     try {
-      const data = await file.arrayBuffer();
-      const wb = XLSX.read(data, { type: "array" });
+      let wb: XLSX.WorkBook;
+      if (file.name.toLowerCase().endsWith(".csv")) {
+        const text = await file.text();
+        wb = XLSX.read(text, { type: "string", raw: true });
+      } else {
+        const data = await file.arrayBuffer();
+        wb = XLSX.read(data, { type: "array" });
+      }
       const sheetName = wb.SheetNames[0];
       const sheet = wb.Sheets[sheetName];
       const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet);
@@ -409,23 +425,115 @@ export default function ProductsPage() {
     }
   }
 
+  /** Modifier ve yazıcı atama şablonu indir (Excel). Kolonlar: Product (veya Ürün), Modifiers (veya Modifierler), Printers (veya Yazıcılar). */
+  function downloadModifierPrinterTemplate() {
+    const rows = [
+      {
+        Product: "Turkish Coffee",
+        Modifiers: "Breakfast extra drink and breads, Size",
+        Printers: "Kitchen, Bar",
+      },
+      {
+        Product: "Croissant",
+        Modifiers: "Breakfast extra drink and breads",
+        Printers: "Kitchen",
+      },
+    ];
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "ModifierPrinter");
+    XLSX.writeFile(wb, "urun_modifier_yazici_sablonu.xlsx");
+  }
+
+  /** Excel/CSV ile ürünlere modifier ve yazıcı ataması. Product = ürün adı veya SKU; Modifiers/Printers = virgülle ayrılmış isimler. */
+  async function handleModifierPrinterImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportingModifierPrinter(true);
+    try {
+      let wb: XLSX.WorkBook;
+      if (file.name.toLowerCase().endsWith(".csv")) {
+        const text = await file.text();
+        wb = XLSX.read(text, { type: "string", raw: true });
+      } else {
+        const data = await file.arrayBuffer();
+        wb = XLSX.read(data, { type: "array" });
+      }
+      const sheetName = wb.SheetNames[0];
+      const sheet = wb.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet);
+      let updated = 0;
+      let skipped = 0;
+      for (const row of rows) {
+        const productKey = String(row.Product ?? row.Ürün ?? row.product ?? row.name ?? "").trim();
+        if (!productKey) {
+          skipped += 1;
+          continue;
+        }
+        const product =
+          products.find((p) => (p.sku || "").trim().toLowerCase() === productKey.toLowerCase()) ??
+          products.find((p) => (p.name || "").trim().toLowerCase() === productKey.toLowerCase());
+        if (!product) {
+          skipped += 1;
+          continue;
+        }
+        const modStr = String(row.Modifiers ?? row.Modifierler ?? row.modifiers ?? "").trim();
+        const printerStr = String(row.Printers ?? row.Yazıcılar ?? row.printers ?? "").trim();
+        const modifierNames = modStr ? modStr.split(/[,;]/).map((s) => s.trim()).filter(Boolean) : [];
+        const printerNames = printerStr ? printerStr.split(/[,;]/).map((s) => s.trim()).filter(Boolean) : [];
+        const modifierIds = modifierNames
+          .map((name) => modifierGroups.find((mg) => (mg.name || "").trim().toLowerCase() === name.toLowerCase())?.id)
+          .filter((id): id is string => Boolean(id));
+        const printerIds = printerNames
+          .map((name) => printers.find((pr) => (pr.name || "").trim().toLowerCase() === name.toLowerCase())?.id)
+          .filter((id): id is string => Boolean(id));
+        await updateProduct(product.id, {
+          name: product.name,
+          name_arabic: product.name_arabic ?? "",
+          name_turkish: product.name_turkish ?? "",
+          sku: product.sku ?? "",
+          category_id: product.category_id ?? undefined,
+          price: product.price ?? 0,
+          tax_rate: product.tax_rate ?? 0,
+          image_url: product.image_url ?? "",
+          printers: printerIds.length > 0 ? printerIds : product.printers ?? [],
+          modifier_groups: modifierIds.length > 0 ? modifierIds : product.modifier_groups ?? [],
+          pos_enabled: Boolean(product.pos_enabled),
+        });
+        updated += 1;
+      }
+      await load(true);
+      alert(`Modifier/yazıcı ataması: ${updated} ürün güncellendi.${skipped > 0 ? ` ${skipped} satır atlandı (ürün bulunamadı veya boş).` : ""}`);
+    } catch (err) {
+      alert((err as Error).message);
+    } finally {
+      setImportingModifierPrinter(false);
+      e.target.value = "";
+    }
+  }
+
   const filteredProducts = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
+    const q = (searchQuery || "").trim().toLowerCase();
+    const catFilter = (categoryFilter || "").trim();
     let base = products;
 
-    if (categoryFilter && categoryFilter !== "all") {
-      base = base.filter((p) => {
-        if (p.category_id === categoryFilter) return true;
-        const cat = categories.find((c) => c.id === categoryFilter);
-        if (!cat) return false;
-        return (p.category || "").trim().toLowerCase() === cat.name.toLowerCase();
-      });
+    // Kategori filtresi: seçilen kategori adına göre filtrele (görünen category alanı ile tutarlı)
+    if (catFilter && catFilter !== "all") {
+      const cat = categories.find((c) => String(c.id) === String(catFilter) || (c.name || "").trim().toLowerCase() === catFilter.toLowerCase());
+      const catNameLower = (cat?.name || "").trim().toLowerCase();
+      if (catNameLower) {
+        base = base.filter((p) => (p.category || "").trim().toLowerCase() === catNameLower);
+      } else {
+        // id ile dene
+        base = base.filter((p) => p.category_id != null && String(p.category_id) === String(catFilter));
+      }
     }
 
+    // Arama: metin varsa ada, SKU, kategori, Arapça/Türkçe ada göre filtrele
     if (!q) return base;
     return base.filter(
       (p) =>
-        p.name.toLowerCase().includes(q) ||
+        (p.name || "").toLowerCase().includes(q) ||
         (p.sku || "").toLowerCase().includes(q) ||
         (p.category || "").toLowerCase().includes(q) ||
         (p.name_arabic || "").toLowerCase().includes(q) ||
@@ -469,6 +577,7 @@ export default function ProductsPage() {
         <div>
           <h1 className="text-2xl font-bold text-sky-400">Products</h1>
           <p className="text-slate-400">Add, edit, delete products. Zoho sync ile ürünler güncellenir; Zoho'da kaldırılanlar &quot;silinecek önerisi&quot; olarak listelenir, onay verene kadar satışta kalır.</p>
+          <p className="text-slate-500 text-sm mt-1">Excel veya CSV: Örnek dosyayı indir, doldur, yükle.</p>
           {lastSync && <p className="text-slate-500 text-sm mt-1">Last sync: {lastSync}</p>}
           {zohoCheckResult && (
             <p className={`text-sm mt-1 ${zohoCheckResult.ok ? "text-emerald-400" : "text-amber-400"}`}>
@@ -491,7 +600,7 @@ export default function ProductsPage() {
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-medium"
             title="Import için Excel şablonu indir"
           >
-            <FileDown className="w-4 h-4" /> Şablon indir
+            <FileDown className="w-4 h-4" /> Örnek dosya indir
           </button>
           <button
             onClick={exportProductsToExcel}
@@ -509,7 +618,7 @@ export default function ProductsPage() {
             ) : (
               <FileSpreadsheet className="w-4 h-4" />
             )}
-            Import Excel/CSV
+            Yükle (Excel/CSV)
           </button>
           <button onClick={checkZoho} disabled={checkLoading} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-600 hover:bg-slate-500 disabled:opacity-50 text-white font-medium" title="Zoho bağlantısını ve ürün sayısını kontrol et">
             {checkLoading ? "Kontrol..." : "Zoho Kontrol"}
@@ -523,26 +632,66 @@ export default function ProductsPage() {
         </div>
       </div>
 
+      <div className="mb-6 p-4 rounded-lg border border-amber-700/50 bg-amber-950/20">
+        <h2 className="text-lg font-semibold text-amber-400 mb-2">Ürünlere modifier ve yazıcı atama (Excel/CSV)</h2>
+        <p className="text-slate-400 text-sm mb-3">
+          Şablonu indir, <strong>Product</strong> (ürün adı veya SKU), <strong>Modifiers</strong> (virgülle ayrılmış modifier grupları), <strong>Printers</strong> (virgülle ayrılmış yazıcılar) sütunlarını doldurup yükleyin. Sadece eşleşen ürünler güncellenir.
+        </p>
+        <input
+          ref={modifierPrinterFileInputRef}
+          type="file"
+          accept=".xlsx,.xls,.csv"
+          className="hidden"
+          onChange={handleModifierPrinterImport}
+        />
+        <div className="flex gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={downloadModifierPrinterTemplate}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-medium"
+            title="Modifier ve yazıcı atama şablonu"
+          >
+            <FileDown className="w-4 h-4" /> Örnek dosya indir
+          </button>
+          <button
+            type="button"
+            onClick={() => modifierPrinterFileInputRef.current?.click()}
+            disabled={importingModifierPrinter}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-700 hover:bg-amber-600 text-white font-medium disabled:opacity-50"
+          >
+            {importingModifierPrinter ? (
+              <div className="w-4 h-4 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <FileSpreadsheet className="w-4 h-4" />
+            )}
+            Modifier &amp; yazıcı yükle (Excel/CSV)
+          </button>
+        </div>
+      </div>
+
       <div className="flex gap-4 mb-4 flex-wrap">
         <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
           <input
+            type="text"
+            autoComplete="off"
+            role="searchbox"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search products by name, SKU, category..."
+            placeholder="Ürün adı, SKU veya kategori ile ara..."
             className="w-full pl-10 pr-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white placeholder-slate-500"
           />
         </div>
         <div className="flex items-center gap-2">
           <label className="text-sm text-slate-400">Category:</label>
           <select
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
+            value={categoryFilter === "" ? "all" : categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value || "all")}
             className="px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white"
           >
             <option value="all">All</option>
             {categories.map((c) => (
-              <option key={c.id} value={c.id}>
+              <option key={String(c.id)} value={String(c.id)}>
                 {c.name}
               </option>
             ))}

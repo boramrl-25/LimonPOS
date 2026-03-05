@@ -98,8 +98,14 @@ export default function PrintersPage() {
     if (!file) return;
     setImporting(true);
     try {
-      const data = await file.arrayBuffer();
-      const wb = XLSX.read(data, { type: "array" });
+      let wb: XLSX.WorkBook;
+      if (file.name.toLowerCase().endsWith(".csv")) {
+        const text = await file.text();
+        wb = XLSX.read(text, { type: "string", raw: true });
+      } else {
+        const data = await file.arrayBuffer();
+        wb = XLSX.read(data, { type: "array" });
+      }
       const sheetName = wb.SheetNames[0];
       const sheet = wb.Sheets[sheetName];
       const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet);
@@ -147,6 +153,7 @@ export default function PrintersPage() {
         <div>
           <h1 className="text-2xl font-bold text-sky-400">Printers</h1>
           <p className="text-slate-400">Kitchen and receipt printers</p>
+          <p className="text-slate-500 text-sm mt-1">Excel veya CSV: Örnek dosyayı indir, doldur, yükle.</p>
         </div>
         <div className="flex gap-2 flex-wrap">
           <input
@@ -161,7 +168,7 @@ export default function PrintersPage() {
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-medium"
             title="Import için Excel şablonu indir"
           >
-            <FileDown className="w-4 h-4" /> Şablon indir
+            <FileDown className="w-4 h-4" /> Örnek dosya indir
           </button>
           <button
             onClick={exportPrintersToExcel}
@@ -179,7 +186,7 @@ export default function PrintersPage() {
             ) : (
               <FileSpreadsheet className="w-4 h-4" />
             )}
-            Import Excel/CSV
+            Yükle (Excel/CSV)
           </button>
           <button onClick={() => openEdit()} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium">
             <Plus className="w-4 h-4" /> New Printer
