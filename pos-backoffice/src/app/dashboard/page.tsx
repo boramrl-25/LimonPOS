@@ -13,8 +13,9 @@ import {
   ChevronRight,
   Bell,
   FileEdit,
+  Banknote,
 } from "lucide-react";
-import { getDashboardStats, getDailySales, getOpenOrders, getClosedBillChanges, runEod } from "@/lib/api";
+import { getDashboardStats, getDailySales, getOpenOrders, getClosedBillChanges, getCashDrawerOpens, runEod } from "@/lib/api";
 
 type PaidTicket = { order_id: string; receipt_no?: string; table_number: string; total: number; paid_at: number; waiter_name?: string; cash_amount: number; card_amount: number; discount_amount?: number };
 type OpenOrderRow = { order_id: string; receipt_no: string; table_number: string; total: number; waiter_name: string; created_at: number; status: string };
@@ -71,6 +72,8 @@ export default function DashboardPage() {
   const [eodConfirmOpen, setEodConfirmOpen] = useState(false);
   const [closedBillChanges, setClosedBillChanges] = useState<{ count: number; summary: { fullRefunds: number; itemRefunds: number; paymentMethodChanges?: number }; changes: Array<{ id: string; order_id: string; receipt_no: string | null; table_number: string; type: string; product_name: string | null; amount: number; user_name: string; created_at: number; details?: string | null }> } | null>(null);
   const [closedBillChangesModal, setClosedBillChangesModal] = useState(false);
+  const [cashDrawerOpens, setCashDrawerOpens] = useState<{ count: number; opens: Array<{ id: string; user_name: string; opened_at: number }> } | null>(null);
+  const [cashDrawerModalOpen, setCashDrawerModalOpen] = useState(false);
   const [approvalRequestsCountPrev, setApprovalRequestsCountPrev] = useState(0);
   const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(null);
   const router = useRouter();
@@ -81,12 +84,14 @@ export default function DashboardPage() {
       const to = selectedDateTo || undefined;
       const useRange = from && to;
       const singleDate = from || to;
-      const [statsRes, dailyRes, closedChangesRes] = await Promise.all([
+      const [statsRes, dailyRes, closedChangesRes, cashDrawerRes] = await Promise.all([
         getDashboardStats(),
         useRange ? getDailySales(undefined, from, to) : getDailySales(singleDate),
         useRange ? getClosedBillChanges(undefined, from, to) : getClosedBillChanges(singleDate).catch(() => ({ count: 0, summary: { fullRefunds: 0, itemRefunds: 0, paymentMethodChanges: 0 }, changes: [] })),
+        useRange ? getCashDrawerOpens(undefined, from, to) : getCashDrawerOpens(singleDate).catch(() => ({ count: 0, opens: [] })),
       ]);
       setClosedBillChanges(closedChangesRes);
+      setCashDrawerOpens(cashDrawerRes);
       setStats({
         todaySales: statsRes.todaySales ?? 0,
         orderCount: statsRes.orderCount ?? 0,
@@ -102,6 +107,7 @@ export default function DashboardPage() {
     } catch {
       setStats({ todaySales: 0, orderCount: 0, openTables: 0, openChecks: 0, lastEod: null, openTablesCount: 0, pendingVoidRequestsCount: 0, pendingClosedBillAccessRequestsCount: 0 });
       setDailySales(null);
+      setCashDrawerOpens({ count: 0, opens: [] });
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -217,8 +223,8 @@ export default function DashboardPage() {
               </div>
             </button>
           </div>
-          {/* Row 2: Approval Request, Closed Bill Changes, Total Void, Refund Total */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+          {/* Row 2: Approval Request, Closed Bill Changes, Total Void, Refund Total, Cash Drawer Opens */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-4">
             <button type="button" className={blockButtonClass} onClick={() => { setTicketModalType(null); router.push("/dashboard/approvals"); }}>
               <Bell className="w-8 h-8 text-orange-400 shrink-0" />
               <div>
@@ -252,6 +258,13 @@ export default function DashboardPage() {
               <div>
                 <p className="text-slate-400 text-sm">Refund Total</p>
                 <p className="text-xl font-bold text-red-400">{loading ? "..." : fmt(dailySales?.totalRefundAmount ?? 0)} AED</p>
+              </div>
+            </button>
+            <button type="button" className={blockButtonClass} onClick={() => setCashDrawerModalOpen(true)}>
+              <Banknote className="w-8 h-8 text-amber-400 shrink-0" />
+              <div>
+                <p className="text-slate-400 text-sm">Cash Drawer Opens (No Sale)</p>
+                <p className="text-xl font-bold text-white">{loading ? "..." : (cashDrawerOpens?.count ?? 0)}</p>
               </div>
             </button>
           </div>
@@ -452,6 +465,32 @@ export default function DashboardPage() {
                 <p><strong>Summary:</strong> {closedBillChanges.summary.fullRefunds} full bill refund(s), {closedBillChanges.summary.itemRefunds} item refund(s){closedBillChanges.summary.paymentMethodChanges ? `, ${closedBillChanges.summary.paymentMethodChanges} payment method change(s)` : ""}.</p>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Cash Drawer Opens (No Sale) modal */}
+      {cashDrawerModalOpen && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={() => setCashDrawerModalOpen(false)}>
+          <div className="bg-slate-900 rounded-xl border border-slate-700 max-w-lg w-full max-h-[80vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="p-4 border-b border-slate-700 flex justify-between items-center">
+              <h3 className="text-lg font-semibold text-slate-200">Cash Drawer Opens (No Sale)</h3>
+              <button type="button" onClick={() => setCashDrawerModalOpen(false)} className="text-slate-400 hover:text-white">Close</button>
+            </div>
+            <div className="overflow-y-auto flex-1 p-4">
+              {cashDrawerOpens && cashDrawerOpens.opens.length > 0 ? (
+                <ul className="space-y-2">
+                  {cashDrawerOpens.opens.map((e) => (
+                    <li key={e.id} className="p-3 rounded-lg bg-slate-800 text-left">
+                      <p className="font-medium text-slate-200">{e.user_name}</p>
+                      <p className="text-slate-500 text-sm mt-0.5">{new Date(e.opened_at).toLocaleString("tr-TR", { dateStyle: "short", timeStyle: "medium" })}</p>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-slate-500 py-4">No cash drawer opens (no sale) for this period.</p>
+              )}
+            </div>
           </div>
         </div>
       )}

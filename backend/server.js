@@ -298,8 +298,19 @@ app.post("/api/auth/login", async (req, res) => {
   });
 });
 
-app.post("/api/auth/verify-cash-drawer", authMiddleware, (req, res) => {
-  if (!req.user.cash_drawer_permission) return res.status(403).json({ success: false, message: "No permission" });
+app.post("/api/auth/verify-cash-drawer", authMiddleware, async (req, res) => {
+  await ensureData();
+  const pin = String((req.body || {}).pin || "").trim();
+  const user = (db.data.users || []).find((u) => String(u.pin) === pin && u.active);
+  if (!user || !(user.cash_drawer_permission || user.role === "admin" || user.role === "manager")) return res.status(403).json({ success: false, message: "No permission" });
+  db.data.cash_drawer_opens = db.data.cash_drawer_opens || [];
+  db.data.cash_drawer_opens.push({
+    id: uuid(),
+    user_id: user.id,
+    user_name: user.name || "—",
+    opened_at: Date.now(),
+  });
+  await db.write();
   res.json({ success: true, message: null });
 });
 
@@ -1356,6 +1367,33 @@ app.get("/api/dashboard/closed-bill-changes", authMiddleware, async (req, res) =
     summary: { fullRefunds, itemRefunds, paymentMethodChanges },
     changes,
   });
+});
+
+// Cash drawer opens (no sale): who opened and when. ?date= or ?dateFrom=&dateTo=
+app.get("/api/dashboard/cash-drawer-opens", authMiddleware, async (req, res) => {
+  await ensureData();
+  const dateStr = (req.query.date || "").toString().trim();
+  const dateFromStr = (req.query.dateFrom || "").toString().trim();
+  const dateToStr = (req.query.dateTo || "").toString().trim();
+  const todayTs = getTodayStartTimestamp();
+  const dayMs = 24 * 60 * 60 * 1000;
+  let startTs = todayTs;
+  let endTs = todayTs + dayMs;
+  if (dateFromStr && dateToStr) {
+    const fromBounds = getDayBounds(dateFromStr);
+    const toBounds = getDayBounds(dateToStr);
+    if (!fromBounds || !toBounds) return res.status(400).json({ error: "invalid_date" });
+    startTs = fromBounds.startTs;
+    endTs = toBounds.endTs;
+  } else if (dateStr) {
+    const bounds = getDayBounds(dateStr);
+    if (!bounds) return res.status(400).json({ error: "invalid_date" });
+    startTs = bounds.startTs;
+    endTs = bounds.endTs;
+  }
+  const list = (db.data.cash_drawer_opens || []).filter((e) => e.opened_at >= startTs && e.opened_at < endTs);
+  list.sort((a, b) => (b.opened_at || 0) - (a.opened_at || 0));
+  res.json({ count: list.length, opens: list });
 });
 
 // Clear sales (test data) by date range: deletes orders with created_at in [dateFrom start, dateTo end], related data, and all void_logs in that date range.

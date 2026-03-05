@@ -395,6 +395,21 @@ export async function getClosedBillChanges(date?: string, dateFrom?: string, dat
   return res.json();
 }
 
+export async function getCashDrawerOpens(date?: string, dateFrom?: string, dateTo?: string): Promise<{ count: number; opens: Array<{ id: string; user_id: string; user_name: string; opened_at: number }> }> {
+  const params = new URLSearchParams();
+  if (dateFrom && dateTo) {
+    params.set("dateFrom", dateFrom);
+    params.set("dateTo", dateTo);
+  } else if (date) {
+    params.set("date", date);
+  }
+  const qs = params.toString();
+  const url = qs ? `${API_URL}/dashboard/cash-drawer-opens?${qs}` : `${API_URL}/dashboard/cash-drawer-opens`;
+  const res = await fetchWithTimeout(url, { headers: headers() });
+  if (!res.ok) throw new Error("Failed to fetch cash drawer opens");
+  return res.json();
+}
+
 export async function getOrder(orderId: string) {
   const res = await fetchWithTimeout(`${API_URL}/orders/${encodeURIComponent(orderId)}`, { headers: headers() });
   if (res.status === 404) throw new Error("Order not found (may have been deleted).");

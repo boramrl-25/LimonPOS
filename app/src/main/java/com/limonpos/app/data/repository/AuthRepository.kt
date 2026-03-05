@@ -4,6 +4,7 @@ import com.limonpos.app.data.local.dao.UserDao
 import com.limonpos.app.data.local.entity.UserEntity
 import com.limonpos.app.data.remote.ApiService
 import com.limonpos.app.data.remote.AuthTokenProvider
+import com.limonpos.app.data.remote.dto.CashDrawerVerifyRequest
 import com.limonpos.app.data.remote.dto.LoginRequest
 import com.limonpos.app.util.SessionManager
 import kotlinx.coroutines.CoroutineScope
@@ -54,14 +55,16 @@ class AuthRepository @Inject constructor(
     }
 
     suspend fun verifyCashDrawer(pin: String): Result<Boolean> {
-        val user = userDao.getUserByPin(pin)
-        return if (user != null) {
-            val hasPermission = user.role == "admin" || user.role == "manager" || user.cashDrawerPermission
-            if (hasPermission) Result.success(true)
-            else Result.failure(Exception("No cash drawer permission"))
-        } else {
-            Result.failure(Exception("Invalid PIN"))
+        val user = userDao.getUserByPin(pin) ?: return Result.failure(Exception("Invalid PIN"))
+        val hasPermission = user.role == "admin" || user.role == "manager" || user.cashDrawerPermission
+        if (!hasPermission) return Result.failure(Exception("No cash drawer permission"))
+        scope.launch {
+            try {
+                apiService.verifyCashDrawer(CashDrawerVerifyRequest(pin = pin))
+                // Backend logs who opened (user matched by PIN) and when
+            } catch (_: Exception) { /* offline – drawer still opens locally */ }
         }
+        return Result.success(true)
     }
 
     /** Verify PIN belongs to user with post_void permission (admin, manager, or post_void role). */

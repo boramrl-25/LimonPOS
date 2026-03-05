@@ -62,6 +62,7 @@ const defaultData = {
   audit_log: [],
   settings: { timezone_offset_minutes: 0, overdue_undelivered_minutes: 10 },
   eod_logs: [],
+  cash_drawer_opens: [],
 };
 
 let db;
