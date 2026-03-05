@@ -489,7 +489,7 @@ class OrderViewModel @Inject constructor(
             while (true) {
                 val list = orderRepository.getOverdueUndelivered(10 * 60 * 1000L)
                 if (list.isNotEmpty()) _overdueWarning.value = list
-                delay(4 * 60 * 1000L)
+                delay(60 * 1000L) // re-check every 1 minute
             }
         }
     }

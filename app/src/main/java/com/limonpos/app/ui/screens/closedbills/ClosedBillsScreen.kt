@@ -38,15 +38,18 @@ fun ClosedBillsScreen(
     viewModel: ClosedBillsViewModel = hiltViewModel(),
     onBack: () -> Unit,
     onNavigateToFloorPlan: () -> Unit = {},
-    onRecallSuccess: (tableId: String) -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
     onSync: () -> Unit = {}
 ) {
     val paidOrders by viewModel.paidOrders.collectAsState(emptyList())
     val selectedOrderWithItems by viewModel.selectedOrderWithItems.collectAsState()
-    val showTableSelection by viewModel.showTableSelection.collectAsState()
     val freeTables by viewModel.freeTables.collectAsState(emptyList())
     val message by viewModel.message.collectAsState()
+    val pinError by viewModel.pinError.collectAsState()
+
+    var showPinDialog by remember { mutableStateOf(true) }
+    var pin by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) { viewModel.loadPaidOrders() }
     LaunchedEffect(message) {
@@ -107,7 +110,7 @@ fun ClosedBillsScreen(
                 Text(msg, color = LimonPrimary, modifier = Modifier.padding(bottom = 8.dp))
             }
             Text(
-                "Recall reopens the bill on a table. After recall you can: Refund single item or full bill, Change payment method, Add/remove items. If original table is occupied, select another free table.",
+                "Closed bills: View details, refunds and payment changes are managed by authorized staff. (Recall to table is disabled.)",
                 color = LimonTextSecondary,
                 fontSize = 13.sp,
                 modifier = Modifier.padding(bottom = 16.dp)
@@ -124,7 +127,7 @@ fun ClosedBillsScreen(
                     items(paidOrders, key = { it.id }) { order ->
                         ClosedBillCard(
                             order = order,
-                            onRecall = { viewModel.selectOrderForRecall(order) }
+                            onOpen = { viewModel.selectOrderForRecall(order) }
                         )
                     }
                 }
@@ -133,30 +136,63 @@ fun ClosedBillsScreen(
     }
 
     selectedOrderWithItems?.let { ow ->
-        if (showTableSelection) {
-            RecallBillDialog(
-                order = ow.order,
-                freeTables = freeTables,
-                onDismiss = { viewModel.dismissBillDialog() },
-                onRecall = { tableId ->
-                    viewModel.recallToTable(ow.order.id, tableId) { onRecallSuccess(tableId) }
+        BillDetailDialog(
+            orderWithItems = ow,
+            onDismiss = { viewModel.dismissBillDialog() }
+        )
+    }
+
+    if (showPinDialog) {
+        AlertDialog(
+            onDismissRequest = { /* force PIN, do not allow dismiss */ },
+            title = { Text("Closed Bills Access", fontWeight = FontWeight.Bold, color = LimonText) },
+            text = {
+                Column {
+                    Text("Enter manager/supervisor PIN to view closed bills.", color = LimonTextSecondary, fontSize = 13.sp)
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = pin,
+                        onValueChange = {
+                            if (it.length <= 4 && it.all { c -> c.isDigit() }) {
+                                pin = it
+                                viewModel.clearPinError()
+                            }
+                        },
+                        label = { Text("PIN (4 digits)") },
+                        singleLine = true
+                    )
+                    pinError?.let { err ->
+                        Spacer(Modifier.height(4.dp))
+                        Text(err, color = LimonError, fontSize = 12.sp)
+                    }
                 }
-            )
-        } else {
-            BillDetailDialog(
-                orderWithItems = ow,
-                onDismiss = { viewModel.dismissBillDialog() },
-                onRecallToTable = { viewModel.onRecallToTableClicked() }
-            )
-        }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        scope.launch {
+                            val ok = viewModel.verifyClosedBillsPin(pin)
+                            if (ok) {
+                                showPinDialog = false
+                                pin = ""
+                            }
+                        }
+                    },
+                    enabled = pin.length == 4
+                ) {
+                    Text("Unlock", color = Color.Black)
+                }
+            },
+            dismissButton = {},
+            containerColor = LimonSurface
+        )
     }
 }
 
 @Composable
 private fun BillDetailDialog(
     orderWithItems: OrderWithItems,
-    onDismiss: () -> Unit,
-    onRecallToTable: () -> Unit
+    onDismiss: () -> Unit
 ) {
     val order = orderWithItems.order
     val items = orderWithItems.items
@@ -206,18 +242,11 @@ private fun BillDetailDialog(
             }
         },
         confirmButton = {
-            Button(
-                onClick = onRecallToTable,
-                colors = ButtonDefaults.buttonColors(containerColor = LimonPrimary)
-            ) {
-                Text("Recall to Table")
-            }
-        },
-        dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text("Close", color = LimonTextSecondary)
             }
         },
+        dismissButton = {},
         containerColor = LimonSurface
     )
 }
@@ -225,7 +254,7 @@ private fun BillDetailDialog(
 @Composable
 private fun ClosedBillCard(
     order: OrderEntity,
-    onRecall: () -> Unit
+    onOpen: () -> Unit
 ) {
     val dateStr = remember(order.paidAt) {
         order.paidAt?.let {
@@ -251,11 +280,11 @@ private fun ClosedBillCard(
                 Text(dateStr, color = LimonTextSecondary, fontSize = 12.sp)
             }
             Button(
-                onClick = onRecall,
+                onClick = onOpen,
                 colors = ButtonDefaults.buttonColors(containerColor = LimonPrimary),
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
             ) {
-                Text("Recall")
+                Text("View")
             }
         }
     }

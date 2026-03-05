@@ -34,11 +34,11 @@ class ClosedBillsViewModel @Inject constructor(
     private val _selectedOrderWithItems = MutableStateFlow<OrderWithItems?>(null)
     val selectedOrderWithItems: StateFlow<OrderWithItems?> = _selectedOrderWithItems.asStateFlow()
 
-    private val _showTableSelection = MutableStateFlow(false)
-    val showTableSelection: StateFlow<Boolean> = _showTableSelection.asStateFlow()
-
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
+
+    private val _pinError = MutableStateFlow<String?>(null)
+    val pinError: StateFlow<String?> = _pinError.asStateFlow()
 
     fun loadPaidOrders() {
         viewModelScope.launch {
@@ -60,41 +60,35 @@ class ClosedBillsViewModel @Inject constructor(
                 orderRepository.getOrderWithItems(order.id).first()
             }
             _selectedOrderWithItems.value = ow
-            _showTableSelection.value = false
-            loadFreeTables()
         }
-    }
-
-    fun onRecallToTableClicked() {
-        _showTableSelection.value = true
-        loadFreeTables()
     }
 
     fun dismissBillDialog() {
         _selectedOrderWithItems.value = null
-        _showTableSelection.value = false
-    }
-
-    fun recallToTable(orderId: String, targetTableId: String, onSuccess: (String) -> Unit) {
-        viewModelScope.launch {
-            val uid = authRepository.getCurrentUserIdSync() ?: return@launch
-            val uname = authRepository.getCurrentUserNameSync() ?: "Staff"
-            val ok = withContext(Dispatchers.IO) {
-                orderRepository.recallOrderToTable(orderId, targetTableId, uid, uname)
-            }
-            if (ok) {
-                _message.value = "Bill recalled to table"
-                _selectedOrderWithItems.value = null
-                _showTableSelection.value = false
-                loadPaidOrders()
-                onSuccess(targetTableId)
-            } else {
-                _message.value = "Recall failed"
-            }
-        }
     }
 
     fun clearMessage() {
         _message.value = null
+    }
+
+    fun clearPinError() {
+        _pinError.value = null
+    }
+
+    /** Verify PIN belongs to a user allowed to work with closed bills (use post_void permission / supervisor). */
+    suspend fun verifyClosedBillsPin(pin: String): Boolean {
+        return try {
+            val result = authRepository.verifyPostVoidPin(pin)
+            val ok = result.isSuccess && (result.getOrNull() == true)
+            if (!ok) {
+                _pinError.value = "Invalid or unauthorized PIN"
+            } else {
+                _pinError.value = null
+            }
+            ok
+        } catch (e: Exception) {
+            _pinError.value = e.message ?: "PIN verification failed"
+            false
+        }
     }
 }

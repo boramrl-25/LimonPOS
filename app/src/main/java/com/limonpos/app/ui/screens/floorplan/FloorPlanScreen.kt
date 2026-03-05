@@ -109,7 +109,18 @@ fun FloorPlanScreen(
     }
 
     overdueWarning?.let { list ->
-        OverdueUndeliveredDialogFloor(list = list, onDismiss = { viewModel.dismissOverdueWarning() })
+        OverdueUndeliveredDialogFloor(
+            list = list,
+            onDismiss = { viewModel.dismissOverdueWarning() },
+            onGoToTable = { tableNumber ->
+                val tablesOnFloor = uiState.tablesByFloor[uiState.selectedFloor].orEmpty()
+                val target = tablesOnFloor.firstOrNull { it.number == tableNumber }
+                if (target != null) {
+                    viewModel.dismissOverdueWarning()
+                    viewModel.onTableClick(target, onNavigateToOrder)
+                }
+            }
+        )
     }
     LaunchedEffect(overdueWarning) {
         if (overdueWarning.isNullOrEmpty()) return@LaunchedEffect
@@ -717,7 +728,8 @@ private fun TableCard(
 @Composable
 private fun OverdueUndeliveredDialogFloor(
     list: List<OverdueUndelivered>,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onGoToTable: (String) -> Unit
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -730,7 +742,8 @@ private fun OverdueUndeliveredDialogFloor(
                 list.forEach { block ->
                     Card(
                         colors = CardDefaults.cardColors(containerColor = LimonSurface),
-                        shape = RoundedCornerShape(8.dp)
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.clickable { onGoToTable(block.tableNumber) }
                     ) {
                         Column(modifier = Modifier.padding(12.dp)) {
                             Text("Masa ${block.tableNumber}", fontWeight = FontWeight.Bold, color = LimonPrimary, fontSize = 15.sp)
