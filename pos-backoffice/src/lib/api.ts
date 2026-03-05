@@ -317,9 +317,17 @@ export async function getDashboardStats() {
   return res.json();
 }
 
-/** @param date YYYY-MM-DD; empty = today */
-export async function getDailySales(date?: string) {
-  const url = date ? `${API_URL}/dashboard/daily-sales?date=${encodeURIComponent(date)}` : `${API_URL}/dashboard/daily-sales`;
+/** @param date YYYY-MM-DD single day; or use dateFrom+dateTo for range. Empty = today */
+export async function getDailySales(date?: string, dateFrom?: string, dateTo?: string) {
+  const params = new URLSearchParams();
+  if (dateFrom && dateTo) {
+    params.set("dateFrom", dateFrom);
+    params.set("dateTo", dateTo);
+  } else if (date) {
+    params.set("date", date);
+  }
+  const qs = params.toString();
+  const url = qs ? `${API_URL}/dashboard/daily-sales?${qs}` : `${API_URL}/dashboard/daily-sales`;
   const res = await fetchWithTimeout(url, { headers: headers() });
   if (!res.ok) throw new Error("Failed to fetch daily sales");
   return res.json();
@@ -363,8 +371,16 @@ export async function patchClosedBillAccessRequest(id: string, body: { status?: 
   return res.json();
 }
 
-export async function getClosedBillChanges(date?: string): Promise<{ count: number; summary: { fullRefunds: number; itemRefunds: number }; changes: Array<{ id: string; order_id: string; receipt_no: string | null; table_number: string; type: string; product_name: string | null; amount: number; user_name: string; created_at: number }> }> {
-  const url = date ? `${API_URL}/dashboard/closed-bill-changes?date=${encodeURIComponent(date)}` : `${API_URL}/dashboard/closed-bill-changes`;
+export async function getClosedBillChanges(date?: string, dateFrom?: string, dateTo?: string): Promise<{ count: number; summary: { fullRefunds: number; itemRefunds: number }; changes: Array<{ id: string; order_id: string; receipt_no: string | null; table_number: string; type: string; product_name: string | null; amount: number; user_name: string; created_at: number }> }> {
+  const params = new URLSearchParams();
+  if (dateFrom && dateTo) {
+    params.set("dateFrom", dateFrom);
+    params.set("dateTo", dateTo);
+  } else if (date) {
+    params.set("date", date);
+  }
+  const qs = params.toString();
+  const url = qs ? `${API_URL}/dashboard/closed-bill-changes?${qs}` : `${API_URL}/dashboard/closed-bill-changes`;
   const res = await fetchWithTimeout(url, { headers: headers() });
   if (!res.ok) throw new Error("Failed to fetch closed bill changes");
   return res.json();

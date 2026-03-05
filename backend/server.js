@@ -837,14 +837,24 @@ app.get("/api/dashboard/open-orders", authMiddleware, async (req, res) => {
   res.json(list);
 });
 
-// Daily Sales: ?date=YYYY-MM-DD ile herhangi bir gün; yoksa bugün. Fiş: receipt_no, date, waiter_name.
+// Daily Sales: ?date=YYYY-MM-DD (tek gün) veya ?dateFrom=YYYY-MM-DD&dateTo=YYYY-MM-DD (aralık); yoksa bugün.
 app.get("/api/dashboard/daily-sales", authMiddleware, async (req, res) => {
   await ensureData();
   const dateStr = (req.query.date || "").toString().trim();
+  const dateFromStr = (req.query.dateFrom || "").toString().trim();
+  const dateToStr = (req.query.dateTo || "").toString().trim();
   let summary;
   let dayStartTs;
   let dayEndTs;
-  if (dateStr) {
+  if (dateFromStr && dateToStr) {
+    const fromBounds = getDayBounds(dateFromStr);
+    const toBounds = getDayBounds(dateToStr);
+    if (!fromBounds || !toBounds) return res.status(400).json({ error: "invalid_date", message: "dateFrom and dateTo must be YYYY-MM-DD" });
+    dayStartTs = fromBounds.startTs;
+    dayEndTs = toBounds.endTs;
+    if (dayStartTs > dayEndTs) return res.status(400).json({ error: "invalid_range", message: "dateFrom must be before or equal to dateTo" });
+    summary = getSalesSummaryForRange(dayStartTs, dayEndTs);
+  } else if (dateStr) {
     const bounds = getDayBounds(dateStr);
     if (!bounds) return res.status(400).json({ error: "invalid_date", message: "date must be YYYY-MM-DD" });
     summary = getSalesSummaryForRange(bounds.startTs, bounds.endTs);
@@ -1264,15 +1274,24 @@ app.patch("/api/closed-bill-access-requests/:id", authMiddleware, async (req, re
   res.json(db.data.closed_bill_access_requests[idx]);
 });
 
-// Closed bill changes: refunds/edits on paid (closed) bills for dashboard block
+// Closed bill changes: ?date= or ?dateFrom=&dateTo= (same as daily-sales).
 app.get("/api/dashboard/closed-bill-changes", authMiddleware, async (req, res) => {
   await ensureData();
   const dateStr = (req.query.date || "").toString().trim();
+  const dateFromStr = (req.query.dateFrom || "").toString().trim();
+  const dateToStr = (req.query.dateTo || "").toString().trim();
   const todayTs = getTodayStartTimestamp();
   const dayMs = 24 * 60 * 60 * 1000;
   let startTs = todayTs;
   let endTs = todayTs + dayMs;
-  if (dateStr) {
+  if (dateFromStr && dateToStr) {
+    const fromBounds = getDayBounds(dateFromStr);
+    const toBounds = getDayBounds(dateToStr);
+    if (!fromBounds || !toBounds) return res.status(400).json({ error: "invalid_date" });
+    startTs = fromBounds.startTs;
+    endTs = toBounds.endTs;
+    if (startTs > endTs) return res.status(400).json({ error: "invalid_range" });
+  } else if (dateStr) {
     const bounds = getDayBounds(dateStr);
     if (!bounds) return res.status(400).json({ error: "invalid_date" });
     startTs = bounds.startTs;

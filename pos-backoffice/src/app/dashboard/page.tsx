@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   Coins,
-  ShoppingCart,
   UtensilsCrossed,
   Receipt,
   RefreshCw,
@@ -65,7 +64,8 @@ export default function DashboardPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const [ticketModalType, setTicketModalType] = useState<TicketModalType>(null);
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [selectedDateFrom, setSelectedDateFrom] = useState<string | null>(null);
+  const [selectedDateTo, setSelectedDateTo] = useState<string | null>(null);
   const [openOrders, setOpenOrders] = useState<OpenOrderRow[]>([]);
   const [openOrdersLoading, setOpenOrdersLoading] = useState(false);
   const [eodConfirmOpen, setEodConfirmOpen] = useState(false);
@@ -76,11 +76,14 @@ export default function DashboardPage() {
 
   const fetchData = useCallback(async () => {
     try {
-      const dateParam = selectedDate || undefined;
+      const from = selectedDateFrom || undefined;
+      const to = selectedDateTo || undefined;
+      const useRange = from && to;
+      const singleDate = from || to;
       const [statsRes, dailyRes, closedChangesRes] = await Promise.all([
         getDashboardStats(),
-        getDailySales(dateParam),
-        getClosedBillChanges(dateParam).catch(() => ({ count: 0, summary: { fullRefunds: 0, itemRefunds: 0 }, changes: [] })),
+        useRange ? getDailySales(undefined, from, to) : getDailySales(singleDate),
+        useRange ? getClosedBillChanges(undefined, from, to) : getClosedBillChanges(singleDate).catch(() => ({ count: 0, summary: { fullRefunds: 0, itemRefunds: 0 }, changes: [] })),
       ]);
       setClosedBillChanges(closedChangesRes);
       setStats({
@@ -102,7 +105,7 @@ export default function DashboardPage() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [selectedDate]);
+  }, [selectedDateFrom, selectedDateTo]);
 
   async function handleOpenTablesClick() {
     setTicketModalType("open");
@@ -166,10 +169,12 @@ export default function DashboardPage() {
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-slate-400 text-sm">Date:</span>
-          <button type="button" onClick={() => setSelectedDate(null)} className={`px-3 py-1.5 rounded-lg text-sm font-medium ${selectedDate === null ? "bg-sky-600 text-white" : "bg-slate-700 text-slate-300 hover:bg-slate-600"}`}>Today</button>
-          <button type="button" onClick={() => setSelectedDate(yesterdayStr)} className={`px-3 py-1.5 rounded-lg text-sm font-medium ${selectedDate === yesterdayStr ? "bg-sky-600 text-white" : "bg-slate-700 text-slate-300 hover:bg-slate-600"}`}>Yesterday</button>
-          <input type="date" value={selectedDate ?? ""} max={todayStr} onChange={(e) => setSelectedDate(e.target.value || null)} className="px-3 py-1.5 rounded-lg bg-slate-700 text-slate-200 border border-slate-600 text-sm" />
+          <span className="text-slate-400 text-sm">From:</span>
+          <input type="date" value={selectedDateFrom ?? ""} max={todayStr} onChange={(e) => setSelectedDateFrom(e.target.value || null)} className="px-3 py-1.5 rounded-lg bg-slate-700 text-slate-200 border border-slate-600 text-sm" />
+          <span className="text-slate-400 text-sm">To:</span>
+          <input type="date" value={selectedDateTo ?? ""} max={todayStr} onChange={(e) => setSelectedDateTo(e.target.value || null)} className="px-3 py-1.5 rounded-lg bg-slate-700 text-slate-200 border border-slate-600 text-sm" />
+          <button type="button" onClick={() => { setSelectedDateFrom(null); setSelectedDateTo(null); }} className={`px-3 py-1.5 rounded-lg text-sm font-medium ${selectedDateFrom === null && selectedDateTo === null ? "bg-sky-600 text-white" : "bg-slate-700 text-slate-300 hover:bg-slate-600"}`}>Today</button>
+          <button type="button" onClick={() => { setSelectedDateFrom(yesterdayStr); setSelectedDateTo(yesterdayStr); }} className={`px-3 py-1.5 rounded-lg text-sm font-medium ${selectedDateFrom === yesterdayStr && selectedDateTo === yesterdayStr ? "bg-sky-600 text-white" : "bg-slate-700 text-slate-300 hover:bg-slate-600"}`}>Yesterday</button>
         </div>
         <button onClick={handleRefresh} disabled={refreshing} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors disabled:opacity-50">
           <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />
@@ -178,37 +183,47 @@ export default function DashboardPage() {
       </header>
 
       <main className="p-6 space-y-8 max-w-4xl mx-auto">
-        {/* Quick Stats — tap Today's Sales or Orders to view tickets */}
+        {/* Row 1: Total Sales, Total Card, Total Cash, Open Tables */}
         <section>
           <h2 className="text-lg font-semibold text-slate-200 mb-4">Overview (tap to view tickets)</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <button type="button" className={blockButtonClass} onClick={() => setTicketModalType("all")}>
               <Coins className="w-8 h-8 text-emerald-400 shrink-0" />
               <div>
-                <p className="text-slate-400 text-sm">Today&apos;s Sales</p>
-                <p className="text-xl font-bold text-white">{loading ? "..." : fmt(stats.todaySales)} AED</p>
+                <p className="text-slate-400 text-sm">Total Sales</p>
+                <p className="text-xl font-bold text-white">{loading ? "..." : fmt(dailySales?.totalSales ?? stats.todaySales ?? 0)} AED</p>
               </div>
             </button>
-            <button type="button" className={blockButtonClass} onClick={() => setTicketModalType("all")}>
-              <ShoppingCart className="w-8 h-8 text-sky-400 shrink-0" />
+            <button type="button" className={blockButtonClass} onClick={() => setTicketModalType("card")}>
+              <Receipt className="w-8 h-8 text-sky-400 shrink-0" />
               <div>
-                <p className="text-slate-400 text-sm">Orders</p>
-                <p className="text-xl font-bold text-white">{loading ? "..." : stats.orderCount}</p>
+                <p className="text-slate-400 text-sm">Total Card</p>
+                <p className="text-xl font-bold text-white">{loading ? "..." : fmt(dailySales?.totalCard ?? 0)} AED</p>
+              </div>
+            </button>
+            <button type="button" className={blockButtonClass} onClick={() => setTicketModalType("cash")}>
+              <Coins className="w-8 h-8 text-amber-400 shrink-0" />
+              <div>
+                <p className="text-slate-400 text-sm">Total Cash</p>
+                <p className="text-xl font-bold text-white">{loading ? "..." : fmt(dailySales?.totalCash ?? 0)} AED</p>
               </div>
             </button>
             <button type="button" className={blockButtonClass} onClick={handleOpenTablesClick}>
               <UtensilsCrossed className="w-8 h-8 text-amber-400 shrink-0" />
               <div>
-                <p className="text-slate-400 text-sm">Open Tables / Checks</p>
+                <p className="text-slate-400 text-sm">Open Tables</p>
                 <p className="text-xl font-bold text-white">{loading ? "..." : stats.openTables}</p>
               </div>
             </button>
+          </div>
+          {/* Row 2: Approval Request, Closed Bill Changes, Total Void, Refund Total */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
             <button type="button" className={blockButtonClass} onClick={() => { setTicketModalType(null); router.push("/dashboard/approvals"); }}>
               <Bell className="w-8 h-8 text-orange-400 shrink-0" />
               <div>
-                <p className="text-slate-400 text-sm">Approval Requests</p>
+                <p className="text-slate-400 text-sm">Approval Request</p>
                 <p className="text-xl font-bold text-white">{loading ? "..." : totalApprovalRequests}</p>
-                <p className="text-xs text-slate-500">Void + Closed Bill · View only here</p>
+                <p className="text-xs text-slate-500">Void + Closed Bill</p>
               </div>
             </button>
             <button
@@ -218,10 +233,24 @@ export default function DashboardPage() {
             >
               <FileEdit className="w-8 h-8 text-rose-400 shrink-0" />
               <div>
-                <p className="text-slate-400 text-sm">Closed Bill Change</p>
+                <p className="text-slate-400 text-sm">Closed Bill Changes</p>
                 <p className="text-xl font-bold text-white">
                   {loading ? "..." : (closedBillChanges?.count ?? 0)}
                 </p>
+              </div>
+            </button>
+            <button type="button" className={blockButtonClass} onClick={() => setTicketModalType("void")}>
+              <Receipt className="w-8 h-8 text-red-400 shrink-0" />
+              <div>
+                <p className="text-slate-400 text-sm">Total Void</p>
+                <p className="text-xl font-bold text-red-400">{loading ? "..." : fmt(dailySales?.totalVoidAmount ?? 0)} AED</p>
+              </div>
+            </button>
+            <button type="button" className={blockButtonClass} onClick={() => setTicketModalType("refund")}>
+              <Receipt className="w-8 h-8 text-red-400 shrink-0" />
+              <div>
+                <p className="text-slate-400 text-sm">Refund Total</p>
+                <p className="text-xl font-bold text-red-400">{loading ? "..." : fmt(dailySales?.totalRefundAmount ?? 0)} AED</p>
               </div>
             </button>
           </div>
@@ -249,7 +278,7 @@ export default function DashboardPage() {
                 </p>
               )}
             </div>
-            {selectedDate === null && (
+            {selectedDateFrom === null && selectedDateTo === null && (
               <a href="#eod" className="px-3 py-1.5 rounded-lg bg-amber-600/80 hover:bg-amber-500 text-white text-sm font-medium">
                 End of Day / Günü Kapat
               </a>
@@ -260,7 +289,13 @@ export default function DashboardPage() {
         {/* Daily Sales — tap blocks to view tickets (Receipt #, Date, Who) */}
         <section>
           <h2 className="text-lg font-semibold text-slate-200 mb-4">
-            {selectedDate === null ? "Today" : selectedDate === yesterdayStr ? "Yesterday" : selectedDate} — Summary (tap to view tickets)
+            {selectedDateFrom === null && selectedDateTo === null
+              ? "Today"
+              : selectedDateFrom === yesterdayStr && selectedDateTo === yesterdayStr
+                ? "Yesterday"
+                : selectedDateFrom && selectedDateTo && selectedDateFrom !== selectedDateTo
+                  ? `${selectedDateFrom} – ${selectedDateTo}`
+                  : selectedDateFrom || selectedDateTo || "Today"} — Summary (tap to view tickets)
           </h2>
           {loading && !dailySales ? (
             <p className="text-slate-400 py-8">Loading...</p>
@@ -387,7 +422,7 @@ export default function DashboardPage() {
                 </>
               )}
 
-              {selectedDate === null && (
+              {selectedDateFrom === null && selectedDateTo === null && (
                 <section id="eod" className="rounded-xl bg-slate-800/60 border border-slate-700 p-5 mt-6">
                   <h3 className="text-lg font-semibold text-slate-200 mb-3 flex items-center gap-2">
                     <Moon className="w-5 h-5 text-amber-400" />
