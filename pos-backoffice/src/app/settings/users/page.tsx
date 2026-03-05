@@ -3,16 +3,18 @@
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { ArrowLeft, Plus, Trash2, FileSpreadsheet, FileDown } from "lucide-react";
-import { getUsers, createUser, updateUser, deleteUser, importUsers } from "@/lib/api";
+import { getUsers, createUser, updateUser, deleteUser, importUsers, getPermissions, type RoleOption, type PermissionOption } from "@/lib/api";
 import * as XLSX from "xlsx";
 
-type User = { id: string; name: string; pin: string; role: string; active: number };
+type User = { id: string; name: string; pin: string; role: string; active: number; permissions?: string[]; cash_drawer_permission?: boolean };
 
 export default function UsersSettingsPage() {
   const [users, setUsers] = useState<User[]>([]);
+  const [roles, setRoles] = useState<RoleOption[]>([]);
+  const [permissions, setPermissions] = useState<PermissionOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<User | null | undefined>(undefined);
-  const [form, setForm] = useState({ name: "", pin: "", role: "waiter", active: true });
+  const [form, setForm] = useState({ name: "", pin: "", role: "waiter", active: true, permissions: [] as string[], cashDrawerPermission: false });
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -22,7 +24,10 @@ export default function UsersSettingsPage() {
 
   async function load() {
     try {
-      setUsers(await getUsers());
+      const [usersList, permsData] = await Promise.all([getUsers(), getPermissions()]);
+      setUsers(usersList);
+      setRoles(permsData.roles);
+      setPermissions(permsData.permissions);
     } catch {
       window.location.href = "/login";
     } finally {
@@ -33,16 +38,37 @@ export default function UsersSettingsPage() {
   function openEdit(u?: User) {
     if (u) {
       setEditing(u);
-      setForm({ name: u.name, pin: u.pin, role: u.role, active: (u.active ?? 1) === 1 });
+      setForm({
+        name: u.name,
+        pin: u.pin,
+        role: u.role,
+        active: (u.active ?? 1) === 1,
+        permissions: Array.isArray(u.permissions) ? u.permissions : [],
+        cashDrawerPermission: !!u.cash_drawer_permission,
+      });
     } else {
       setEditing(null);
-      setForm({ name: "", pin: "", role: "waiter", active: true });
+      setForm({ name: "", pin: "", role: "waiter", active: true, permissions: [], cashDrawerPermission: false });
     }
+  }
+
+  function togglePermission(permId: string) {
+    setForm((f) => ({
+      ...f,
+      permissions: f.permissions.includes(permId) ? f.permissions.filter((p) => p !== permId) : [...f.permissions, permId],
+    }));
   }
 
   async function save() {
     try {
-      const payload = { name: form.name, pin: form.pin, role: form.role, active: form.active };
+      const payload = {
+        name: form.name,
+        pin: form.pin,
+        role: form.role,
+        active: form.active,
+        permissions: form.permissions,
+        cash_drawer_permission: form.cashDrawerPermission,
+      };
       if (editing) {
         await updateUser(editing.id, payload);
       } else {
@@ -59,7 +85,14 @@ export default function UsersSettingsPage() {
     e.stopPropagation();
     try {
       const next = (u.active ?? 1) === 1 ? 0 : 1;
-      await updateUser(u.id, { name: u.name, pin: u.pin, role: u.role, active: next === 1 });
+      await updateUser(u.id, {
+        name: u.name,
+        pin: u.pin,
+        role: u.role,
+        active: next === 1,
+        permissions: u.permissions ?? [],
+        cash_drawer_permission: !!u.cash_drawer_permission,
+      });
       await load();
     } catch (e) {
       alert((e as Error).message);
@@ -227,8 +260,8 @@ export default function UsersSettingsPage() {
       </div>
 
       {editing !== undefined && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-900 rounded-xl border border-slate-700 p-6 max-w-md w-full">
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-slate-900 rounded-xl border border-slate-700 p-6 max-w-lg w-full my-4 max-h-[90vh] overflow-y-auto">
             <h2 className="text-xl font-bold text-sky-400 mb-4">{editing ? "Edit User" : "New User"}</h2>
             <div className="space-y-4">
               <div>
@@ -242,11 +275,9 @@ export default function UsersSettingsPage() {
               <div>
                 <label className="block text-sm text-slate-400 mb-1">Role</label>
                 <select value={form.role} onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))} className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white">
-                  <option value="admin">Admin</option>
-                  <option value="manager">Manager</option>
-                  <option value="waiter">Waiter</option>
-                  <option value="cashier">Cashier</option>
-                  <option value="kds">KDS</option>
+                  {roles.map((r) => (
+                    <option key={r.id} value={r.id}>{r.label} / {r.labelTr}</option>
+                  ))}
                 </select>
               </div>
               <div className="flex items-center gap-3">
@@ -257,6 +288,33 @@ export default function UsersSettingsPage() {
                   <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${form.active ? "translate-x-4" : "translate-x-0.5"}`} style={{ marginTop: 2 }} />
                 </button>
                 <span className="text-sm text-slate-400">Active (User On/Off)</span>
+              </div>
+
+              <div className="border-t border-slate-700 pt-4 mt-4">
+                <p className="text-sm font-medium text-slate-300 mb-2">Permissions (App + Web)</p>
+                <div className="flex items-center gap-3 mb-3">
+                  <input type="checkbox" id="cash_drawer" checked={form.cashDrawerPermission} onChange={() => setForm((f) => ({ ...f, cashDrawerPermission: !f.cashDrawerPermission }))} className="rounded bg-slate-800 border-slate-600" />
+                  <label htmlFor="cash_drawer" className="text-sm text-slate-300">Cash drawer (App)</label>
+                </div>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {permissions.filter((p) => p.scope === "app").map((p) => (
+                    <div key={p.id} className="flex items-center gap-3">
+                      <input type="checkbox" id={p.id} checked={form.permissions.includes(p.id)} onChange={() => togglePermission(p.id)} className="rounded bg-slate-800 border-slate-600" />
+                      <label htmlFor={p.id} className="text-sm text-slate-300">{p.labelTr || p.label}</label>
+                    </div>
+                  ))}
+                  {permissions.filter((p) => p.scope === "web").length > 0 && (
+                    <>
+                      <p className="text-xs text-slate-500 mt-2 pt-2 border-t border-slate-700">Web</p>
+                      {permissions.filter((p) => p.scope === "web").map((p) => (
+                        <div key={p.id} className="flex items-center gap-3">
+                          <input type="checkbox" id={p.id} checked={form.permissions.includes(p.id)} onChange={() => togglePermission(p.id)} className="rounded bg-slate-800 border-slate-600" />
+                          <label htmlFor={p.id} className="text-sm text-slate-300">{p.labelTr || p.label}</label>
+                        </div>
+                      ))}
+                    </>
+                  )}
+                </div>
               </div>
             </div>
             <div className="flex gap-2 mt-6">

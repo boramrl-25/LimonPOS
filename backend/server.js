@@ -356,6 +356,35 @@ app.get("/api/devices", authMiddleware, async (req, res) => {
   res.json(list);
 });
 
+// Roles and permissions list (for Web user management – assign to users; App reads same keys from user.permissions)
+const ROLES = [
+  { id: "admin", label: "Admin", labelTr: "Admin" },
+  { id: "manager", label: "Manager", labelTr: "Müdür" },
+  { id: "supervisor", label: "Supervisor", labelTr: "Süpervizör" },
+  { id: "waiter", label: "Waiter", labelTr: "Garson" },
+  { id: "cashier", label: "Cashier", labelTr: "Kasiyer" },
+  { id: "kds", label: "KDS", labelTr: "Mutfak Ekranı" },
+];
+const PERMISSIONS = [
+  { id: "view_all_orders", scope: "app", label: "View all orders", labelTr: "Tüm siparişleri gör" },
+  { id: "pre_void", scope: "app", label: "Pre-void (remove item before kitchen)", labelTr: "Ön iptal (mutfağa gitmeden ürün çıkar)" },
+  { id: "post_void", scope: "app", label: "Post-void (remove item after kitchen)", labelTr: "Sonra iptal (mutfağa gittikten sonra ürün çıkar)" },
+  { id: "table_transfer_void", scope: "app", label: "Table transfer", labelTr: "Masa transferi" },
+  { id: "closed_bill_access", scope: "app", label: "Closed bills (view/refund, approve requests)", labelTr: "Kapalı faturalar (görüntüleme/iptal, onay)" },
+  { id: "kds_mode", scope: "app", label: "Kitchen Display (KDS)", labelTr: "Mutfak ekranı (KDS)" },
+  { id: "web_dashboard", scope: "web", label: "Web: Dashboard", labelTr: "Web: Panel" },
+  { id: "web_reports", scope: "web", label: "Web: Reports", labelTr: "Web: Raporlar" },
+  { id: "web_settings", scope: "web", label: "Web: Settings", labelTr: "Web: Ayarlar" },
+  { id: "web_users", scope: "web", label: "Web: Users", labelTr: "Web: Kullanıcılar" },
+  { id: "web_clear_test_data", scope: "web", label: "Web: Clear test data", labelTr: "Web: Test verisi sil" },
+  { id: "web_void_approvals", scope: "web", label: "Web: Void approvals", labelTr: "Web: İptal onayları" },
+  { id: "web_closed_bill_approvals", scope: "web", label: "Web: Closed bill approvals", labelTr: "Web: Kapalı fatura onayları" },
+];
+
+app.get("/api/permissions", authMiddleware, async (req, res) => {
+  res.json({ roles: ROLES, permissions: PERMISSIONS });
+});
+
 // Users
 app.get("/api/users", authMiddleware, async (req, res) => {
   await ensureData();

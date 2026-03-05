@@ -3,6 +3,11 @@ package com.limonpos.app.util
 import com.google.gson.Gson
 import com.limonpos.app.data.local.entity.UserEntity
 
+/**
+ * App + Web permission keys (assign in Web Settings → Users).
+ * App: view_all_orders, pre_void, post_void, table_transfer_void, closed_bill_access, kds_mode; cash_drawer = separate field.
+ * Web: web_dashboard, web_reports, web_settings, web_users, web_clear_test_data, web_void_approvals, web_closed_bill_approvals.
+ */
 data class UserPermissions(
     val viewAllOrders: Boolean = false,
     val cashDrawer: Boolean = false,

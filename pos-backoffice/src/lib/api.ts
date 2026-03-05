@@ -61,6 +61,15 @@ export async function completeSetup(): Promise<{ setupComplete: boolean }> {
   return res.json();
 }
 
+export type RoleOption = { id: string; label: string; labelTr: string };
+export type PermissionOption = { id: string; scope: string; label: string; labelTr: string };
+
+export async function getPermissions(): Promise<{ roles: RoleOption[]; permissions: PermissionOption[] }> {
+  const res = await fetchWithTimeout(`${API_URL}/permissions`, { headers: headers() });
+  if (!res.ok) throw new Error("Failed to fetch permissions");
+  return res.json();
+}
+
 export async function getUsers() {
   const res = await fetchWithTimeout(`${API_URL}/users`, { headers: headers() });
   if (!res.ok) throw new Error("Failed to fetch users");
