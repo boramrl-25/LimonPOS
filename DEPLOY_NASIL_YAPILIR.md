@@ -1,0 +1,106 @@
+# LimonPOS Nasıl Deploy Yapılır?
+
+Bu rehberde **backend (API)** ve **web (pos.the-limon.com)** deploy adımları var. İkisi de bulutta olursa laptop kapalıyken de sistem çalışır, veriler kalıcı olur.
+
+---
+
+## Genel mimari
+
+| Bileşen | Adres | Nerede deploy | Not |
+|--------|--------|----------------|-----|
+| **Web (backoffice)** | pos.the-limon.com | Vercel | GitHub’a push → otomatik deploy |
+| **Backend (API)** | api.the-limon.com | Railway (veya Render/Fly.io) | Volume + DATA_DIR şart (veri kalıcı olsun) |
+
+---
+
+## 1. Web (Backoffice) deploy — Vercel
+
+### İlk kurulum (bir kez)
+
+1. [Vercel](https://vercel.com) → giriş yap → **Add New** → **Project**
+2. **Import** ile GitHub repo’yu seç: `boramrl-25/LimonPOS`
+3. **Root Directory** → `pos-backoffice` seç
+4. **Environment Variables** ekle:
+   - `NEXT_PUBLIC_API_URL` = `https://api.the-limon.com/api`  
+   (Backend’i deploy ettikten sonra bu adres çalışır.)
+5. **Deploy** tıkla.
+
+### Sonraki deploy’lar
+
+- Koddaki değişiklikleri GitHub’a push et:
+  ```bash
+  cd C:\Users\Dell\LimonPOS
+  git add .
+  git commit -m "Deploy: ..."
+  git push origin main
+  ```
+- Vercel, `main` branch’e push’u görünce **otomatik** yeni build alır ve deploy eder. Ekstra bir şey yapmana gerek yok.
+
+### Domain (pos.the-limon.com)
+
+- Vercel → Proje → **Settings** → **Domains** → `pos.the-limon.com` ekle.
+- Domain sağlayıcında (GoDaddy, Cloudflare vb.) **CNAME**: `pos.the-limon.com` → `cname.vercel-dns.com` (Vercel’in verdiği adres neyse onu kullan).
+
+---
+
+## 2. Backend (API) deploy — Railway
+
+### İlk kurulum (bir kez)
+
+1. [Railway](https://railway.app) → giriş yap → **New Project**
+2. **Deploy from GitHub repo** → `LimonPOS` repo’sunu seç
+3. **Root Directory** ayarla: `backend` (sadece backend klasörü deploy edilsin)
+4. **Settings** / **Variables** bölümünde environment variable ekle:
+   - `DATA_DIR` = `/data`
+5. **Volumes** (Storage):
+   - **Add Volume** → Mount Path: `/data`, isim: `limonpos-data`, 1 GB
+6. **Deploy** / **Redeploy** yap.
+
+Böylece `data.json` `/data` içine yazılır; restart veya redeploy’da silinmez.
+
+### Domain (api.the-limon.com)
+
+- Railway → Servis → **Settings** → **Networking** / **Public Networking** → **Generate Domain** (veya **Custom Domain**).
+- **Custom domain** ekle: `api.the-limon.com`
+- Domain sağlayıcında **CNAME**: `api.the-limon.com` → Railway’in verdiği hedef (örn. `xxx.railway.app`).
+
+### Sonraki deploy’lar
+
+- Kodu GitHub’a push et:
+  ```bash
+  git push origin main
+  ```
+- Railway, repo’ya bağlıysa **otomatik** yeni deploy alır.  
+- Sadece backend’i değiştirdiysen yine aynı push yeterli; Railway sadece `backend` klasörünü kullanıyorsa sadece o kısım deploy edilir.
+
+---
+
+## 3. Özet: Her deploy için yapman gereken
+
+1. Kod değişikliklerini commit et:
+   ```bash
+   git add .
+   git commit -m "Açıklama"
+   git push origin main
+   ```
+2. **Vercel** → web’i otomatik deploy eder (pos.the-limon.com).
+3. **Railway** → backend’i otomatik deploy eder (api.the-limon.com).
+
+Laptop’u kapatman deploy’u etkilemez; her şey bulutta çalışır.
+
+---
+
+## 4. Verilerin silinmemesi (önemli)
+
+- Backend’te **mutlaka** Railway **Volume** kullan: Mount Path = `/data`, değişken = `DATA_DIR=/data`.  
+- Detay: `backend/README_STORAGE.md`  
+- Neden gerekli: `DEPLOY_CLOUD.md`
+
+---
+
+## 5. Başka host kullanıyorsan
+
+- **Web:** Netlify, Cloudflare Pages vb. → repo’yu bağla, root = `pos-backoffice`, env: `NEXT_PUBLIC_API_URL=https://api.the-limon.com/api`
+- **Backend:** Render, Fly.io, kendi VPS’in → Node çalıştır (`npm install && npm run start`), kalıcı klasör için `DATA_DIR` ver (örn. `/var/data/limonpos`).
+
+Özet: **Deploy = GitHub’a push; web ve backend otomatik güncellenir. Backend’te Volume + DATA_DIR ile veriyi kalıcı tut.**
