@@ -323,6 +323,12 @@ export async function getDailySales() {
   return res.json();
 }
 
+export async function getOrder(orderId: string) {
+  const res = await fetchWithTimeout(`${API_URL}/orders/${encodeURIComponent(orderId)}`, { headers: headers() });
+  if (!res.ok) throw new Error("Failed to fetch order");
+  return res.json();
+}
+
 export type DeviceInfo = {
   id: string;
   name: string;

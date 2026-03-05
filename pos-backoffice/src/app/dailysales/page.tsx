@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { ArrowLeft, RefreshCw, BarChart3, Moon } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ArrowLeft, RefreshCw, BarChart3, Moon, ChevronRight } from "lucide-react";
 import { getDailySales, runEod } from "@/lib/api";
 
 function fmt(n: number) {
@@ -13,6 +14,16 @@ function formatEodTime(ts: number) {
   return new Date(ts).toLocaleString("tr-TR", { dateStyle: "short", timeStyle: "short" });
 }
 
+type PaidTicket = {
+  order_id: string;
+  table_number: string;
+  total: number;
+  paid_at: number;
+  cash_amount: number;
+  card_amount: number;
+  discount_amount?: number;
+};
+
 type DailySalesData = {
   totalCash: number;
   totalCard: number;
@@ -20,20 +31,27 @@ type DailySalesData = {
   netSales?: number;
   totalVoidAmount: number;
   totalRefundAmount: number;
+  paidTickets?: PaidTicket[];
   categorySales: Array<{ categoryId: string; categoryName: string; totalAmount: number; totalQuantity: number }>;
   itemSales: Array<{ productId: string; productName: string; totalAmount: number; totalQuantity: number }>;
-  voids: Array<{ id: string; type: string; product_name: string; quantity: number; amount: number; user_name: string; created_at: number }>;
-  refunds: Array<{ id: string; type: string; product_name?: string; amount: number; user_name: string; source_table_number?: string; created_at: number }>;
+  voids: Array<{ id: string; order_id?: string; type: string; product_name: string; quantity: number; amount: number; user_name: string; created_at: number }>;
+  refunds: Array<{ id: string; order_id?: string; type: string; product_name?: string; amount: number; user_name: string; source_table_number?: string; created_at: number }>;
   lastEod?: { ran_at: number; user_name: string; tables_closed_count: number } | null;
   openTablesCount?: number;
 };
 
+type TicketModalType = "cash" | "card" | "all" | "void" | "refund" | "discount" | null;
+
+const blockButtonClass = "p-5 rounded-xl bg-slate-800/60 border border-slate-700 hover:border-sky-500/50 hover:bg-slate-800/80 transition-colors text-left cursor-pointer";
+
 export default function DailySalesPage() {
+  const router = useRouter();
   const [data, setData] = useState<DailySalesData | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [eodRunning, setEodRunning] = useState(false);
   const [eodConfirmOpen, setEodConfirmOpen] = useState(false);
+  const [ticketModalType, setTicketModalType] = useState<TicketModalType>(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -112,36 +130,36 @@ export default function DailySalesPage() {
           </div>
         ) : data ? (
           <div className="space-y-8">
-            {/* Summary Cards */}
+            {/* Summary Cards — tap to open ticket list */}
             <section>
-              <h2 className="text-lg font-semibold text-slate-200 mb-4">Today&apos;s Summary</h2>
+              <h2 className="text-lg font-semibold text-slate-200 mb-4">Today&apos;s Summary (tap to view tickets)</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
-                <div className="p-5 rounded-xl bg-slate-800/60 border border-slate-700">
+                <button type="button" className={blockButtonClass} onClick={() => setTicketModalType("cash")}>
                   <p className="text-slate-400 text-sm">Cash</p>
                   <p className="text-2xl font-bold text-white">{fmt(data.totalCash)}</p>
-                </div>
-                <div className="p-5 rounded-xl bg-slate-800/60 border border-slate-700">
+                </button>
+                <button type="button" className={blockButtonClass} onClick={() => setTicketModalType("card")}>
                   <p className="text-slate-400 text-sm">Card</p>
                   <p className="text-2xl font-bold text-white">{fmt(data.totalCard)}</p>
-                </div>
-                <div className="p-5 rounded-xl bg-slate-800/60 border border-slate-700">
+                </button>
+                <button type="button" className={blockButtonClass} onClick={() => setTicketModalType("all")}>
                   <p className="text-slate-400 text-sm">Total Sales</p>
                   <p className="text-2xl font-bold text-emerald-400">{fmt(data.totalSales)}</p>
-                </div>
+                </button>
                 {typeof data.netSales === "number" && (
-                  <div className="p-5 rounded-xl bg-slate-800/60 border border-slate-700">
-                    <p className="text-slate-400 text-sm">Net (iade düşülmüş)</p>
+                  <button type="button" className={blockButtonClass} onClick={() => setTicketModalType("all")}>
+                    <p className="text-slate-400 text-sm">Net (after refunds)</p>
                     <p className="text-2xl font-bold text-sky-400">{fmt(data.netSales)}</p>
-                  </div>
+                  </button>
                 )}
-                <div className="p-5 rounded-xl bg-slate-800/60 border border-slate-700">
+                <button type="button" className={blockButtonClass} onClick={() => setTicketModalType("void")}>
                   <p className="text-slate-400 text-sm">Total Void</p>
                   <p className="text-xl font-bold text-red-400">{fmt(data.totalVoidAmount)}</p>
-                </div>
-                <div className="p-5 rounded-xl bg-slate-800/60 border border-slate-700">
+                </button>
+                <button type="button" className={blockButtonClass} onClick={() => setTicketModalType("refund")}>
                   <p className="text-slate-400 text-sm">Total Refunds</p>
                   <p className="text-xl font-bold text-red-400">{fmt(data.totalRefundAmount)}</p>
-                </div>
+                </button>
               </div>
             </section>
 
@@ -278,6 +296,84 @@ export default function DailySalesPage() {
           <p className="text-slate-500 py-12 text-center">Failed to load data. Check API connection.</p>
         )}
       </main>
+
+      {/* Ticket list modal — tap block to see tickets, then tap one to view order */}
+      {ticketModalType && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={() => setTicketModalType(null)}>
+          <div className="bg-slate-900 rounded-xl border border-slate-700 max-w-lg w-full max-h-[80vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="p-4 border-b border-slate-700 flex justify-between items-center">
+              <h3 className="text-lg font-semibold text-slate-200">
+                {ticketModalType === "cash" && "Cash tickets"}
+                {ticketModalType === "card" && "Card tickets"}
+                {ticketModalType === "all" && "All tickets"}
+                {ticketModalType === "void" && "Void entries"}
+                {ticketModalType === "refund" && "Refund entries"}
+                {ticketModalType === "discount" && "Discount tickets"}
+              </h3>
+              <button type="button" onClick={() => setTicketModalType(null)} className="text-slate-400 hover:text-white">Close</button>
+            </div>
+            <div className="overflow-y-auto flex-1 p-4">
+              {ticketModalType !== "void" && ticketModalType !== "refund" && (() => {
+                const tickets = data?.paidTickets || [];
+                const filtered = ticketModalType === "cash" ? tickets.filter((t) => (t.cash_amount || 0) > 0)
+                  : ticketModalType === "card" ? tickets.filter((t) => (t.card_amount || 0) > 0)
+                  : ticketModalType === "discount" ? tickets.filter((t) => (t.discount_amount || 0) > 0)
+                  : tickets;
+                if (filtered.length === 0) return <p className="text-slate-500 py-4">No tickets</p>;
+                return (
+                  <ul className="space-y-2">
+                    {filtered.map((t) => (
+                      <li key={t.order_id}>
+                        <button
+                          type="button"
+                          onClick={() => { setTicketModalType(null); router.push(`/orders/${t.order_id}`); }}
+                          className="w-full flex items-center justify-between p-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-left"
+                        >
+                          <span className="text-slate-200">Table {t.table_number} · {fmt(t.total)} AED</span>
+                          <ChevronRight className="w-5 h-5 text-slate-400" />
+                        </button>
+                        <p className="text-slate-500 text-xs mt-0.5 ml-3">{new Date(t.paid_at).toLocaleString("en-GB")}</p>
+                      </li>
+                    ))}
+                  </ul>
+                );
+              })()}
+              {ticketModalType === "void" && (data?.voids?.length ? (
+                <ul className="space-y-2">
+                  {data.voids.map((v) => (
+                    <li key={v.id}>
+                      <div className="p-3 rounded-lg bg-slate-800">
+                        <p className="text-slate-200 text-sm">{v.product_name || "Void"} · {fmt(v.amount || 0)} AED · {v.user_name}</p>
+                        {v.order_id && (
+                          <button type="button" onClick={() => { setTicketModalType(null); router.push(`/orders/${v.order_id}`); }} className="mt-2 text-sky-400 text-sm flex items-center gap-1">
+                            View order <ChevronRight className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : <p className="text-slate-500 py-4">No void entries</p>)}
+              {ticketModalType === "refund" && (data?.refunds?.length ? (
+                <ul className="space-y-2">
+                  {data.refunds.map((v) => (
+                    <li key={v.id}>
+                      <div className="p-3 rounded-lg bg-slate-800">
+                        <p className="text-slate-200 text-sm">{fmt(v.amount)} AED · {v.user_name}</p>
+                        {(v as { order_id?: string }).order_id && (
+                          <button type="button" onClick={() => { setTicketModalType(null); router.push(`/orders/${(v as { order_id: string }).order_id}`); }} className="mt-2 text-sky-400 text-sm flex items-center gap-1">
+                            View order <ChevronRight className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : <p className="text-slate-500 py-4">No refund entries</p>)}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* EOD confirm modal: açık masa var, kapatıp ödeme alınmış say */}
       {eodConfirmOpen && (

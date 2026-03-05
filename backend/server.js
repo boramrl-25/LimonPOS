@@ -33,35 +33,59 @@ function getTodayStartTimestamp() {
   return Math.floor(localNow / dayMs) * dayMs - offsetMin * 60 * 1000;
 }
 
+/** Resolve payment method to cash/card from id, code or name. */
+function resolvePaymentMethodCode(method, paymentMethods) {
+  if (!method) return null;
+  const m = String(method).toLowerCase().trim();
+  if (m === "cash" || m === "card") return m;
+  const list = paymentMethods || [];
+  const byId = list.find((pm) => (pm.id || "").toLowerCase() === m);
+  const byCode = list.find((pm) => (pm.code || "").toLowerCase() === m);
+  const byName = list.find((pm) => (pm.name || "").toLowerCase() === m);
+  const pm = byId || byCode || byName;
+  if (pm && (pm.code || "").toLowerCase() === "cash") return "cash";
+  if (pm && (pm.code || "").toLowerCase() === "card") return "card";
+  return null;
+}
+
 /** Tek kaynak: bugünkü ödemeler + iade/void. Dashboard ve daily-sales aynı mantığı kullanır. */
 function getTodaySalesSummary() {
   const orders = db.data.orders || [];
   const payments = db.data.payments || [];
+  const paymentMethods = db.data.payment_methods || [];
   const voidLogs = db.data.void_logs || [];
   const todayTs = getTodayStartTimestamp();
-  const todayVoidsForExclusion = voidLogs.filter((v) => v.created_at >= todayTs && (v.type === "refund_full" || v.type === "recalled_void"));
+  const dayMs = 24 * 60 * 60 * 1000;
+  const todayEndTs = todayTs + dayMs;
+  const todayVoidsForExclusion = voidLogs.filter((v) => v.created_at >= todayTs && v.created_at < todayEndTs && (v.type === "refund_full" || v.type === "recalled_void"));
   const fullyVoidedOrderIds = new Set(todayVoidsForExclusion.map((v) => v.order_id).filter(Boolean));
   const paidToday = orders.filter((o) => {
     if (o.status !== "paid") return false;
     if (fullyVoidedOrderIds.has(o.id)) return false;
     const paidAt = o.paid_at ?? o.updated_at ?? o.created_at ?? 0;
-    return paidAt >= todayTs;
+    return paidAt >= todayTs && paidAt < todayEndTs;
   });
   const paidOrderIds = new Set(paidToday.map((o) => o.id));
   let totalCash = 0;
   let totalCard = 0;
   for (const p of payments) {
     if (!paidOrderIds.has(p.order_id)) continue;
-    const m = (p.method || "").toLowerCase();
-    if (m === "cash") totalCash += p.amount || 0;
-    else if (m === "card") totalCard += p.amount || 0;
+    const code = resolvePaymentMethodCode(p.method, paymentMethods);
+    if (code === "cash") totalCash += p.amount || 0;
+    else if (code === "card") totalCard += p.amount || 0;
   }
-  const totalSales = totalCash + totalCard;
-  const todayVoids = voidLogs.filter((v) => v.created_at >= todayTs);
+  const totalFromPayments = totalCash + totalCard;
+  const totalFromOrders = paidToday.reduce((s, o) => s + (Number(o.total) || 0), 0);
+  const totalSales = totalFromPayments > 0 ? totalFromPayments : totalFromOrders;
+  if (totalFromPayments === 0 && totalFromOrders > 0) {
+    totalCash = totalFromOrders;
+    totalCard = 0;
+  }
+  const todayVoids = voidLogs.filter((v) => v.created_at >= todayTs && v.created_at < todayEndTs);
   const totalVoidAmount = todayVoids.filter((v) => v.type !== "refund_full" && v.type !== "recalled_void").reduce((s, v) => s + (v.amount || 0), 0);
   const totalRefundAmount = todayVoids.filter((v) => v.type === "refund_full" || v.type === "refund").reduce((s, v) => s + (v.amount || 0), 0);
   const netSales = totalSales - totalRefundAmount;
-  return { todayTs, paidOrderIds, totalCash, totalCard, totalSales, totalVoidAmount, totalRefundAmount, netSales, paidToday };
+  return { todayTs, todayEndTs, paidOrderIds, totalCash, totalCard, totalSales, totalVoidAmount, totalRefundAmount, netSales, paidToday };
 }
 
 async function ensureData() {
@@ -787,9 +811,37 @@ app.get("/api/dashboard/daily-sales", authMiddleware, async (req, res) => {
   const categorySalesList = Object.values(categorySales).sort((a, b) => b.totalAmount - a.totalAmount);
   const itemSalesList = Object.values(itemSales).sort((a, b) => b.totalAmount - a.totalAmount);
 
-  const todayVoids = voidLogs.filter((v) => v.created_at >= summary.todayTs);
+  const todayEndTs = summary.todayEndTs || summary.todayTs + 24 * 60 * 60 * 1000;
+  const todayVoids = voidLogs.filter((v) => v.created_at >= summary.todayTs && v.created_at < todayEndTs);
   const voids = todayVoids.filter((v) => v.type === "pre_void" || v.type === "post_void" || v.type === "recalled_void");
   const refunds = todayVoids.filter((v) => v.type === "refund" || v.type === "refund_full");
+
+  const paymentMethods = db.data.payment_methods || [];
+  const paymentsByOrder = (db.data.payments || []).reduce((acc, p) => {
+    if (!acc[p.order_id]) acc[p.order_id] = [];
+    acc[p.order_id].push(p);
+    return acc;
+  }, {});
+  const paidTickets = summary.paidToday.map((o) => {
+    const orderPayments = paymentsByOrder[o.id] || [];
+    let cashAmount = 0;
+    let cardAmount = 0;
+    for (const p of orderPayments) {
+      const code = resolvePaymentMethodCode(p.method, paymentMethods);
+      if (code === "cash") cashAmount += p.amount || 0;
+      else if (code === "card") cardAmount += p.amount || 0;
+    }
+    if (cashAmount === 0 && cardAmount === 0) cashAmount = Number(o.total) || 0;
+    return {
+      order_id: o.id,
+      table_number: o.table_number || "",
+      total: Number(o.total) || 0,
+      paid_at: o.paid_at ?? o.updated_at ?? o.created_at,
+      cash_amount: cashAmount,
+      card_amount: cardAmount,
+      discount_amount: Number(o.discount_amount) || 0,
+    };
+  });
 
   const eodLogs = db.data.eod_logs || [];
   const lastEod = eodLogs.length > 0 ? eodLogs[eodLogs.length - 1] : null;
@@ -805,6 +857,7 @@ app.get("/api/dashboard/daily-sales", authMiddleware, async (req, res) => {
     itemSales: itemSalesList,
     voids,
     refunds,
+    paidTickets,
     lastEod: lastEod ? { ran_at: lastEod.ran_at, user_name: lastEod.user_name, tables_closed_count: lastEod.tables_closed?.length ?? 0 } : null,
     openTablesCount,
   });
@@ -904,13 +957,15 @@ app.put("/api/floor-plan-sections", authMiddleware, async (req, res) => {
   res.json(db.data.floor_plan_sections);
 });
 
-// Orders
+// Orders (full ticket detail: order, items, payments, voids, refunds)
 app.get("/api/orders/:id", authMiddleware, async (req, res) => {
   await ensureData();
   const order = db.data.orders.find((o) => o.id === req.params.id);
   if (!order) return res.status(404).json({ error: "Not found" });
   const items = (db.data.order_items || []).filter((i) => i.order_id === order.id);
-  res.json({ ...order, items });
+  const payments = (db.data.payments || []).filter((p) => p.order_id === order.id);
+  const voids = (db.data.void_logs || []).filter((v) => v.order_id === order.id);
+  res.json({ ...order, items, payments, voids });
 });
 
 app.post("/api/orders", authMiddleware, async (req, res) => {
