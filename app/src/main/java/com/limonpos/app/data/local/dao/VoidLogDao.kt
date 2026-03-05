@@ -43,4 +43,7 @@ interface VoidLogDao {
 
     @Query("DELETE FROM void_logs")
     suspend fun deleteAll()
+
+    @Query("DELETE FROM void_logs WHERE orderId IN (:orderIds)")
+    suspend fun deleteByOrderIds(orderIds: List<String>)
 }

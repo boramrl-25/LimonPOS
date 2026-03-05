@@ -1327,6 +1327,55 @@ app.get("/api/dashboard/closed-bill-changes", authMiddleware, async (req, res) =
   });
 });
 
+// Clear sales (test data) by date range: deletes orders with created_at in [dateFrom start, dateTo end] and related data.
+app.post("/api/settings/clear-sales-by-date-range", authMiddleware, async (req, res) => {
+  await ensureData();
+  const dateFromStr = (req.body?.dateFrom || req.query?.dateFrom || "").toString().trim();
+  const dateToStr = (req.body?.dateTo || req.query?.dateTo || "").toString().trim();
+  if (!dateFromStr || !dateToStr) {
+    return res.status(400).json({ error: "dateFrom and dateTo required (YYYY-MM-DD)" });
+  }
+  const fromBounds = getDayBounds(dateFromStr);
+  const toBounds = getDayBounds(dateToStr);
+  if (!fromBounds || !toBounds) {
+    return res.status(400).json({ error: "Invalid date format (use YYYY-MM-DD)" });
+  }
+  const startTs = fromBounds.startTs;
+  const endTs = toBounds.endTs;
+  if (startTs > endTs) {
+    return res.status(400).json({ error: "dateFrom must be before or equal to dateTo" });
+  }
+  const orders = db.data.orders || [];
+  const orderIdsInRange = new Set(orders.filter((o) => {
+    const created = o.created_at ?? o.updated_at ?? 0;
+    return created >= startTs && created <= endTs;
+  }).map((o) => o.id));
+  if (orderIdsInRange.size === 0) {
+    return res.json({ deletedOrders: 0, message: "No orders in date range" });
+  }
+  const ids = Array.from(orderIdsInRange);
+  db.data.order_items = (db.data.order_items || []).filter((i) => !orderIdsInRange.has(i.order_id));
+  db.data.payments = (db.data.payments || []).filter((p) => !orderIdsInRange.has(p.order_id));
+  db.data.void_logs = (db.data.void_logs || []).filter((v) => !orderIdsInRange.has(v.order_id));
+  db.data.orders = (db.data.orders || []).filter((o) => !orderIdsInRange.has(o.id));
+  const tables = db.data.tables || [];
+  for (let i = 0; i < tables.length; i++) {
+    if (tables[i].current_order_id && orderIdsInRange.has(tables[i].current_order_id)) {
+      db.data.tables[i] = {
+        ...db.data.tables[i],
+        status: "free",
+        current_order_id: null,
+        guest_count: 0,
+        waiter_id: null,
+        waiter_name: null,
+        opened_at: null,
+      };
+    }
+  }
+  await db.write();
+  res.json({ deletedOrders: ids.length, message: `Deleted ${ids.length} order(s) and related data in date range` });
+});
+
 // Zoho config
 app.post("/api/zoho/exchange-code", authMiddleware, async (req, res) => {
   try {

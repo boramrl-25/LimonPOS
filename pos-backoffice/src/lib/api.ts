@@ -433,6 +433,18 @@ export async function runEod(closeOpenTables: boolean): Promise<{ success: boole
   return data;
 }
 
+/** Delete orders (and related items, payments, void_logs) created between dateFrom and dateTo (YYYY-MM-DD). Frees tables. */
+export async function clearSalesByDateRange(dateFrom: string, dateTo: string): Promise<{ deletedOrders: number; message: string }> {
+  const res = await fetchWithTimeout(`${API_URL}/settings/clear-sales-by-date-range`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({ dateFrom, dateTo }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Clear failed");
+  return data;
+}
+
 export async function getTables() {
   const res = await fetchWithTimeout(`${API_URL}/tables`, { headers: headers() });
   if (!res.ok) throw new Error("Failed to fetch tables");

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { CreditCard, BookOpen, Mail, Users, ArrowLeft, SlidersHorizontal, Globe } from "lucide-react";
+import { CreditCard, BookOpen, Mail, Users, ArrowLeft, SlidersHorizontal, Globe, Trash2 } from "lucide-react";
 
 const settingsSections = [
   { href: "/settings/general", label: "Genel & Saat Dilimi", icon: Globe, description: "Timezone (iş günü / günlük satışlar için)" },
@@ -10,6 +10,7 @@ const settingsSections = [
   { href: "/settings/email", label: "Email & SMTP Settings", icon: Mail, description: "Z-Report recipients, SMTP config" },
   { href: "/modifiers", label: "Modifier Groups", icon: SlidersHorizontal, description: "Size, extras, options for products" },
   { href: "/settings/users", label: "Users & Permissions", icon: Users, description: "Staff management, roles, permissions matrix" },
+  { href: "/settings/clear-test-data", label: "Clear test data (date range)", icon: Trash2, description: "Delete orders and sales data between two dates" },
 ];
 
 export default function SettingsPage() {
