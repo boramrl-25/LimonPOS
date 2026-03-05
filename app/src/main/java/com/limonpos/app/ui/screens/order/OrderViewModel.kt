@@ -442,7 +442,7 @@ class OrderViewModel @Inject constructor(
                 return@launch
             }
 
-            // Mark as sent immediately so UI updates instantly (cart shows "sent"); then navigate
+            // Mark as sent immediately so UI updates instantly (cart shows "sent"); then navigate to floor
             orderRepository.markItemsAsSent(orderId, pendingItemIds)
             val updated = withContext(Dispatchers.IO) {
                 orderRepository.getOrderWithItems(orderId).first()
@@ -450,6 +450,7 @@ class OrderViewModel @Inject constructor(
             if (updated != null) {
                 _uiState.update { it.copy(orderWithItems = updated) }
             }
+            _navigateToFloorPlanRequest.value = _navigateToFloorPlanRequest.value + 1
 
             // In background: push to API, then print (no need to mark again)
             applicationScope.launch {
