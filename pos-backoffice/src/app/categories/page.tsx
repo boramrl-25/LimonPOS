@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { ArrowLeft, Plus, Pencil, Trash2, ChevronUp, ChevronDown, GripVertical, FileSpreadsheet } from "lucide-react";
+import { ArrowLeft, Plus, Pencil, Trash2, ChevronUp, ChevronDown, GripVertical, FileSpreadsheet, FileDown } from "lucide-react";
 import * as XLSX from "xlsx";
 import { getCategories, getModifierGroups, getPrinters, createCategory, updateCategory, deleteCategory } from "@/lib/api";
 
@@ -176,6 +176,17 @@ export default function CategoriesPage() {
     }
   }
 
+  function downloadCategoriesTemplate() {
+    const rows = [
+      { Name: "Beverages", Color: "#84CC16", SortOrder: 0, ShowTill: "On" },
+      { Name: "Food", Color: "#F59E0B", SortOrder: 1, ShowTill: "Off" },
+    ];
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Categories");
+    XLSX.writeFile(wb, "categories_import_template.xlsx");
+  }
+
   function exportCategoriesToExcel() {
     if (!categories.length) {
       alert("No categories to export");
@@ -265,6 +276,13 @@ export default function CategoriesPage() {
             className="hidden"
             onChange={handleCategoryImport}
           />
+          <button
+            onClick={downloadCategoriesTemplate}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-medium"
+            title="Import için Excel şablonu indir"
+          >
+            <FileDown className="w-4 h-4" /> Şablon indir
+          </button>
           <button
             onClick={exportCategoriesToExcel}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-medium"

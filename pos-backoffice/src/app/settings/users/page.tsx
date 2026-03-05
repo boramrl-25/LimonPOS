@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { ArrowLeft, Plus, Trash2, FileSpreadsheet } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, FileSpreadsheet, FileDown } from "lucide-react";
 import { getUsers, createUser, updateUser, deleteUser, importUsers } from "@/lib/api";
 import * as XLSX from "xlsx";
 
@@ -103,6 +103,17 @@ export default function UsersSettingsPage() {
     }
   }
 
+  function downloadUsersTemplate() {
+    const rows = [
+      { User: "Ahmet Yılmaz", Role: "waiter", "Phone Number": "5551234567" },
+      { User: "Ayşe Kaya", Role: "cashier", "Phone Number": "5559876543" },
+    ];
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Users");
+    XLSX.writeFile(wb, "users_import_template.xlsx");
+  }
+
   function exportUsersToExcel() {
     if (!users.length) {
       alert("No users to export");
@@ -132,7 +143,14 @@ export default function UsersSettingsPage() {
       <div className="flex justify-between items-center mb-8 flex-wrap gap-4">
         <span className="text-slate-400">Staff list</span>
         <div className="flex gap-2">
-          <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleFileImport} />
+          <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFileImport} />
+          <button
+            onClick={downloadUsersTemplate}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-medium"
+            title="Import için Excel şablonu indir"
+          >
+            <FileDown className="w-4 h-4" /> Şablon indir
+          </button>
           <button
             onClick={exportUsersToExcel}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-medium"

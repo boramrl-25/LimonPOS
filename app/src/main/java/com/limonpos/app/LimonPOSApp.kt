@@ -2,16 +2,50 @@ package com.limonpos.app
 
 import android.app.Application
 import com.limonpos.app.data.local.DatabaseSeeder
+import com.limonpos.app.data.repository.ApiSyncRepository
+import com.limonpos.app.di.ApplicationScope
+import com.limonpos.app.util.NetworkMonitor
 import dagger.hilt.android.HiltAndroidApp
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltAndroidApp
 class LimonPOSApp : Application() {
 
     @Inject lateinit var databaseSeeder: DatabaseSeeder
+    @Inject lateinit var apiSyncRepository: ApiSyncRepository
+    @Inject lateinit var networkMonitor: NetworkMonitor
+    @Inject @ApplicationScope lateinit var applicationScope: CoroutineScope
+
+    private var syncJob: Job? = null
 
     override fun onCreate() {
         super.onCreate()
         databaseSeeder.seedIfEmpty()
+        startCloudSyncWhenOnline()
+    }
+
+    /** İnternet varken periyodik sync: masalar, siparişler, ürünler web ile senkron kalır. */
+    private fun startCloudSyncWhenOnline() {
+        applicationScope.launch {
+            networkMonitor.isOnline.collect { online ->
+                syncJob?.cancel()
+                if (online) {
+                    syncJob = applicationScope.launch {
+                        apiSyncRepository.syncFromApi()
+                        while (true) {
+                            delay(30 * 1000L) // 30 saniyede bir (web floor ile sürekli uyum, bağlantı stabil)
+                            if (!networkMonitor.isOnline.first()) break
+                            apiSyncRepository.syncFromApi()
+                        }
+                    }
+                }
+            }
+        }
     }
 }

@@ -63,10 +63,22 @@ try {
   db = await JSONFilePreset(DATA_FILE, defaultData);
   console.log("[db] Veri dosyası:", DATA_FILE);
 } catch (e) {
-  console.error("[db] Veri dosyası açılamadı:", e.message);
-  const fallbackDir = __dirname;
-  const fallbackFile = join(fallbackDir, "data.json");
-  console.warn("[db] Yedek konum kullanılıyor:", fallbackFile);
-  db = await JSONFilePreset(fallbackFile, defaultData);
+  console.error("[db] Birincil veri dosyası açılamadı:", e.message);
+  try {
+    const fallbackDir = __dirname;
+    const fallbackFile = join(fallbackDir, "data.json");
+    console.warn("[db] Yedek konum kullanılıyor:", fallbackFile);
+    db = await JSONFilePreset(fallbackFile, defaultData);
+  } catch (e2) {
+    console.error("[db] Yedek konum da başarısız:", e2.message);
+    // In-memory fallback: sunucu çökmesin, Railway health check geçsin; veri restart'ta silinir
+    const mem = JSON.parse(JSON.stringify(defaultData));
+    db = {
+      data: mem,
+      read: async () => {},
+      write: async () => {},
+    };
+    console.warn("[db] UYARI: Sadece bellek kullanılıyor – veriler kalıcı değil. Railway'de Volume ekleyip DATA_DIR=/data ve Mount Path=/data yapın.");
+  }
 }
 export { db };

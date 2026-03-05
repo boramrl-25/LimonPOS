@@ -2,9 +2,9 @@
 
 import { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
-import { ArrowLeft, Plus, Trash2, BookOpen, RefreshCw, Search, FileSpreadsheet } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, BookOpen, RefreshCw, Search, FileSpreadsheet, FileDown } from "lucide-react";
 import * as XLSX from "xlsx";
-import { getProducts, getCategories, getPrinters, getModifierGroups, createProduct, updateProduct, deleteProduct, getZohoItems, syncZohoBooks, checkZohoConnection, clearAndSyncProducts } from "@/lib/api";
+import { getProducts, getCategories, getPrinters, getModifierGroups, createProduct, updateProduct, deleteProduct, getZohoItems, syncZohoBooks, checkZohoConnection, clearAndSyncProducts, getPendingZohoRemovalProducts, confirmProductRemoval } from "@/lib/api";
 
 type Product = {
   id: string;
@@ -23,6 +23,8 @@ type Product = {
   pos_enabled?: boolean;
   /** API'dan gelen Sellable kolonu (true/false/string vb.) */
   sellable_from_api?: unknown;
+  /** Zoho'da artık yok – silinecek önerisi; onay verilene kadar satışta kalır */
+  zoho_suggest_remove?: boolean;
 };
 
 type ZohoItem = { item_id: string; name: string; sku: string; rate: number };
@@ -48,6 +50,9 @@ export default function ProductsPage() {
   const [zohoCheckResult, setZohoCheckResult] = useState<{ ok: boolean; itemsCount: number; groupsCount: number; error?: string } | null>(null);
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [pendingRemoval, setPendingRemoval] = useState<Product[]>([]);
+  const [selectedRemovalIds, setSelectedRemovalIds] = useState<Set<string>>(new Set());
+  const [removalLoading, setRemovalLoading] = useState(false);
 
   useEffect(() => {
     load();
@@ -85,11 +90,18 @@ export default function ProductsPage() {
       setLoading(true);
     }
     try {
-      const [prods, cats, prts, mgs] = await Promise.all([getProducts(), getCategories(), getPrinters(), getModifierGroups()]);
+      const [prods, cats, prts, mgs, pending] = await Promise.all([
+        getProducts(),
+        getCategories(),
+        getPrinters(),
+        getModifierGroups(),
+        getPendingZohoRemovalProducts().catch(() => []),
+      ]);
       setProducts(prods);
       setCategories(cats);
       setPrinters(prts);
       setModifierGroups(mgs.map((m) => ({ id: m.id, name: m.name })));
+      setPendingRemoval((pending as Product[]) || []);
     } catch (e) {
       console.error(e);
       const msg = (e as Error).message || "Bağlantı hatası";
@@ -227,7 +239,7 @@ export default function ProductsPage() {
     setShowZohoPicker(false);
   }
 
-  /** Zoho'da yapılan değişiklikleri uygular: tüm ürünleri siler, Zoho'dan çeker, listeyi yeniler. */
+  /** Zoho'dan sync (upsert). Zoho'da olmayan ürünler silinmez, "silinecek önerisi" olarak işaretlenir; onay verilene kadar satışta kalır. */
   async function syncFromZoho() {
     setSyncLoading(true);
     setZohoCheckResult(null);
@@ -238,11 +250,48 @@ export default function ProductsPage() {
         alert(r.error);
       } else {
         await load(true);
+        const suggested = r.productsSuggestedForRemoval?.length ?? 0;
+        if (suggested > 0) {
+          alert(`${suggested} ürün Zoho'da artık yok. Silinecek önerisi olarak listelendi. Onay verene kadar satışta kalır; aşağıdaki "Zoho'da artık yok" listesinden seçip silebilirsiniz.`);
+        }
       }
     } catch (e) {
       alert((e as Error).message);
     } finally {
       setSyncLoading(false);
+    }
+  }
+
+  function toggleRemovalSelection(id: string) {
+    setSelectedRemovalIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function selectAllRemoval() {
+    if (selectedRemovalIds.size === pendingRemoval.length) setSelectedRemovalIds(new Set());
+    else setSelectedRemovalIds(new Set(pendingRemoval.map((p) => p.id)));
+  }
+
+  async function confirmRemoval() {
+    const ids = Array.from(selectedRemovalIds);
+    if (ids.length === 0) {
+      alert("Lütfen silmek istediğiniz ürünleri işaretleyin.");
+      return;
+    }
+    if (!confirm(`${ids.length} ürünü kalıcı olarak silmek istediğinize emin misiniz?`)) return;
+    setRemovalLoading(true);
+    try {
+      await confirmProductRemoval(ids);
+      setSelectedRemovalIds(new Set());
+      await load(true);
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setRemovalLoading(false);
     }
   }
 
@@ -257,6 +306,17 @@ export default function ProductsPage() {
     } finally {
       setCheckLoading(false);
     }
+  }
+
+  function downloadProductsTemplate() {
+    const rows = [
+      { Name: "Örnek Ürün", SKU: "SKU001", Category: "Beverages", Price: 25.5, VATPercent: 5, Till: "On" },
+      { Name: "İkinci Ürün", SKU: "SKU002", Category: "Food", Price: 15, VATPercent: 5, Till: "On" },
+    ];
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Products");
+    XLSX.writeFile(wb, "products_import_template.xlsx");
   }
 
   function exportProductsToExcel() {
@@ -408,7 +468,7 @@ export default function ProductsPage() {
       <div className="flex justify-between items-center mb-8 flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-sky-400">Products</h1>
-          <p className="text-slate-400">Add, edit, delete products. Zoho entegrasyonu her dakika değişiklikleri otomatik çeker (sellable olmayanlar silinir, yeniler eklenir, fiyat/kategori/SKU güncellenir).</p>
+          <p className="text-slate-400">Add, edit, delete products. Zoho sync ile ürünler güncellenir; Zoho'da kaldırılanlar &quot;silinecek önerisi&quot; olarak listelenir, onay verene kadar satışta kalır.</p>
           {lastSync && <p className="text-slate-500 text-sm mt-1">Last sync: {lastSync}</p>}
           {zohoCheckResult && (
             <p className={`text-sm mt-1 ${zohoCheckResult.ok ? "text-emerald-400" : "text-amber-400"}`}>
@@ -426,6 +486,13 @@ export default function ProductsPage() {
             className="hidden"
             onChange={handleProductImport}
           />
+          <button
+            onClick={downloadProductsTemplate}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-medium"
+            title="Import için Excel şablonu indir"
+          >
+            <FileDown className="w-4 h-4" /> Şablon indir
+          </button>
           <button
             onClick={exportProductsToExcel}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-medium"
@@ -557,6 +624,68 @@ export default function ProductsPage() {
           </tbody>
         </table>
       </div>
+
+      {pendingRemoval.length > 0 && (
+        <div className="rounded-lg border border-amber-700/50 bg-amber-950/20 p-4 mb-8">
+          <h2 className="text-lg font-semibold text-amber-400 mb-2">Zoho'da artık yok (silinecek önerisi)</h2>
+          <p className="text-slate-400 text-sm mb-3">Bu ürünler Zoho Books’ta kaldırılmış. Onay verene kadar satışta kalır; silmek için işaretleyip &quot;Seçilenleri sil&quot; deyin.</p>
+          <div className="flex gap-2 mb-3">
+            <button
+              type="button"
+              onClick={selectAllRemoval}
+              className="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-sm"
+            >
+              {selectedRemovalIds.size === pendingRemoval.length ? "Seçimi kaldır" : "Tümünü seç"}
+            </button>
+            <button
+              type="button"
+              onClick={confirmRemoval}
+              disabled={selectedRemovalIds.size === 0 || removalLoading}
+              className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:pointer-events-none text-white text-sm font-medium"
+            >
+              {removalLoading ? "..." : `Seçilenleri sil (${selectedRemovalIds.size})`}
+            </button>
+          </div>
+          <div className="overflow-x-auto rounded border border-slate-700">
+            <table className="w-full min-w-[400px]">
+              <thead>
+                <tr className="border-b border-slate-700 bg-slate-800/50">
+                  <th className="text-left p-2 w-10">
+                    <input
+                      type="checkbox"
+                      checked={pendingRemoval.length > 0 && selectedRemovalIds.size === pendingRemoval.length}
+                      onChange={selectAllRemoval}
+                      className="rounded border-slate-500"
+                    />
+                  </th>
+                  <th className="text-left p-2 font-medium">Ürün</th>
+                  <th className="text-left p-2 font-medium">SKU</th>
+                  <th className="text-left p-2 font-medium">Kategori</th>
+                  <th className="text-left p-2 font-medium">Fiyat</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pendingRemoval.map((p) => (
+                  <tr key={p.id} className="border-b border-slate-700/50 hover:bg-slate-800/30">
+                    <td className="p-2" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedRemovalIds.has(p.id)}
+                        onChange={() => toggleRemovalSelection(p.id)}
+                        className="rounded border-slate-500"
+                      />
+                    </td>
+                    <td className="p-2 truncate max-w-[200px]" title={p.name}>{p.name}</td>
+                    <td className="p-2 text-slate-400">{p.sku || "—"}</td>
+                    <td className="p-2 truncate max-w-[120px]" title={p.category || ""}>{p.category || "—"}</td>
+                    <td className="p-2">{(p.price ?? 0).toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {editing !== undefined && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">

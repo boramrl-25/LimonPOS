@@ -88,6 +88,16 @@ class ApiSyncRepository @Inject constructor(
         }
     }
 
+    /** Pushes current occupied/bill table states to API immediately. Call after opening or updating tables so web sees changes without waiting for full sync. */
+    suspend fun pushTableStatesNow() {
+        if (!isOnline()) return
+        try {
+            pushOpenOrdersAndTables()
+        } catch (e: Exception) {
+            Log.e("ApiSync", "pushTableStatesNow error: ${e.message}", e)
+        }
+    }
+
     /** Pushes open orders and occupied tables to API so web has latest state */
     private suspend fun pushOpenOrdersAndTables() {
         val occupiedTables = tableDao.getOccupiedTables()
@@ -165,7 +175,7 @@ class ApiSyncRepository @Inject constructor(
         }
     }
 
-    /** Ensures order exists on API with items. Creates if missing; pushes missing items if order exists. */
+    /** Ensures order exists on API with items. Creates if missing; keeps API items exactly in sync with local items. */
     private suspend fun ensureOrderExistsOnApi(localOrderId: String): String? {
         if (!isOnline()) return null
         val order = orderDao.getOrderById(localOrderId) ?: return null
@@ -178,10 +188,31 @@ class ApiSyncRepository @Inject constructor(
             if (getResponse.isSuccessful) {
                 val apiOrder = getResponse.body() ?: return localOrderId
                 val apiItems = apiOrder.items ?: emptyList()
-                val apiKeys = apiItems.map { "${it.productName}|${it.quantity}|${it.price}|${it.notes}" }.toSet()
+
+                // Build comparison keys so API order items mirror local order items (no unexpected extras)
+                val localKeys = localItems.map {
+                    "${it.productName}|${it.quantity}|${it.price}|${it.notes}"
+                }.toSet()
+                val apiItemsByKey = apiItems.associateBy {
+                    "${it.productName}|${it.quantity}|${it.price}|${it.notes}"
+                }
+
+                // Remove remote items that are not present locally
+                for (apiItem in apiItems) {
+                    val key = "${apiItem.productName}|${apiItem.quantity}|${apiItem.price}|${apiItem.notes}"
+                    if (key !in localKeys) {
+                        try {
+                            apiService.deleteOrderItem(localOrderId, apiItem.id)
+                        } catch (e: Exception) {
+                            Log.e("ApiSync", "deleteOrderItem failed for ${apiItem.id}", e)
+                        }
+                    }
+                }
+
+                // Add local items that are missing on API
                 for (item in localItems) {
                     val key = "${item.productName}|${item.quantity}|${item.price}|${item.notes}"
-                    if (key !in apiKeys) {
+                    if (!apiItemsByKey.containsKey(key)) {
                         val itemReq = AddOrderItemRequest(
                             productId = item.productId,
                             productName = item.productName,
@@ -190,13 +221,17 @@ class ApiSyncRepository @Inject constructor(
                             notes = item.notes
                         )
                         val addRes = apiService.addOrderItem(localOrderId, itemReq)
-                        if (!addRes.isSuccessful) Log.e("ApiSync", "addOrderItem failed for ${item.productName}")
+                        if (!addRes.isSuccessful) {
+                            Log.e("ApiSync", "addOrderItem failed for ${item.productName}")
+                        }
                     }
                 }
+
                 if (order.status == "sent") apiService.sendOrderToKitchen(localOrderId)
                 return localOrderId
             }
 
+            // Order not found on API: create with all local items
             val createReq = CreateOrderRequest(
                 id = localOrderId,
                 tableId = order.tableId,
@@ -236,12 +271,16 @@ class ApiSyncRepository @Inject constructor(
 
     private suspend fun syncTables() {
         val response = apiService.getTables()
-        if (response.isSuccessful) {
-            val dtos = response.body() ?: return
-            val localOccupied = tableDao.getAllTables().first().filter { it.currentOrderId != null }
-                .associateBy { it.id }
-            tableDao.deleteAll()
-            val entities = dtos.map { dto ->
+        if (!response.isSuccessful) return
+        val dtos = response.body() ?: return
+        if (dtos.isEmpty()) {
+            Log.w("ApiSync", "syncTables: API returned empty tables, keeping local tables to avoid data loss")
+            return
+        }
+        val localOccupied = tableDao.getAllTables().first().filter { it.currentOrderId != null }
+            .associateBy { it.id }
+        tableDao.deleteAll()
+        val entities = dtos.map { dto ->
                 val local = localOccupied[dto.id]
                 val useLocal = local != null && (dto.currentOrderId.isNullOrBlank())
                 TableEntity(
@@ -264,8 +303,7 @@ class ApiSyncRepository @Inject constructor(
                     shape = dto.shape
                 )
             }
-            tableDao.insertTables(entities)
-        }
+        tableDao.insertTables(entities)
     }
 
     /** Pulls orders (with items) from API for tables that have currentOrderId. Web→App sync (local voids win). */
@@ -342,19 +380,21 @@ class ApiSyncRepository @Inject constructor(
             }
             categoryDao.deleteAll()
             val entities = buildList {
-                add(CategoryEntity("all", "All", "#84CC16", 0, true, "SYNCED", "[]"))
+                add(CategoryEntity("all", "All", "#84CC16", 0, true, true, "SYNCED", "[]"))
                 addAll(dtos.map { dto ->
                     val active = when (dto.active) {
                         is Boolean -> dto.active
                         is Number -> (dto.active as Number).toInt() != 0
                         else -> true
                     }
+                    val showTill = (dto.showTill ?: 0) != 0
                     CategoryEntity(
                         id = dto.id,
                         name = dto.name,
                         color = dto.color,
                         sortOrder = dto.sortOrder,
                         active = active,
+                        showTill = showTill,
                         syncStatus = "SYNCED",
                         printers = (dto.printers ?: emptyList()).let { Gson().toJson(it) }
                     )
@@ -388,12 +428,7 @@ class ApiSyncRepository @Inject constructor(
                     ?: dto.categoryName?.let { categoryByName[it]?.id }
                     ?: defaultCategoryId
                 val rawTax = dto.taxRate
-                val taxRate = when {
-                    rawTax == null -> 0.0
-                    rawTax.isNaN() -> 0.0
-                    rawTax > 1 -> rawTax / 100.0
-                    else -> rawTax
-                }
+                val taxRate = if (rawTax == null || rawTax.isNaN()) 0.0 else rawTax
                 val showInTill = when (dto.posEnabled) {
                     is Boolean -> dto.posEnabled
                     is Number -> (dto.posEnabled as Number).toInt() != 0

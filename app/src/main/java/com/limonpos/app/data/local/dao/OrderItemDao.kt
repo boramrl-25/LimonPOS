@@ -23,6 +23,9 @@ interface OrderItemDao {
     @Update
     suspend fun updateOrderItem(item: OrderItemEntity)
 
+    @Query("UPDATE order_items SET deliveredAt = :deliveredAt WHERE id = :itemId")
+    suspend fun markDelivered(itemId: String, deliveredAt: Long)
+
     @Delete
     suspend fun deleteOrderItem(item: OrderItemEntity)
 

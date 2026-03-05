@@ -40,6 +40,8 @@ export default function DailySalesPage() {
 
   useEffect(() => {
     fetchData();
+    const id = setInterval(fetchData, 30000);
+    return () => clearInterval(id);
   }, [fetchData]);
 
   async function handleRefresh() {

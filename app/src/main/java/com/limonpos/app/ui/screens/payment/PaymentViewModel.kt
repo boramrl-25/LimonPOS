@@ -223,6 +223,7 @@ class PaymentViewModel @Inject constructor(
                 if (kotlin.math.abs(newBalance) < 0.01) {
                     orderRepository.markOrderPaid(ow.order.id)
                     tableRepository.closeTable(tableId)
+                    if (apiSyncRepository.isOnline()) apiSyncRepository.pushCloseTable(tableId)
                     val finalReceipt = printerService.buildReceipt(ow.order, ow.items)
                     for (printer in cashierPrinters) {
                         printerService.sendToPrinter(printer.ipAddress, printer.port, finalReceipt)
@@ -271,6 +272,7 @@ class PaymentViewModel @Inject constructor(
                 }
                 orderRepository.markOrderPaid(ow.order.id)
                 tableRepository.closeTable(tableId)
+                if (apiSyncRepository.isOnline()) apiSyncRepository.pushCloseTable(tableId)
                 // Print receipt and open cash drawer
                 val cashierPrinters = printerRepository.getAllPrinters().first()
                     .filter { it.printerType == "cashier" && it.ipAddress.isNotBlank() }

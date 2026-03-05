@@ -6,7 +6,7 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface CategoryDao {
-    @Query("SELECT * FROM categories WHERE active = 1 ORDER BY sortOrder, name")
+    @Query("SELECT * FROM categories WHERE active = 1 AND showTill = 1 ORDER BY sortOrder, name")
     fun getActiveCategories(): Flow<List<CategoryEntity>>
 
     @Query("SELECT * FROM categories ORDER BY sortOrder, name")

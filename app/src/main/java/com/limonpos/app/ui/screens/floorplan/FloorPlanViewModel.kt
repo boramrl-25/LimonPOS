@@ -11,8 +11,10 @@ import com.limonpos.app.data.repository.ApiSyncRepository
 import com.limonpos.app.data.repository.AuthRepository
 import com.limonpos.app.data.repository.OrderRepository
 import com.limonpos.app.data.repository.TableRepository
+import com.limonpos.app.data.repository.OverdueUndelivered
 import com.limonpos.app.data.repository.VoidRequestRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -82,9 +84,27 @@ class FloorPlanViewModel @Inject constructor(
         .map { if (it.isEmpty()) DEFAULT_FLOOR_PLAN_SECTIONS else it }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DEFAULT_FLOOR_PLAN_SECTIONS)
 
+    private val _overdueWarning = MutableStateFlow<List<OverdueUndelivered>?>(null)
+    val overdueWarning: StateFlow<List<OverdueUndelivered>?> = _overdueWarning.asStateFlow()
+
     init {
         loadTables()
         syncFromApi()
+        startOverdueCheckLoop()
+    }
+
+    private fun startOverdueCheckLoop() {
+        viewModelScope.launch {
+            while (true) {
+                val list = orderRepository.getOverdueUndelivered(10 * 60 * 1000L)
+                if (list.isNotEmpty()) _overdueWarning.value = list
+                delay(4 * 60 * 1000L)
+            }
+        }
+    }
+
+    fun dismissOverdueWarning() {
+        _overdueWarning.value = null
     }
 
     private fun syncFromApi() {
@@ -161,6 +181,7 @@ class FloorPlanViewModel @Inject constructor(
                 _uiState.update { it.copy(showOpenTableDialog = null) }
                 onNavigateToOrder(tableId)
                 if (apiSyncRepository.isOnline()) {
+                    apiSyncRepository.pushTableStatesNow()
                     apiSyncRepository.syncFromApi()
                 }
             } catch (e: Exception) {
@@ -264,6 +285,9 @@ class FloorPlanViewModel @Inject constructor(
             }
             _uiState.update { it.copy(closeTableError = null) }
             orderRepository.closeTableManually(tableId)
+            if (apiSyncRepository.isOnline()) {
+                apiSyncRepository.pushCloseTable(tableId)
+            }
         }
     }
 

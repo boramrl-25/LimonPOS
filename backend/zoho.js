@@ -335,6 +335,7 @@ export async function syncFromZoho(db, options = {}) {
       productsAdded: 0,
       productsUpdated: 0,
       productsRemoved: 0,
+      productsSuggestedForRemoval: [],
       itemsFetched: 0,
       error: !hasConfig ? "Zoho ayarları eksik (Organization ID, Enabled, Refresh Token, Client ID/Secret)" : !tokenOk ? "Zoho token alınamadı (Refresh Token veya Client bilgilerini kontrol edin)" : "Zoho Books ürün listesi alınamadı (API hatası veya yetki)",
     };
@@ -371,92 +372,71 @@ export async function syncFromZoho(db, options = {}) {
     }
   }
 
-  const clearFirst = options.clearZohoProductsFirst === true;
+  // Upsert: önce silme yok. Zoho'da olmayan ürünler sadece zoho_suggest_remove ile işaretlenir; onay verilene kadar satışta kalır.
   const existingProducts = db.data.products || [];
-  let productsRemoved = 0;
+  const zohoIdsInFetch = new Set(items.map((it) => String(it.item_id)));
   let productsAdded = 0;
   let productsUpdated = 0;
 
-  if (clearFirst) {
-    // Tam senkron: tüm ürünleri sil, sadece Zoho'dan gelenleri yükle
-    productsRemoved = existingProducts.length;
-    db.data.products = [];
-  } else {
-    // Artımlı senkron: Web'de eklenen ürünleri koru, Zoho'dakileri güncelle/ekle
-    const webOnlyProducts = existingProducts.filter((p) => !p.zoho_item_id);
-    const byZohoId = new Map(existingProducts.filter((p) => p.zoho_item_id).map((p) => [String(p.zoho_item_id), p]));
-    const merged = [...webOnlyProducts];
-    for (const it of items) {
-      const zohoId = String(it.item_id);
-      const existing = byZohoId.get(zohoId);
-      const sku = (it.sku || "").trim() || String(it.item_id);
-      const catName = (it.item_group_name || "").toString().trim().toLowerCase();
-      const localCatId = (catName && zohoCatNameToLocal[catName]) || (it.item_group_id && zohoCatIdToLocal[String(it.item_group_id)]) || null;
-      const id = `p_zoho_${it.item_id}`;
-      const row = {
-        id,
-        name: it.name || "Unnamed",
-        name_arabic: (existing && existing.name_arabic) || "",
-        name_turkish: (existing && existing.name_turkish) || "",
-        sku,
-        category_id: localCatId || null,
-        price: Number(it.rate) || 0,
-        tax_rate: (existing && existing.tax_rate) != null ? existing.tax_rate : 0,
-        image_url: it.image_url || (existing && existing.image_url) || "",
-        printers: (existing && existing.printers) || "[]",
-        modifier_groups: (existing && existing.modifier_groups) || "[]",
-        active: (existing && existing.active) != null ? existing.active : 1,
-        pos_enabled: (existing && existing.pos_enabled) != null ? existing.pos_enabled : (localCatId ? 1 : 0),
-        zoho_item_id: it.item_id,
-        sellable: true,
-        sellable_from_api: it.sellable_from_api,
-      };
-      if (existing) {
-        merged.push({ ...existing, ...row });
-        productsUpdated++;
-      } else {
-        merged.push(row);
-        productsAdded++;
-      }
-    }
-    db.data.products = merged;
-    await db.write();
-    return { categoriesAdded, productsAdded, productsUpdated, productsRemoved, itemsFetched };
-  }
+  const webOnlyProducts = existingProducts.filter((p) => !p.zoho_item_id);
+  const byZohoId = new Map(existingProducts.filter((p) => p.zoho_item_id).map((p) => [String(p.zoho_item_id), p]));
+  const merged = [...webOnlyProducts];
 
   for (const it of items) {
     const zohoId = String(it.item_id);
+    const existing = byZohoId.get(zohoId);
     const sku = (it.sku || "").trim() || String(it.item_id);
     const catName = (it.item_group_name || "").toString().trim().toLowerCase();
     const localCatId = (catName && zohoCatNameToLocal[catName]) || (it.item_group_id && zohoCatIdToLocal[String(it.item_group_id)]) || null;
     const id = `p_zoho_${it.item_id}`;
-    db.data.products.push({
+    const row = {
       id,
       name: it.name || "Unnamed",
-      name_arabic: "",
-      name_turkish: "",
+      name_arabic: (existing && existing.name_arabic) || "",
+      name_turkish: (existing && existing.name_turkish) || "",
       sku,
       category_id: localCatId || null,
       price: Number(it.rate) || 0,
-      tax_rate: 0,
-      image_url: it.image_url || "",
-      printers: "[]",
-      modifier_groups: "[]",
-      active: 1,
-      pos_enabled: localCatId ? 1 : 0,
+      tax_rate: (existing && existing.tax_rate) != null ? existing.tax_rate : 0,
+      image_url: it.image_url || (existing && existing.image_url) || "",
+      printers: (existing && existing.printers) || "[]",
+      modifier_groups: (existing && existing.modifier_groups) || "[]",
+      active: (existing && existing.active) != null ? existing.active : 1,
+      pos_enabled: (existing && existing.pos_enabled) != null ? existing.pos_enabled : (localCatId ? 1 : 0),
       zoho_item_id: it.item_id,
       sellable: true,
       sellable_from_api: it.sellable_from_api,
-    });
-    productsAdded++;
+      zoho_suggest_remove: false,
+    };
+    if (existing) {
+      merged.push({ ...existing, ...row });
+      productsUpdated++;
+    } else {
+      merged.push(row);
+      productsAdded++;
+    }
   }
 
+  // Zoho'da artık olmayan ürünler: silinmez, sadece "silinecek önerisi" işareti; onay verilene kadar satışta kalır
+  const productsSuggestedForRemoval = [];
+  for (const [zohoId, p] of byZohoId) {
+    if (!zohoIdsInFetch.has(zohoId)) {
+      merged.push({
+        ...p,
+        zoho_suggest_remove: true,
+      });
+      productsSuggestedForRemoval.push({ id: p.id, name: p.name, sku: p.sku });
+    }
+  }
+
+  db.data.products = merged;
   await db.write();
   return {
     categoriesAdded,
     productsAdded,
-    productsUpdated: 0,
-    productsRemoved,
+    productsUpdated,
+    productsRemoved: 0,
+    productsSuggestedForRemoval,
     itemsFetched,
   };
 }

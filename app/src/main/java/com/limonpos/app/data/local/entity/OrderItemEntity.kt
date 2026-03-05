@@ -19,6 +19,7 @@ data class OrderItemEntity(
     val notes: String = "",
     val status: String = "pending",
     val sentAt: Long? = null,
+    val deliveredAt: Long? = null,
     val apiId: String? = null,
     val syncStatus: String = "SYNCED"
 )

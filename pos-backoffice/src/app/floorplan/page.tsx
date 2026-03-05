@@ -35,7 +35,7 @@ export default function FloorPlanPage() {
   }, []);
 
   useEffect(() => {
-    const t = setInterval(load, 5000);
+    const t = setInterval(load, 5000); // her 5 sn'de bir güncelle (orijinal, stabil ayar)
     return () => clearInterval(t);
   }, []);
 

@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.limonpos.app.data.local.entity.TableEntity
+import com.limonpos.app.data.repository.OverdueUndelivered
 import com.limonpos.app.ui.theme.*
 import kotlinx.coroutines.flow.StateFlow
 
@@ -57,6 +58,7 @@ fun FloorPlanScreen(
     val uiState by viewModel.uiState.collectAsState()
     val waiterName by viewModel.waiterName.collectAsState()
     val printerWarningState by viewModel.printerWarningState.collectAsState()
+    val overdueWarning by viewModel.overdueWarning.collectAsState(initial = null)
     val pendingVoidCount by viewModel.pendingVoidRequestCount.collectAsState(0)
     var tableToClose by remember { mutableStateOf<TableEntity?>(null) }
     var showVoidRequestPopup by remember { mutableStateOf(true) }
@@ -95,6 +97,22 @@ fun FloorPlanScreen(
 
     LaunchedEffect(printerWarningState) {
         if (printerWarningState == null) return@LaunchedEffect
+        val tg = ToneGenerator(AudioManager.STREAM_ALARM, 80)
+        try {
+            while (true) {
+                tg.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 400)
+                delay(1500)
+            }
+        } finally {
+            tg.release()
+        }
+    }
+
+    overdueWarning?.let { list ->
+        OverdueUndeliveredDialogFloor(list = list, onDismiss = { viewModel.dismissOverdueWarning() })
+    }
+    LaunchedEffect(overdueWarning) {
+        if (overdueWarning.isNullOrEmpty()) return@LaunchedEffect
         val tg = ToneGenerator(AudioManager.STREAM_ALARM, 80)
         try {
             while (true) {
@@ -694,4 +712,42 @@ private fun TableCard(
             }
         }
     }
+}
+
+@Composable
+private fun OverdueUndeliveredDialogFloor(
+    list: List<OverdueUndelivered>,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text("Ürünler henüz masaya gelmedi", fontWeight = FontWeight.Bold, color = LimonError)
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("10 dakikadan fazla süredir mutfakta olup masaya gelmeyen ürünler:", color = LimonTextSecondary, fontSize = 13.sp)
+                list.forEach { block ->
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = LimonSurface),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text("Masa ${block.tableNumber}", fontWeight = FontWeight.Bold, color = LimonPrimary, fontSize = 15.sp)
+                            Spacer(modifier = Modifier.height(6.dp))
+                            block.items.forEach { item ->
+                                Text("• ${item.quantity}x ${item.productName}", color = LimonText, fontSize = 14.sp)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onDismiss, colors = ButtonDefaults.buttonColors(containerColor = LimonPrimary)) {
+                Text("Tamam", color = Color.Black)
+            }
+        },
+        containerColor = LimonSurface
+    )
 }

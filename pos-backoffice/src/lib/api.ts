@@ -184,6 +184,24 @@ export async function deleteProduct(id: string) {
   if (!res.ok) throw new Error("Failed to delete product");
 }
 
+/** Zoho'da artık olmayan (silinecek önerisi) ürünler; onay verilene kadar satışta kalır */
+export async function getPendingZohoRemovalProducts(): Promise<Array<Record<string, unknown>>> {
+  const res = await fetchWithTimeout(`${API_URL}/products/pending-zoho-removal`, { headers: headers() });
+  if (!res.ok) throw new Error("Failed to fetch pending removal list");
+  return res.json();
+}
+
+/** Seçilen ürünleri kalıcı sil (onay sonrası) */
+export async function confirmProductRemoval(productIds: string[]): Promise<{ removed: number; productIds: string[] }> {
+  const res = await fetchWithTimeout(`${API_URL}/products/confirm-removal`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({ productIds }),
+  });
+  if (!res.ok) throw new Error("Failed to confirm removal");
+  return res.json();
+}
+
 export async function getModifierGroups(): Promise<Array<{ id: string; name: string; min_select?: number; max_select?: number; required?: boolean; options: Array<{ id: string; name: string; price: number }> }>> {
   const res = await fetchWithTimeout(`${API_URL}/modifier-groups`, { headers: headers() });
   if (!res.ok) throw new Error("Failed to fetch modifier groups");
@@ -411,12 +429,14 @@ export async function syncZohoBooks(options?: { clearZohoProductsFirst?: boolean
   return res.json();
 }
 
-/** Zoho'da yapılan değişiklikleri uygular: ürünleri siler, Zoho'dan çeker, güncel listeyi döndürür */
+/** Zoho'dan sync (upsert). Zoho'da olmayan ürünler silinmez, silinecek önerisi olarak işaretlenir; onay verilene kadar satışta kalır */
 export async function clearAndSyncProducts(): Promise<{
   products: Array<Record<string, unknown>>;
   categoriesAdded: number;
   productsAdded: number;
+  productsUpdated?: number;
   productsRemoved: number;
+  productsSuggestedForRemoval?: Array<{ id: string; name: string; sku?: string }>;
   itemsFetched?: number;
   error?: string;
 }> {

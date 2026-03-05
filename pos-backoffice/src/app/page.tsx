@@ -1,14 +1,34 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { LayoutDashboard, Settings, Package, Users, Printer, FolderOpen, BarChart3, SlidersHorizontal, Map } from "lucide-react";
-import { getToken, getSetupStatus } from "@/lib/api";
+import { LayoutDashboard, Settings, Package, Users, Printer, FolderOpen, BarChart3, SlidersHorizontal, Map, RefreshCw } from "lucide-react";
+import { getToken, getSetupStatus, getTables, getProducts, getCategories, getModifierGroups, getPrinters, getUsers, getDashboardStats } from "@/lib/api";
+
+function fmt(n: number) {
+  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
 
 export default function Home() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
+  const [summary, setSummary] = useState<{
+    tablesTotal: number;
+    tablesFree: number;
+    tablesOccupied: number;
+    products: number;
+    categories: number;
+    modifiers: number;
+    printers: number;
+    users: number;
+    todaySales: number;
+    openTables: number;
+    openChecks: number;
+  } | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
+
   useEffect(() => {
     const token = getToken();
     if (!token) {
@@ -22,6 +42,46 @@ export default function Home() {
       })
       .catch(() => setReady(true));
   }, [router]);
+
+  const loadSummary = useCallback(async () => {
+    setSummaryLoading(true);
+    setSummaryError(null);
+    try {
+      const [tables, products, categories, modifiers, printers, users, stats] = await Promise.all([
+        getTables(),
+        getProducts(),
+        getCategories(),
+        getModifierGroups(),
+        getPrinters(),
+        getUsers(),
+        getDashboardStats(),
+      ]);
+      const tablesFree = tables.filter((t: { status: string }) => t.status === "free").length;
+      const tablesOccupied = tables.filter((t: { status: string }) => t.status === "occupied" || t.status === "bill").length;
+      setSummary({
+        tablesTotal: tables.length,
+        tablesFree,
+        tablesOccupied,
+        products: products.length,
+        categories: categories.length,
+        modifiers: modifiers.length,
+        printers: printers.length,
+        users: users.length,
+        todaySales: stats.todaySales ?? 0,
+        openTables: stats.openTables ?? 0,
+        openChecks: stats.openChecks ?? 0,
+      });
+    } catch (e) {
+      setSummaryError((e as Error).message || "Veri yüklenemedi");
+      setSummary(null);
+    } finally {
+      setSummaryLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (ready) loadSummary();
+  }, [ready, loadSummary]);
 
   if (!ready) {
     return (
@@ -37,6 +97,68 @@ export default function Home() {
       </header>
 
       <main className="flex-1 p-6">
+        {/* Bütün bilgiler özeti */}
+        <section className="mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-slate-200">Bütün bilgiler (özet)</h2>
+            <button
+              type="button"
+              onClick={loadSummary}
+              disabled={summaryLoading}
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm disabled:opacity-50"
+            >
+              <RefreshCw className={`w-4 h-4 ${summaryLoading ? "animate-spin" : ""}`} />
+              Yenile
+            </button>
+          </div>
+          {summaryError && (
+            <p className="text-amber-400 text-sm mb-3">{summaryError}</p>
+          )}
+          {summaryLoading && !summary ? (
+            <p className="text-slate-500 py-4">Yükleniyor...</p>
+          ) : summary ? (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+              <div className="p-4 rounded-xl bg-slate-800/60 border border-slate-700">
+                <p className="text-slate-400 text-xs">Masalar</p>
+                <p className="text-lg font-bold text-white">{summary.tablesTotal} <span className="text-slate-500 font-normal text-sm">(Boş: {summary.tablesFree}, Dolu: {summary.tablesOccupied})</span></p>
+              </div>
+              <div className="p-4 rounded-xl bg-slate-800/60 border border-slate-700">
+                <p className="text-slate-400 text-xs">Ürünler</p>
+                <p className="text-lg font-bold text-white">{summary.products}</p>
+              </div>
+              <div className="p-4 rounded-xl bg-slate-800/60 border border-slate-700">
+                <p className="text-slate-400 text-xs">Kategoriler</p>
+                <p className="text-lg font-bold text-white">{summary.categories}</p>
+              </div>
+              <div className="p-4 rounded-xl bg-slate-800/60 border border-slate-700">
+                <p className="text-slate-400 text-xs">Modifier grupları</p>
+                <p className="text-lg font-bold text-white">{summary.modifiers}</p>
+              </div>
+              <div className="p-4 rounded-xl bg-slate-800/60 border border-slate-700">
+                <p className="text-slate-400 text-xs">Yazıcılar</p>
+                <p className="text-lg font-bold text-white">{summary.printers}</p>
+              </div>
+              <div className="p-4 rounded-xl bg-slate-800/60 border border-slate-700">
+                <p className="text-slate-400 text-xs">Kullanıcılar</p>
+                <p className="text-lg font-bold text-white">{summary.users}</p>
+              </div>
+              <div className="p-4 rounded-xl bg-slate-800/60 border border-slate-700">
+                <p className="text-slate-400 text-xs">Bugünkü satış</p>
+                <p className="text-lg font-bold text-emerald-400">{fmt(summary.todaySales)} AED</p>
+              </div>
+              <div className="p-4 rounded-xl bg-slate-800/60 border border-slate-700">
+                <p className="text-slate-400 text-xs">Açık masa</p>
+                <p className="text-lg font-bold text-amber-400">{summary.openTables}</p>
+              </div>
+              <div className="p-4 rounded-xl bg-slate-800/60 border border-slate-700">
+                <p className="text-slate-400 text-xs">Açık hesap</p>
+                <p className="text-lg font-bold text-sky-400">{summary.openChecks}</p>
+              </div>
+            </div>
+          ) : null}
+        </section>
+
+        <h2 className="text-lg font-semibold text-slate-200 mb-4">Menü</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <Link
             href="/dashboard"

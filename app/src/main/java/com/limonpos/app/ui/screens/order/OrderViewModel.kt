@@ -21,6 +21,7 @@ import com.limonpos.app.data.repository.AuthRepository
 import com.limonpos.app.data.repository.OrderRepository
 import com.limonpos.app.data.repository.VoidRequestRepository
 import com.limonpos.app.data.repository.OrderWithItems
+import com.limonpos.app.data.repository.OverdueUndelivered
 import com.limonpos.app.data.repository.PrinterRepository
 import com.limonpos.app.data.repository.ProductRepository
 import com.limonpos.app.data.repository.TableRepository
@@ -100,6 +101,9 @@ class OrderViewModel @Inject constructor(
     private val _productToAddWithModifiers = MutableStateFlow<ProductEntity?>(null)
     val productToAddWithModifiers: StateFlow<ProductEntity?> = _productToAddWithModifiers.asStateFlow()
 
+    private val _overdueWarning = MutableStateFlow<List<OverdueUndelivered>?>(null)
+    val overdueWarning: StateFlow<List<OverdueUndelivered>?> = _overdueWarning.asStateFlow()
+
     val hasPrinterWarningForTable: StateFlow<Boolean> = printerWarningHolder.state
         .map { it != null && it.tableId == tableId }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
@@ -117,6 +121,13 @@ class OrderViewModel @Inject constructor(
         loadTable()
         refreshOrderId()
         loadCategoriesWithProducts()
+        startOverdueCheckLoop()
+        viewModelScope.launch {
+            if (apiSyncRepository.isOnline()) {
+                apiSyncRepository.syncCatalog()
+                loadCategoriesWithProducts()
+            }
+        }
         viewModelScope.launch {
             try {
                 _orderId.flatMapLatest { id ->
@@ -281,6 +292,7 @@ class OrderViewModel @Inject constructor(
         if (groupIds.isNotEmpty()) {
             _productToAddWithModifiers.value = product
         } else {
+            // Not modifier product: her tıklamada 1 adet ekle (çoklu adet için çoklu tık)
             addToCart(product, emptyList(), "")
         }
     }
@@ -293,7 +305,12 @@ class OrderViewModel @Inject constructor(
         _productToAddWithNotes.value = null
     }
 
-    fun addToCart(product: ProductEntity, selectedOptions: List<ModifierOptionEntity>, notes: String) {
+    fun addToCart(
+        product: ProductEntity,
+        selectedOptions: List<ModifierOptionEntity>,
+        notes: String,
+        quantity: Int = 1
+    ) {
         viewModelScope.launch {
             dismissModifierDialog()
             dismissNotesDialog()
@@ -321,22 +338,40 @@ class OrderViewModel @Inject constructor(
                 } else {
                     _orderId.value = orderId
                 }
+                val finalOrderId = orderId ?: return@launch
+                val safeQuantity = quantity.coerceAtLeast(1)
                 val modifierPrice = selectedOptions.sumOf { it.price }
                 val totalPrice = product.price + modifierPrice
                 val modifierNames = selectedOptions.joinToString(", ") { it.name }
                 val productName = if (modifierNames.isNotEmpty()) "${product.name} ($modifierNames)" else product.name
                 withContext(Dispatchers.IO) {
-                    orderRepository.addItem(
-                        orderId = orderId,
-                        productId = product.id,
-                        productName = productName,
-                        price = totalPrice,
-                        quantity = 1,
-                        notes = notes
-                    )
+                    val existing = orderRepository.getOrderWithItems(finalOrderId).first()
+                        ?.items
+                        ?.firstOrNull {
+                            it.status == "pending" &&
+                                it.productId == product.id &&
+                                it.price == totalPrice &&
+                                it.notes == notes
+                        }
+                    if (existing != null) {
+                        orderRepository.updateItemQuantityAndNotes(
+                            itemId = existing.id,
+                            quantity = existing.quantity + safeQuantity,
+                            notes = existing.notes
+                        )
+                    } else {
+                        orderRepository.addItem(
+                            orderId = finalOrderId,
+                            productId = product.id,
+                            productName = productName,
+                            price = totalPrice,
+                            quantity = safeQuantity,
+                            notes = notes
+                        )
+                    }
                 }
                 val updated = withContext(Dispatchers.IO) {
-                    orderRepository.getOrderWithItems(orderId).first()
+                    orderRepository.getOrderWithItems(finalOrderId).first()
                 }
                 _uiState.update { it.copy(orderWithItems = updated) }
             } catch (e: Exception) {
@@ -376,8 +411,9 @@ class OrderViewModel @Inject constructor(
             val pendingItems = ow.items.filter { it.status == "pending" }
             val orderId = ow.order.id
             val tableId = ow.order.tableId
-
             val tableNumber = ow.order.tableNumber
+            val pendingItemIds = pendingItems.map { it.id }
+
             if (pendingItems.isEmpty()) {
                 _navigateToFloorPlanRequest.value = _navigateToFloorPlanRequest.value + 1
                 printerWarningHolder.setWarning(PrinterWarningState("Table $tableNumber: All items already sent to kitchen", orderId, tableId, emptyList()))
@@ -388,19 +424,26 @@ class OrderViewModel @Inject constructor(
             }
             if (printers.isEmpty()) {
                 _navigateToFloorPlanRequest.value = _navigateToFloorPlanRequest.value + 1
-                printerWarningHolder.setWarning(PrinterWarningState("Table $tableNumber: No kitchen printer configured", orderId, tableId, pendingItems.map { it.id }))
+                printerWarningHolder.setWarning(PrinterWarningState("Table $tableNumber: No kitchen printer configured", orderId, tableId, pendingItemIds))
                 return@launch
             }
 
-            // Navigate to Floor Plan immediately
+            // Mark as sent immediately so UI updates instantly (cart shows "sent"); then navigate
+            orderRepository.markItemsAsSent(orderId, pendingItemIds)
+            val updated = withContext(Dispatchers.IO) {
+                orderRepository.getOrderWithItems(orderId).first()
+            }
+            if (updated != null) {
+                _uiState.update { it.copy(orderWithItems = updated) }
+            }
             _navigateToFloorPlanRequest.value = _navigateToFloorPlanRequest.value + 1
 
-            // In background: push order to API + send to kitchen API, then print to product-linked printers
+            // In background: push to API, then print (no need to mark again)
             applicationScope.launch {
                 if (apiSyncRepository.isOnline()) {
                     apiSyncRepository.ensureOrderAndSendToKitchen(orderId)
                 }
-                when (val result = kitchenPrintHelper.sendToKitchen(orderId)) {
+                when (val result = kitchenPrintHelper.printItemsAlreadyMarkedSent(orderId, pendingItemIds)) {
                     is KitchenPrintResult.Success -> {
                         if (apiSyncRepository.isOnline()) apiSyncRepository.syncFromApi()
                     }
@@ -429,6 +472,26 @@ class OrderViewModel @Inject constructor(
         }
     }
 
+    private fun startOverdueCheckLoop() {
+        viewModelScope.launch {
+            while (true) {
+                val list = orderRepository.getOverdueUndelivered(10 * 60 * 1000L)
+                if (list.isNotEmpty()) _overdueWarning.value = list
+                delay(4 * 60 * 1000L)
+            }
+        }
+    }
+
+    fun markItemDelivered(itemId: String) {
+        viewModelScope.launch {
+            orderRepository.markItemDelivered(itemId)
+        }
+    }
+
+    fun dismissOverdueWarning() {
+        _overdueWarning.value = null
+    }
+
     fun consumeNavigateToFloorPlanRequest() {
         _navigateToFloorPlanRequest.value = 0
     }
@@ -448,14 +511,36 @@ class OrderViewModel @Inject constructor(
         }
     }
 
+    fun updateItemNoteAndQuantity(itemId: String, notes: String, quantity: Int) {
+        viewModelScope.launch {
+            val safeQty = quantity.coerceAtLeast(1)
+            orderRepository.updateItemQuantityAndNotes(itemId, safeQty, notes)
+            _itemToEditNote.value = null
+        }
+    }
+
     fun removeItem(itemId: String) {
         viewModelScope.launch {
+            val orderId = _uiState.value.orderWithItems?.order?.id ?: return@launch
             orderRepository.removeItem(itemId)
+            val updated = withContext(Dispatchers.IO) {
+                orderRepository.getOrderWithItems(orderId).first()
+            }
+            if (updated != null) {
+                _uiState.update { it.copy(orderWithItems = updated) }
+            }
         }
     }
 
     fun showVoidConfirm(item: OrderItemEntity) {
-        _itemToVoid.value = item
+        val state = _uiState.value
+        // If PIN was already verified once for this session, void immediately without showing PIN dialog again.
+        if (state.postVoidAuthorized) {
+            _itemToVoid.value = item
+            confirmVoidItem("")
+        } else {
+            _itemToVoid.value = item
+        }
     }
 
     fun showRefundConfirm(item: OrderItemEntity) {
@@ -511,6 +596,7 @@ class OrderViewModel @Inject constructor(
     fun confirmVoidItem(pin: String) {
         val item = _itemToVoid.value ?: return
         val ow = _uiState.value.orderWithItems ?: return
+        val orderId = ow.order.id
         viewModelScope.launch {
             _uiState.update { it.copy(voidError = null) }
             val currentState = _uiState.value
@@ -523,21 +609,29 @@ class OrderViewModel @Inject constructor(
                 _uiState.update { it.copy(postVoidAuthorized = true) }
             }
             val userId = authRepository.getCurrentUserIdSync() ?: return@launch
-            val userName = authRepository.getCurrentUserNameSync() ?: ""
-            if (!orderRepository.voidItem(item.id, userId, userName)) return@launch
+            val nameForPrinter = authRepository.getCurrentUserNameSync() ?: ""
+            if (!orderRepository.voidItem(item.id, userId, nameForPrinter)) return@launch
             _itemToVoid.value = null
             _uiState.update { it.copy(voidError = null) }
-            val voidSlip = printerService.buildVoidSlip(
-                order = ow.order,
-                productName = item.productName,
-                quantity = item.quantity,
-                price = item.price,
-                userName = userName
-            )
-            val kitchenPrinters = printerRepository.getAllPrinters().first()
-                .filter { it.printerType == "kitchen" && it.ipAddress.isNotBlank() }
-            for (printer in kitchenPrinters) {
-                printerService.sendToPrinter(printer.ipAddress, printer.port, voidSlip)
+            val updated = withContext(Dispatchers.IO) {
+                orderRepository.getOrderWithItems(orderId).first()
+            }
+            if (updated != null) {
+                _uiState.update { it.copy(orderWithItems = updated) }
+            }
+            applicationScope.launch(Dispatchers.IO) {
+                val voidSlip = printerService.buildVoidSlip(
+                    order = ow.order,
+                    productName = item.productName,
+                    quantity = item.quantity,
+                    price = item.price,
+                    userName = nameForPrinter
+                )
+                val kitchenPrinters = printerRepository.getAllPrinters().first()
+                    .filter { it.printerType == "kitchen" && it.ipAddress.isNotBlank() }
+                for (printer in kitchenPrinters) {
+                    printerService.sendToPrinter(printer.ipAddress, printer.port, voidSlip)
+                }
             }
         }
     }
@@ -595,6 +689,7 @@ class OrderViewModel @Inject constructor(
     private suspend fun doCloseTable() {
         withContext(Dispatchers.IO) {
             orderRepository.closeTableManually(tableId)
+            if (apiSyncRepository.isOnline()) apiSyncRepository.pushCloseTable(tableId)
         }
         _navigateToFloorPlanRequest.value = _navigateToFloorPlanRequest.value + 1
     }

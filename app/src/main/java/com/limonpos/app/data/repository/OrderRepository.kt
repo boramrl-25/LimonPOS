@@ -20,6 +20,12 @@ data class OrderWithItems(
     val items: List<OrderItemEntity>
 )
 
+data class OverdueUndelivered(
+    val tableNumber: String,
+    val orderId: String,
+    val items: List<OrderItemEntity>
+)
+
 class OrderRepository @Inject constructor(
     private val orderDao: OrderDao,
     private val orderItemDao: OrderItemDao,
@@ -126,9 +132,40 @@ class OrderRepository @Inject constructor(
         orderItemDao.updateOrderItem(item.copy(status = "ready", syncStatus = "PENDING"))
     }
 
+    suspend fun markItemDelivered(itemId: String): Boolean {
+        val item = orderItemDao.getOrderItemById(itemId) ?: return false
+        if (item.sentAt == null) return false
+        val now = System.currentTimeMillis()
+        orderItemDao.markDelivered(itemId, now)
+        return true
+    }
+
+    suspend fun getOverdueUndelivered(olderThanMs: Long): List<OverdueUndelivered> {
+        val orders = orderDao.getOpenAndSentOrders()
+        val result = mutableListOf<OverdueUndelivered>()
+        val now = System.currentTimeMillis()
+        val cutoff = now - olderThanMs
+        for (order in orders) {
+            val items = orderItemDao.getOrderItems(order.id).first()
+            val overdue = items.filter { it.sentAt != null && it.deliveredAt == null && it.sentAt < cutoff }
+            if (overdue.isNotEmpty()) {
+                result.add(OverdueUndelivered(tableNumber = order.tableNumber, orderId = order.id, items = overdue))
+            }
+        }
+        return result
+    }
+
     suspend fun updateItemNotes(itemId: String, notes: String) {
         val item = orderItemDao.getOrderItemById(itemId) ?: return
         orderItemDao.updateOrderItem(item.copy(notes = notes, syncStatus = "PENDING"))
+    }
+
+    suspend fun updateItemQuantityAndNotes(itemId: String, quantity: Int, notes: String) {
+        val item = orderItemDao.getOrderItemById(itemId) ?: return
+        val safeQty = quantity.coerceAtLeast(1)
+        val updated = item.copy(quantity = safeQty, notes = notes, syncStatus = "PENDING")
+        orderItemDao.updateOrderItem(updated)
+        updateOrderTotals(updated.orderId)
     }
 
     suspend fun removeItem(itemId: String) {

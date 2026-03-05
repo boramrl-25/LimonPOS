@@ -2,8 +2,23 @@ package com.limonpos.app.data.local
 
 import androidx.room.Database
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.limonpos.app.data.local.dao.*
 import com.limonpos.app.data.local.entity.*
+
+val MIGRATION_8_9 = object : Migration(8, 9) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE order_items ADD COLUMN deliveredAt INTEGER NULL")
+    }
+}
+
+val MIGRATION_9_10 = object : Migration(9, 10) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // New column to control whether category appears on Till screen.
+        db.execSQL("ALTER TABLE categories ADD COLUMN showTill INTEGER NOT NULL DEFAULT 1")
+    }
+}
 
 @Database(
     entities = [
@@ -22,7 +37,7 @@ import com.limonpos.app.data.local.entity.*
         UserEntity::class,
         VoidRequestEntity::class
     ],
-    version = 8,
+    version = 10,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

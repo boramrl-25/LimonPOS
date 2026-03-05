@@ -5,6 +5,17 @@ import { v4 as uuid } from "uuid";
 import { db } from "./db.js";
 import { pushToZohoBooks, getZohoItems, getZohoItemGroups, syncFromZoho } from "./zoho.js";
 
+// Railway / production: yakalanmamış hatalar loglansın, process çökmesin veya net exit ile yeniden başlasın
+process.on("uncaughtException", (err) => {
+  console.error("[CRASH] uncaughtException:", err?.message || err);
+  if (err?.stack) console.error(err.stack);
+  process.exit(1);
+});
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("[CRASH] unhandledRejection:", reason);
+  process.exit(1);
+});
+
 const app = express();
 const PORT = process.env.PORT || 3002;
 
@@ -323,6 +334,7 @@ app.get("/api/products", authMiddleware, async (req, res) => {
       category: cats[r.category_id] || "",
       printers: JSON.parse(r.printers || "[]"),
       modifier_groups: JSON.parse(r.modifier_groups || "[]"),
+      zoho_suggest_remove: !!r.zoho_suggest_remove,
     })),
   );
 });
@@ -357,13 +369,10 @@ app.delete("/api/products/:id", authMiddleware, async (req, res) => {
   res.status(204).send();
 });
 
-// Hepsini sil ve Zoho'dan sync yapıp listeyi döndür
+// Zoho'dan sync (upsert); önce silme yok. Zoho'da olmayan ürünler zoho_suggest_remove ile işaretlenir, onay verilene kadar satışta kalır.
 app.post("/api/products/clear-and-sync", authMiddleware, async (req, res) => {
   await ensureData();
-  const previousCount = (db.data.products || []).length;
-  db.data.products = [];
-  await db.write();
-  let syncResult = { categoriesAdded: 0, productsAdded: 0, productsUpdated: 0, productsRemoved: previousCount, itemsFetched: 0, error: null };
+  let syncResult = { categoriesAdded: 0, productsAdded: 0, productsUpdated: 0, productsRemoved: 0, productsSuggestedForRemoval: [], itemsFetched: 0, error: null };
   try {
     syncResult = await syncFromZoho(db, {});
   } catch (e) {
@@ -371,8 +380,33 @@ app.post("/api/products/clear-and-sync", authMiddleware, async (req, res) => {
   }
   await db.read();
   const cats = Object.fromEntries((db.data.categories || []).map((r) => [r.id, r.name]));
-  const products = (db.data.products || []).filter((p) => p.sellable !== false).map((r) => ({ ...r, category: cats[r.category_id] || "", printers: JSON.parse(r.printers || "[]"), modifier_groups: JSON.parse(r.modifier_groups || "[]") }));
+  const products = (db.data.products || []).filter((p) => p.sellable !== false).map((r) => ({ ...r, category: cats[r.category_id] || "", printers: JSON.parse(r.printers || "[]"), modifier_groups: JSON.parse(r.modifier_groups || "[]"), zoho_suggest_remove: !!r.zoho_suggest_remove }));
   res.json({ ...syncResult, products });
+});
+
+// Zoho'da artık olmayan (silinecek önerisi) ürünler listesi; onay verilene kadar satışta kalır.
+app.get("/api/products/pending-zoho-removal", authMiddleware, async (req, res) => {
+  await ensureData();
+  const cats = Object.fromEntries((db.data.categories || []).map((r) => [r.id, r.name]));
+  const list = (db.data.products || []).filter((p) => p.zoho_suggest_remove === true).map((r) => ({
+    ...r,
+    category: cats[r.category_id] || "",
+    printers: JSON.parse(r.printers || "[]"),
+    modifier_groups: JSON.parse(r.modifier_groups || "[]"),
+  }));
+  res.json(list);
+});
+
+// Seçilen ürünleri kalıcı sil (onay sonrası). Sadece zoho_suggest_remove olanlar için kullanılır.
+app.post("/api/products/confirm-removal", authMiddleware, async (req, res) => {
+  await ensureData();
+  const productIds = Array.isArray(req.body?.productIds) ? req.body.productIds.map(String) : [];
+  if (productIds.length === 0) return res.status(400).json({ error: "productIds required (array)" });
+  const before = (db.data.products || []).length;
+  db.data.products = (db.data.products || []).filter((p) => !productIds.includes(p.id));
+  const removed = before - db.data.products.length;
+  await db.write();
+  res.json({ removed, productIds });
 });
 
 // Printers
@@ -953,14 +987,28 @@ app.get("/", (req, res) => {
 
 const HOST = process.env.HOST || "0.0.0.0";
 const DATA_DIR = process.env.DATA_DIR;
-app.listen(PORT, HOST, () => {
-  console.log(`LimonPOS Backend running on http://localhost:${PORT}`);
-  if (DATA_DIR) {
-    console.log(`DATA_DIR=${DATA_DIR} – veriler kalıcı (restart'ta silinmez).`);
-  } else {
-    console.warn("UYARI: DATA_DIR tanımlı değil. Veriler geçici diskte; her restart/redeploy'da SİLİNİR. Railway'de Volume ekleyip DATA_DIR=/data yapın.");
+
+async function startServer() {
+  try {
+    await ensureData();
+    console.log("[startup] ensureData OK");
+  } catch (e) {
+    console.error("[startup] ensureData failed (server will still start):", e?.message || e);
   }
-  if (HOST === "0.0.0.0") {
-    console.log("Listening on all interfaces – use this PC's IP (e.g. http://192.168.x.x:3002/api/) from phone.");
-  }
+  app.listen(PORT, HOST, () => {
+    console.log(`LimonPOS Backend running on http://${HOST}:${PORT}`);
+    if (DATA_DIR) {
+      console.log(`DATA_DIR=${DATA_DIR} – veriler kalıcı (restart'ta silinmez).`);
+    } else {
+      console.warn("UYARI: DATA_DIR tanımlı değil. Veriler geçici diskte; her restart/redeploy'da SİLİNİR. Railway'de Volume ekleyip DATA_DIR=/data yapın.");
+    }
+    if (HOST === "0.0.0.0") {
+      console.log("Listening on all interfaces – Railway/dış erişim için hazır.");
+    }
+  });
+}
+
+startServer().catch((e) => {
+  console.error("[startup] startServer failed:", e?.message || e);
+  process.exit(1);
 });

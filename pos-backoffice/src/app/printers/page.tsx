@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { ArrowLeft, Plus, Pencil, Trash2, FileSpreadsheet } from "lucide-react";
+import { ArrowLeft, Plus, Pencil, Trash2, FileSpreadsheet, FileDown } from "lucide-react";
 import * as XLSX from "xlsx";
 import { getPrinters, createPrinter, updatePrinter, deletePrinter } from "@/lib/api";
 
@@ -62,6 +62,17 @@ export default function PrintersPage() {
     } catch (e) {
       alert((e as Error).message);
     }
+  }
+
+  function downloadPrintersTemplate() {
+    const rows = [
+      { Name: "Bar", Type: "kitchen", IP: "192.168.1.100", Port: 9100, KDSEnabled: "On" },
+      { Name: "Receipt", Type: "receipt", IP: "192.168.1.101", Port: 9100, KDSEnabled: "Off" },
+    ];
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Printers");
+    XLSX.writeFile(wb, "printers_import_template.xlsx");
   }
 
   function exportPrintersToExcel() {
@@ -145,6 +156,13 @@ export default function PrintersPage() {
             className="hidden"
             onChange={handlePrinterImport}
           />
+          <button
+            onClick={downloadPrintersTemplate}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-medium"
+            title="Import için Excel şablonu indir"
+          >
+            <FileDown className="w-4 h-4" /> Şablon indir
+          </button>
           <button
             onClick={exportPrintersToExcel}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-medium"

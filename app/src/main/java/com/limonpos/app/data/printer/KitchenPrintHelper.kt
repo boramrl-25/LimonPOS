@@ -70,6 +70,55 @@ class KitchenPrintHelper @Inject constructor(
         }
     }
 
+    /** Print items that are already marked as sent (e.g. after ViewModel marked them for instant UI update). Used to avoid blocking UI on network/print. */
+    suspend fun printItemsAlreadyMarkedSent(orderId: String, itemIds: List<String>): KitchenPrintResult {
+        if (itemIds.isEmpty()) return KitchenPrintResult.Success
+        val ow = orderRepository.getOrderWithItems(orderId).first() ?: return KitchenPrintResult.Failure(
+            message = "Order not found",
+            orderId = orderId,
+            tableId = "",
+            tableNumber = "",
+            pendingItemIds = itemIds
+        )
+        val itemsToPrint = ow.items.filter { it.id in itemIds }
+        if (itemsToPrint.isEmpty()) return KitchenPrintResult.Success
+        val allKitchenPrinters = printerRepository.getAllPrinters().first().filter { p ->
+            p.printerType == "kitchen" && p.ipAddress.isNotBlank()
+        }
+        if (allKitchenPrinters.isEmpty()) {
+            return KitchenPrintResult.Failure(
+                message = "No kitchen printer configured",
+                orderId = ow.order.id,
+                tableId = ow.order.tableId,
+                tableNumber = ow.order.tableNumber,
+                pendingItemIds = itemIds
+            )
+        }
+        val itemsByPrinter = groupItemsByEffectivePrinter(itemsToPrint, allKitchenPrinters)
+        var allSucceeded = true
+        val failed = mutableListOf<String>()
+        for ((printer, items) in itemsByPrinter) {
+            if (items.isEmpty()) continue
+            val ticket = printerService.buildKitchenTicket(ow.order, items, printer.name)
+            val result = printerService.sendToPrinter(printer.ipAddress, printer.port, ticket)
+            if (result.isFailure) {
+                failed.add(printer.name)
+                allSucceeded = false
+            }
+        }
+        return if (allSucceeded) {
+            KitchenPrintResult.Success
+        } else {
+            KitchenPrintResult.Failure(
+                message = "Print failed: ${failed.joinToString(", ")}. Tap Retry to send again.",
+                orderId = ow.order.id,
+                tableId = ow.order.tableId,
+                tableNumber = ow.order.tableNumber,
+                pendingItemIds = itemIds
+            )
+        }
+    }
+
     /** Retry print for items that failed. Items are already marked as sent (in KDS). */
     suspend fun retryPrint(orderId: String, itemIds: List<String>): KitchenPrintResult {
         if (itemIds.isEmpty()) return KitchenPrintResult.Success

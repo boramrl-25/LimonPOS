@@ -24,15 +24,17 @@ class ProductRepository @Inject constructor(
     suspend fun getProductsForOrderOnce(categoryId: String): List<ProductEntity> =
         if (categoryId == "all") productDao.getProductsForTillOnce() else productDao.getProductsForTillByCategoryOnce(categoryId)
 
-    /** All categories (excluding "all") with their products for order screen. Categories sorted by sortOrder; products by name. Includes "Other" for products with categoryId "all". Uses active-only so synced products show even if pos_enabled was 0. */
+    /** All categories (excluding "all") with their products for order screen. Only categories with showTill=true. Categories sorted by sortOrder; products by name. Includes "Other" for products with categoryId "all". */
     suspend fun getCategoriesWithProductsForOrder(): List<Pair<CategoryEntity, List<ProductEntity>>> {
-        val categories = categoryDao.getActiveCategories().first().filter { it.id != "all" }.sortedBy { it.sortOrder }
+        val categories = categoryDao.getActiveCategories().first()
+            .filter { it.id != "all" && it.showTill }
+            .sortedBy { it.sortOrder }
         val withProducts = categories.map { cat ->
             cat to productDao.getActiveProductsByCategoryOnce(cat.id)
         }.filter { (_, products) -> products.isNotEmpty() }
         val otherProducts = productDao.getActiveProductsByCategoryOnce("all")
         return if (otherProducts.isEmpty()) withProducts
-        else withProducts + (CategoryEntity("all", "Diğer", "#64748b", 999, true, "SYNCED", "[]") to otherProducts)
+        else withProducts + (CategoryEntity("all", "Diğer", "#64748b", 999, true, true, "SYNCED", "[]") to otherProducts)
     }
 
     suspend fun getCategoryById(id: String): CategoryEntity? = categoryDao.getCategoryById(id)

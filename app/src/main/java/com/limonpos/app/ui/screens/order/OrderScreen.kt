@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -54,6 +55,10 @@ import com.limonpos.app.data.local.entity.TableEntity
 import com.limonpos.app.ui.theme.*
 import kotlinx.coroutines.flow.StateFlow
 import com.limonpos.app.util.CurrencyUtils
+import com.limonpos.app.data.repository.OverdueUndelivered
+import android.media.AudioManager
+import android.media.ToneGenerator
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -68,6 +73,7 @@ fun OrderScreen(
     val uiState by viewModel.uiState.collectAsState()
     val navigateToFloorPlanRequest by viewModel.navigateToFloorPlanRequest.collectAsState()
     val isRecalled by viewModel.isRecalledOrder.collectAsState(initial = false)
+    val overdueWarning by viewModel.overdueWarning.collectAsState(initial = null)
     var showCloseTableConfirm by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -293,11 +299,32 @@ fun OrderScreen(
                 )
         }
     }
+    overdueWarning?.let { list ->
+        OverdueUndeliveredDialog(
+            overdueList = list,
+            onDismiss = { viewModel.dismissOverdueWarning() }
+        )
+    }
+    LaunchedEffect(overdueWarning) {
+        if (overdueWarning.isNullOrEmpty()) return@LaunchedEffect
+        val tg = ToneGenerator(AudioManager.STREAM_ALARM, 80)
+        try {
+            while (true) {
+                tg.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 400)
+                delay(1500)
+            }
+        } finally {
+            tg.release()
+        }
+    }
     if (uiState.showCart) {
         CartBottomSheet(
             orderWithItems = uiState.orderWithItems,
             onDismiss = { viewModel.dismissCart() },
-            onItemClick = { viewModel.showEditNoteForItem(it) },
+            onItemClick = { item ->
+                if (item.status != "pending" && item.deliveredAt == null) viewModel.markItemDelivered(item.id)
+                else viewModel.showEditNoteForItem(item)
+            },
             onRemoveItem = { viewModel.removeItem(it.id) },
             onVoidItem = { viewModel.showVoidConfirm(it) },
             onRefundItem = { viewModel.showRefundConfirm(it) },
@@ -427,7 +454,7 @@ fun OrderScreen(
         EditItemNoteDialog(
             item = item,
             onDismiss = { viewModel.dismissEditNoteDialog() },
-            onSave = { notes -> viewModel.updateItemNote(item.id, notes) },
+            onSave = { notes, quantity -> viewModel.updateItemNoteAndQuantity(item.id, notes, quantity) },
             onRemoveNote = { viewModel.updateItemNote(item.id, "") }
         )
     }
@@ -632,6 +659,7 @@ private fun CartBottomSheet(
                                 OrderItemRow(
                                     item = item,
                                     isSent = true,
+                                    isDelivered = item.deliveredAt != null,
                                     onClick = { onItemClick(item) },
                                     onRemove = null,
                                     onVoid = if (isRecalledOrder) null else { { onVoidItem(item) } },
@@ -755,7 +783,7 @@ private fun OrderSummary(
                     modifier = Modifier.weight(1f, fill = false)
                 ) {
                     items(orderWithItems.items, key = { it.id }) { item ->
-                        OrderItemRow(item = item, isSent = item.status != "pending")
+                        OrderItemRow(item = item, isSent = item.status != "pending", isDelivered = item.deliveredAt != null)
                     }
                 }
                 Spacer(modifier = Modifier.height(12.dp))
@@ -881,24 +909,70 @@ private fun AddProductNotesDialog(
 private fun EditItemNoteDialog(
     item: OrderItemEntity,
     onDismiss: () -> Unit,
-    onSave: (String) -> Unit,
+    onSave: (String, Int) -> Unit,
     onRemoveNote: () -> Unit
 ) {
     var notes by remember(item.id) { mutableStateOf(item.notes) }
+    var quantityText by remember(item.id) { mutableStateOf(item.quantity.toString()) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("${item.quantity}x ${item.productName}", fontWeight = FontWeight.Bold, color = LimonText) },
         text = {
-            OutlinedTextField(
-                value = notes,
-                onValueChange = { notes = it },
-                label = { Text("Special Note") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = false
-            )
+            Column {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp)
+                ) {
+                    TextButton(
+                        onClick = {
+                            val current = quantityText.toIntOrNull() ?: item.quantity
+                            val newVal = (current - 1).coerceAtLeast(1)
+                            quantityText = newVal.toString()
+                        }
+                    ) {
+                        Text("-", fontSize = 18.sp)
+                    }
+                    OutlinedTextField(
+                        value = quantityText,
+                        onValueChange = { value ->
+                            if (value.all { it.isDigit() } && value.length <= 3) {
+                                quantityText = value
+                            }
+                        },
+                        label = { Text("Qty") },
+                        modifier = Modifier.width(80.dp),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                    )
+                    TextButton(
+                        onClick = {
+                            val current = quantityText.toIntOrNull() ?: item.quantity
+                            val newVal = (current + 1).coerceAtLeast(1)
+                            quantityText = newVal.toString()
+                        }
+                    ) {
+                        Text("+", fontSize = 18.sp)
+                    }
+                }
+                OutlinedTextField(
+                    value = notes,
+                    onValueChange = { notes = it },
+                    label = { Text("Special Note") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = false
+                )
+            }
         },
         confirmButton = {
-            Button(onClick = { onSave(notes.trim()) }) { Text("Save", color = Color.Black) }
+            Button(
+                onClick = {
+                    val qty = quantityText.toIntOrNull()?.coerceAtLeast(1) ?: 1
+                    onSave(notes.trim(), qty)
+                }
+            ) { Text("Save", color = Color.Black) }
         },
         dismissButton = {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -917,32 +991,84 @@ private fun EditItemNoteDialog(
 }
 
 @Composable
+private fun OverdueUndeliveredDialog(
+    overdueList: List<OverdueUndelivered>,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text("Ürünler henüz masaya gelmedi", fontWeight = FontWeight.Bold, color = LimonError)
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("10 dakikadan fazla süredir mutfakta olup masaya gelmeyen ürünler:", color = LimonTextSecondary, fontSize = 13.sp)
+                overdueList.forEach { block ->
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = LimonSurface),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text("Masa ${block.tableNumber}", fontWeight = FontWeight.Bold, color = LimonPrimary, fontSize = 15.sp)
+                            Spacer(modifier = Modifier.height(6.dp))
+                            block.items.forEach { item ->
+                                Text("• ${item.quantity}x ${item.productName}", color = LimonText, fontSize = 14.sp)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onDismiss, colors = ButtonDefaults.buttonColors(containerColor = LimonPrimary)) {
+                Text("Tamam", color = Color.Black)
+            }
+        },
+        containerColor = LimonSurface
+    )
+}
+
+@Composable
 private fun OrderItemRow(
     item: OrderItemEntity,
     isSent: Boolean = false,
+    isDelivered: Boolean = false,
     onClick: (() -> Unit)? = null,
     onRemove: (() -> Unit)? = null,
     onVoid: (() -> Unit)? = null,
     onRefund: (() -> Unit)? = null
 ) {
-    val backgroundColor = if (isSent) LimonTextSecondary.copy(alpha = 0.12f) else Color.Transparent
-    val textColor = if (isSent) LimonTextSecondary else LimonText
+    val backgroundColor = when {
+        isDelivered -> LimonSuccess.copy(alpha = 0.25f)
+        isSent -> LimonTextSecondary.copy(alpha = 0.12f)
+        else -> Color.Transparent
+    }
+    val textColor = when {
+        isDelivered -> LimonSuccess
+        isSent -> LimonTextSecondary
+        else -> LimonText
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .then(if (isSent) Modifier.background(backgroundColor, RoundedCornerShape(8.dp)) else Modifier)
-            .padding(if (isSent) 8.dp else 0.dp)
+            .then(if (isSent || isDelivered) Modifier.background(backgroundColor, RoundedCornerShape(8.dp)) else Modifier)
+            .padding(if (isSent || isDelivered) 8.dp else 0.dp)
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                "${item.quantity}x ${item.productName}",
-                color = textColor,
-                fontSize = if (isSent) 15.sp else 18.sp,
-                fontWeight = FontWeight.Bold
-            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    "${item.quantity}x ${item.productName}",
+                    color = textColor,
+                    fontSize = if (isSent) 15.sp else 18.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                if (isDelivered) {
+                    Icon(Icons.Default.Check, contentDescription = "Delivered", tint = LimonSuccess, modifier = Modifier.size(18.dp))
+                }
+            }
             if (item.notes.isNotEmpty()) {
                 Text(
                     "— ${item.notes}",
