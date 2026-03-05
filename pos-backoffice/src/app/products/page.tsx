@@ -130,7 +130,7 @@ export default function ProductsPage() {
   function openEdit(p?: Product) {
     if (p) {
       setEditing(p);
-      const od = p.overdue_undelivered_minutes != null && p.overdue_undelivered_minutes !== "" ? String(p.overdue_undelivered_minutes) : "";
+      const od = p.overdue_undelivered_minutes != null ? String(p.overdue_undelivered_minutes) : "";
       setForm({
         name: p.name,
         name_arabic: p.name_arabic || "",
