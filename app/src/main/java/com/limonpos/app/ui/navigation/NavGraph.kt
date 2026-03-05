@@ -52,6 +52,7 @@ object Routes {
     const val USERS = "users"
     const val VOID_REPORT = "void_report"
     const val VOID_APPROVALS = "void_approvals"
+    const val CLOSED_BILL_ACCESS_APPROVALS = "closed_bill_access_approvals"
     const val SETTINGS = "settings"
     const val BACK_OFFICE_SETTINGS = "back_office_settings"
     const val PRINTERS = "printers"
@@ -121,12 +122,18 @@ fun NavGraph(
             composable(Routes.FLOOR_PLAN) {
                 val scope = rememberCoroutineScope()
                 val canAccessKds by authRepository.canAccessKds().collectAsState(initial = false)
+                var canAccessClosedBillApprovals by remember { mutableStateOf(false) }
+                LaunchedEffect(Unit) {
+                    canAccessClosedBillApprovals = authRepository.hasClosedBillAccess()
+                }
                 FloorPlanScreen(
                     onNavigateToOrder = { tableId -> navController.navigate(Routes.order(tableId)) },
                     onNavigateToSettings = { navController.navigate(Routes.SETTINGS) },
                     onNavigateToClosedBills = { navController.navigate(Routes.CLOSED_BILLS) },
                     onNavigateToVoidApprovals = { navController.navigate(Routes.VOID_APPROVALS) },
                     canAccessVoidApprovals = canAccessKds,
+                    onNavigateToClosedBillAccessApprovals = { navController.navigate(Routes.CLOSED_BILL_ACCESS_APPROVALS) },
+                    canAccessClosedBillAccessApprovals = canAccessClosedBillApprovals,
                     onSync = onSync,
                     onLogout = { scope.launch { authRepository.logout() } }
                 )
@@ -205,6 +212,14 @@ fun NavGraph(
                     onBack = { navController.popBackStack() },
                     onNavigateToFloorPlan = { navController.navigate(Routes.FLOOR_PLAN) { popUpTo(Routes.FLOOR_PLAN) { inclusive = true }; launchSingleTop = true } },
                     onNavigateToSettings = { navController.navigate(Routes.SETTINGS) }
+                )
+            }
+            composable(Routes.CLOSED_BILL_ACCESS_APPROVALS) {
+                com.limonpos.app.ui.screens.closedbillaccessapprovals.ClosedBillAccessApprovalsScreen(
+                    onBack = { navController.popBackStack() },
+                    onNavigateToFloorPlan = { navController.navigate(Routes.FLOOR_PLAN) { popUpTo(Routes.FLOOR_PLAN) { inclusive = true }; launchSingleTop = true } },
+                    onNavigateToSettings = { navController.navigate(Routes.SETTINGS) },
+                    onSync = onSync
                 )
             }
             composable(Routes.VOID_REPORT) {

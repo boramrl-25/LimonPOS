@@ -13,6 +13,7 @@ import com.limonpos.app.data.repository.OrderRepository
 import com.limonpos.app.data.repository.TableRepository
 import com.limonpos.app.data.repository.OverdueUndelivered
 import com.limonpos.app.data.repository.VoidRequestRepository
+import com.limonpos.app.data.local.dao.ClosedBillAccessRequestDao
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -62,7 +63,8 @@ class FloorPlanViewModel @Inject constructor(
     private val apiSyncRepository: ApiSyncRepository,
     private val printerWarningHolder: PrinterWarningHolder,
     private val kitchenPrintHelper: KitchenPrintHelper,
-    private val voidRequestRepository: VoidRequestRepository
+    private val voidRequestRepository: VoidRequestRepository,
+    private val closedBillAccessRequestDao: ClosedBillAccessRequestDao
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(FloorPlanUiState())
@@ -77,6 +79,10 @@ class FloorPlanViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val pendingVoidRequestCount: StateFlow<Int> = voidRequestRepository.getPendingRequests()
+        .map { it.size }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    val pendingClosedBillAccessRequestCount: StateFlow<Int> = closedBillAccessRequestDao.getPendingRequests()
         .map { it.size }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 

@@ -52,6 +52,8 @@ fun FloorPlanScreen(
     onNavigateToClosedBills: () -> Unit,
     onNavigateToVoidApprovals: () -> Unit = {},
     canAccessVoidApprovals: Boolean = false,
+    onNavigateToClosedBillAccessApprovals: () -> Unit = {},
+    canAccessClosedBillAccessApprovals: Boolean = false,
     onSync: () -> Unit = {},
     onLogout: () -> Unit
 ) {
@@ -60,10 +62,15 @@ fun FloorPlanScreen(
     val printerWarningState by viewModel.printerWarningState.collectAsState()
     val overdueWarning by viewModel.overdueWarning.collectAsState(initial = null)
     val pendingVoidCount by viewModel.pendingVoidRequestCount.collectAsState(0)
+    val pendingClosedBillAccessCount by viewModel.pendingClosedBillAccessRequestCount.collectAsState(0)
     var tableToClose by remember { mutableStateOf<TableEntity?>(null) }
     var showVoidRequestPopup by remember { mutableStateOf(true) }
+    var showClosedBillAccessRequestPopup by remember { mutableStateOf(true) }
 
-    LaunchedEffect(Unit) { showVoidRequestPopup = true }
+    LaunchedEffect(Unit) {
+        showVoidRequestPopup = true
+        showClosedBillAccessRequestPopup = true
+    }
 
     if (canAccessVoidApprovals && pendingVoidCount > 0 && showVoidRequestPopup) {
         AlertDialog(
@@ -88,6 +95,48 @@ fun FloorPlanScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showVoidRequestPopup = false }) {
+                    Text("Dismiss", color = LimonTextSecondary)
+                }
+            },
+            containerColor = LimonSurface
+        )
+    }
+
+    if (canAccessClosedBillAccessApprovals && pendingClosedBillAccessCount > 0 && showClosedBillAccessRequestPopup) {
+        // Short beep when a closed bill access request is pending
+        LaunchedEffect(pendingClosedBillAccessCount) {
+            if (pendingClosedBillAccessCount > 0) {
+                val tg = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 80)
+                try {
+                    tg.startTone(ToneGenerator.TONE_PROP_BEEP2, 200)
+                    delay(250)
+                } finally {
+                    tg.release()
+                }
+            }
+        }
+        AlertDialog(
+            onDismissRequest = { showClosedBillAccessRequestPopup = false },
+            title = { Text("Closed Bill Access Request", fontWeight = FontWeight.Bold, color = LimonText) },
+            text = {
+                Text(
+                    "You have $pendingClosedBillAccessCount closed bill access request(s) waiting for approval.",
+                    color = LimonTextSecondary
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showClosedBillAccessRequestPopup = false
+                        onNavigateToClosedBillAccessApprovals()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = LimonPrimary)
+                ) {
+                    Text("Go to Closed Bill Access Requests", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClosedBillAccessRequestPopup = false }) {
                     Text("Dismiss", color = LimonTextSecondary)
                 }
             },
@@ -219,6 +268,16 @@ fun FloorPlanScreen(
                                         onNavigateToVoidApprovals()
                                     },
                                     leadingIcon = { Icon(Icons.Default.Check, contentDescription = null, tint = LimonPrimary) }
+                                )
+                            }
+                            if (canAccessClosedBillAccessApprovals) {
+                                DropdownMenuItem(
+                                    text = { Text("Closed Bill Access Requests", color = LimonText) },
+                                    onClick = {
+                                        viewModel.dismissMenu()
+                                        onNavigateToClosedBillAccessApprovals()
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.Receipt, contentDescription = null, tint = LimonPrimary) }
                                 )
                             }
                             DropdownMenuItem(

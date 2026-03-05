@@ -152,17 +152,28 @@ fun ClosedBillsScreen(
                         pinError?.let { err ->
                             Text(err, color = LimonError, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
                         }
-                        Button(
-                            onClick = {
-                                scope.launch {
-                                    val ok = viewModel.verifyClosedBillsPin(pin)
-                                    if (ok) viewModel.setAccessGrantedByPin(true)
-                                }
-                            },
-                            enabled = pin.length == 4,
-                            modifier = Modifier.padding(top = 12.dp)
+                        Row(
+                            modifier = Modifier
+                                .padding(top = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text("Unlock", color = Color.Black)
+                            Button(
+                                onClick = {
+                                    scope.launch {
+                                        val ok = viewModel.verifyClosedBillsPin(pin)
+                                        if (ok) viewModel.setAccessGrantedByPin(true)
+                                    }
+                                },
+                                enabled = pin.length == 4,
+                            ) {
+                                Text("Unlock", color = Color.Black)
+                            }
+                            OutlinedButton(
+                                onClick = { viewModel.requestAccess() },
+                                enabled = !requestingAccess
+                            ) {
+                                Text(if (requestingAccess) "Requesting…" else "Request access")
+                            }
                         }
                     }
                     myAccessRequest?.status == "pending" -> {
@@ -241,20 +252,31 @@ fun ClosedBillsScreen(
                 }
             },
             confirmButton = {
-                Button(
-                    onClick = {
-                        scope.launch {
-                            val ok = viewModel.verifyClosedBillsPin(pin)
-                            if (ok) {
-                                showPinDialog = false
-                                pin = ""
-                                viewModel.setAccessGrantedByPin(true)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                val ok = viewModel.verifyClosedBillsPin(pin)
+                                if (ok) {
+                                    showPinDialog = false
+                                    pin = ""
+                                    viewModel.setAccessGrantedByPin(true)
+                                }
                             }
-                        }
-                    },
-                    enabled = pin.length == 4
-                ) {
-                    Text("Unlock", color = Color.Black)
+                        },
+                        enabled = pin.length == 4
+                    ) {
+                        Text("Unlock", color = Color.Black)
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            showPinDialog = false
+                            viewModel.requestAccess()
+                        },
+                        enabled = !requestingAccess
+                    ) {
+                        Text(if (requestingAccess) "Requesting…" else "Request access")
+                    }
                 }
             },
             dismissButton = { TextButton(onClick = { showPinDialog = false }) { Text("Cancel", color = LimonTextSecondary) } },
