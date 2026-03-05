@@ -45,15 +45,26 @@ fun ClosedBillsScreen(
 ) {
     val paidOrders by viewModel.paidOrders.collectAsState(emptyList())
     val selectedOrderWithItems by viewModel.selectedOrderWithItems.collectAsState()
-    val freeTables by viewModel.freeTables.collectAsState(emptyList())
     val message by viewModel.message.collectAsState()
     val pinError by viewModel.pinError.collectAsState()
+    val accessGranted by viewModel.accessGranted.collectAsState(false)
+    val hasClosedBillAccess by viewModel.hasClosedBillAccess.collectAsState(false)
+    val myAccessRequest by viewModel.myAccessRequest.collectAsState()
+    val requestingAccess by viewModel.requestingAccess.collectAsState(false)
 
-    var showPinDialog by remember { mutableStateOf(true) }
+    var showPinDialog by remember { mutableStateOf(false) }
     var pin by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(Unit) { viewModel.loadPaidOrders() }
+    LaunchedEffect(accessGranted) {
+        if (accessGranted) {
+            showPinDialog = false
+            viewModel.loadPaidOrders()
+        }
+    }
+    LaunchedEffect(hasClosedBillAccess) {
+        if (hasClosedBillAccess && !accessGranted) showPinDialog = true
+    }
     LaunchedEffect(message) {
         message?.let {
             delay(2000)
@@ -71,6 +82,11 @@ fun ClosedBillsScreen(
                     }
                 },
                 actions = {
+                    if (accessGranted) {
+                        IconButton(onClick = { viewModel.loadPaidOrders(); onSync() }) {
+                            Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = LimonPrimary)
+                        }
+                    }
                     IconButton(onClick = onNavigateToFloorPlan) {
                         Icon(Icons.Default.Home, contentDescription = "Home", tint = LimonPrimary)
                     }
@@ -87,7 +103,7 @@ fun ClosedBillsScreen(
                             )
                             DropdownMenuItem(
                                 text = { Text("Sync Data", color = LimonText) },
-                                onClick = { menuExpanded = false; onSync() },
+                                onClick = { menuExpanded = false; onSync(); viewModel.refreshMyAccessRequest() },
                                 leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null, tint = LimonPrimary) }
                             )
                             DropdownMenuItem(
@@ -111,26 +127,79 @@ fun ClosedBillsScreen(
             message?.let { msg ->
                 Text(msg, color = LimonPrimary, modifier = Modifier.padding(bottom = 8.dp))
             }
-            Text(
-                "Closed bills: View details, refunds and payment changes are managed by authorized staff. (Recall to table is disabled.)",
-                color = LimonTextSecondary,
-                fontSize = 13.sp,
-                modifier = Modifier.padding(bottom = 16.dp)
-            )
-            if (paidOrders.isEmpty()) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("No closed bills", color = LimonTextSecondary)
+            if (!accessGranted) {
+                Text(
+                    "Closed bills: View and refund require manager PIN or an approved access request.",
+                    color = LimonTextSecondary,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+                when {
+                    hasClosedBillAccess -> {
+                        Text("Enter your PIN below to access.", color = LimonTextSecondary, modifier = Modifier.padding(bottom = 8.dp))
+                        OutlinedTextField(
+                            value = pin,
+                            onValueChange = {
+                                if (it.length <= 4 && it.all { c -> c.isDigit() }) {
+                                    pin = it
+                                    viewModel.clearPinError()
+                                }
+                            },
+                            label = { Text("PIN (4 digits)") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        pinError?.let { err ->
+                            Text(err, color = LimonError, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+                        }
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    val ok = viewModel.verifyClosedBillsPin(pin)
+                                    if (ok) viewModel.setAccessGrantedByPin(true)
+                                }
+                            },
+                            enabled = pin.length == 4,
+                            modifier = Modifier.padding(top = 12.dp)
+                        ) {
+                            Text("Unlock", color = Color.Black)
+                        }
+                    }
+                    myAccessRequest?.status == "pending" -> {
+                        Text("Waiting for approval. Ask a manager/supervisor to approve from app or web dashboard.", color = LimonTextSecondary, modifier = Modifier.padding(bottom = 8.dp))
+                        Button(onClick = { viewModel.refreshMyAccessRequest() }, enabled = !requestingAccess) {
+                            Text(if (requestingAccess) "Checking…" else "Check approval status")
+                        }
+                    }
+                    else -> {
+                        Text("You can request access. A user with Closed Bill Access permission must approve.", color = LimonTextSecondary, modifier = Modifier.padding(bottom = 8.dp))
+                        Button(onClick = { viewModel.requestAccess() }, enabled = !requestingAccess) {
+                            Text(if (requestingAccess) "Requesting…" else "Request access")
+                        }
+                    }
                 }
             } else {
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(paidOrders, key = { it.id }) { order ->
-                        ClosedBillCard(
-                            order = order,
-                            onOpen = { viewModel.selectOrderForRecall(order) }
-                        )
+                Text(
+                    "Closed bills: View details and refund (single item or full bill).",
+                    color = LimonTextSecondary,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+                if (paidOrders.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("No closed bills", color = LimonTextSecondary)
+                    }
+                } else {
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(paidOrders, key = { it.id }) { order ->
+                            ClosedBillCard(
+                                order = order,
+                                onOpen = { viewModel.selectOrderForRecall(order) }
+                            )
+                        }
                     }
                 }
             }
@@ -140,17 +209,19 @@ fun ClosedBillsScreen(
     selectedOrderWithItems?.let { ow ->
         BillDetailDialog(
             orderWithItems = ow,
-            onDismiss = { viewModel.dismissBillDialog() }
+            onDismiss = { viewModel.dismissBillDialog() },
+            onRefundItem = { orderId, itemId -> viewModel.refundItemFromClosedBill(orderId, itemId) },
+            onRefundFull = { orderId -> viewModel.refundFullClosedBill(orderId) }
         )
     }
 
-    if (showPinDialog) {
+    if (showPinDialog && hasClosedBillAccess && !accessGranted) {
         AlertDialog(
-            onDismissRequest = { /* force PIN, do not allow dismiss */ },
+            onDismissRequest = { showPinDialog = false },
             title = { Text("Closed Bills Access", fontWeight = FontWeight.Bold, color = LimonText) },
             text = {
                 Column {
-                    Text("Enter manager/supervisor PIN to view closed bills.", color = LimonTextSecondary, fontSize = 13.sp)
+                    Text("Enter manager/supervisor PIN to view and refund closed bills.", color = LimonTextSecondary, fontSize = 13.sp)
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
                         value = pin,
@@ -177,6 +248,7 @@ fun ClosedBillsScreen(
                             if (ok) {
                                 showPinDialog = false
                                 pin = ""
+                                viewModel.setAccessGrantedByPin(true)
                             }
                         }
                     },
@@ -185,7 +257,7 @@ fun ClosedBillsScreen(
                     Text("Unlock", color = Color.Black)
                 }
             },
-            dismissButton = {},
+            dismissButton = { TextButton(onClick = { showPinDialog = false }) { Text("Cancel", color = LimonTextSecondary) } },
             containerColor = LimonSurface
         )
     }
@@ -194,10 +266,13 @@ fun ClosedBillsScreen(
 @Composable
 private fun BillDetailDialog(
     orderWithItems: OrderWithItems,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onRefundItem: (orderId: String, itemId: String) -> Unit,
+    onRefundFull: (orderId: String) -> Unit
 ) {
     val order = orderWithItems.order
     val items = orderWithItems.items
+    var showFullRefundConfirm by remember { mutableStateOf(false) }
     val dateStr = remember(order.paidAt) {
         order.paidAt?.let {
             SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()).format(Date(it))
@@ -218,13 +293,25 @@ private fun BillDetailDialog(
                 items.forEach { item ->
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("${item.quantity}x ${item.productName}", color = LimonText, fontSize = 14.sp)
-                        Text("AED ${String.format("%.2f", item.price * item.quantity)}", color = LimonText, fontSize = 14.sp)
-                    }
-                    if (item.notes.isNotEmpty()) {
-                        Text("  ${item.notes}", color = LimonTextSecondary, fontSize = 12.sp)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("${item.quantity}x ${item.productName}", color = LimonText, fontSize = 14.sp)
+                            if (item.notes.isNotEmpty()) {
+                                Text("  ${item.notes}", color = LimonTextSecondary, fontSize = 12.sp)
+                            }
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("AED ${String.format("%.2f", item.price * item.quantity)}", color = LimonText, fontSize = 14.sp)
+                            Spacer(Modifier.width(8.dp))
+                            TextButton(
+                                onClick = { onRefundItem(order.id, item.id) },
+                                colors = ButtonDefaults.textButtonColors(contentColor = LimonError)
+                            ) {
+                                Text("Refund", fontSize = 12.sp)
+                            }
+                        }
                     }
                 }
                 Spacer(Modifier.height(8.dp))
@@ -241,6 +328,13 @@ private fun BillDetailDialog(
                     Text("Total", color = LimonText, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     Text("AED ${String.format("%.2f", order.total)}", color = LimonPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 }
+                Spacer(Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = { showFullRefundConfirm = true },
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = LimonError)
+                ) {
+                    Text("Full bill refund")
+                }
             }
         },
         confirmButton = {
@@ -251,6 +345,30 @@ private fun BillDetailDialog(
         dismissButton = {},
         containerColor = LimonSurface
     )
+    if (showFullRefundConfirm) {
+        AlertDialog(
+            onDismissRequest = { showFullRefundConfirm = false },
+            title = { Text("Full bill refund?", color = LimonText) },
+            text = { Text("Refund entire bill for Table ${order.tableNumber}. This cannot be undone.", color = LimonTextSecondary) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showFullRefundConfirm = false
+                        onRefundFull(order.id)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = LimonError)
+                ) {
+                    Text("Refund full bill", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showFullRefundConfirm = false }) {
+                    Text("Cancel", color = LimonTextSecondary)
+                }
+            },
+            containerColor = LimonSurface
+        )
+    }
 }
 
 @Composable

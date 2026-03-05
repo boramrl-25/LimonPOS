@@ -12,8 +12,10 @@ import {
   RefreshCw,
   Moon,
   ChevronRight,
+  Bell,
+  FileEdit,
 } from "lucide-react";
-import { getDashboardStats, getDailySales, getOpenOrders, runEod } from "@/lib/api";
+import { getDashboardStats, getDailySales, getOpenOrders, getClosedBillChanges, runEod } from "@/lib/api";
 
 type PaidTicket = { order_id: string; receipt_no?: string; table_number: string; total: number; paid_at: number; waiter_name?: string; cash_amount: number; card_amount: number; discount_amount?: number };
 type OpenOrderRow = { order_id: string; receipt_no: string; table_number: string; total: number; waiter_name: string; created_at: number; status: string };
@@ -42,6 +44,8 @@ export default function DashboardPage() {
     openChecks: 0,
     lastEod: null as { ran_at: number; user_name: string; tables_closed_count: number } | null,
     openTablesCount: 0,
+    pendingVoidRequestsCount: 0,
+    pendingClosedBillAccessRequestsCount: 0,
   });
   const [dailySales, setDailySales] = useState<{
     totalCash: number;
@@ -65,15 +69,20 @@ export default function DashboardPage() {
   const [openOrders, setOpenOrders] = useState<OpenOrderRow[]>([]);
   const [openOrdersLoading, setOpenOrdersLoading] = useState(false);
   const [eodConfirmOpen, setEodConfirmOpen] = useState(false);
+  const [closedBillChanges, setClosedBillChanges] = useState<{ count: number; summary: { fullRefunds: number; itemRefunds: number }; changes: Array<{ id: string; order_id: string; receipt_no: string | null; table_number: string; type: string; product_name: string | null; amount: number; user_name: string; created_at: number }> } | null>(null);
+  const [closedBillChangesModal, setClosedBillChangesModal] = useState(false);
+  const [approvalRequestsCountPrev, setApprovalRequestsCountPrev] = useState(0);
   const router = useRouter();
 
   const fetchData = useCallback(async () => {
     try {
       const dateParam = selectedDate || undefined;
-      const [statsRes, dailyRes] = await Promise.all([
+      const [statsRes, dailyRes, closedChangesRes] = await Promise.all([
         getDashboardStats(),
         getDailySales(dateParam),
+        getClosedBillChanges(dateParam).catch(() => ({ count: 0, summary: { fullRefunds: 0, itemRefunds: 0 }, changes: [] })),
       ]);
+      setClosedBillChanges(closedChangesRes);
       setStats({
         todaySales: statsRes.todaySales ?? 0,
         orderCount: statsRes.orderCount ?? 0,
@@ -81,11 +90,13 @@ export default function DashboardPage() {
         openChecks: statsRes.openChecks ?? 0,
         lastEod: statsRes.lastEod ?? null,
         openTablesCount: statsRes.openTablesCount ?? statsRes.openTables ?? 0,
+        pendingVoidRequestsCount: statsRes.pendingVoidRequestsCount ?? 0,
+        pendingClosedBillAccessRequestsCount: statsRes.pendingClosedBillAccessRequestsCount ?? 0,
       });
       setDailySales(dailyRes);
       setLastRefresh(new Date());
     } catch {
-      setStats({ todaySales: 0, orderCount: 0, openTables: 0, openChecks: 0, lastEod: null, openTablesCount: 0 });
+      setStats({ todaySales: 0, orderCount: 0, openTables: 0, openChecks: 0, lastEod: null, openTablesCount: 0, pendingVoidRequestsCount: 0, pendingClosedBillAccessRequestsCount: 0 });
       setDailySales(null);
     } finally {
       setLoading(false);
@@ -116,6 +127,26 @@ export default function DashboardPage() {
     const id = setInterval(fetchData, POLL_INTERVAL_MS);
     return () => clearInterval(id);
   }, [fetchData]);
+
+  const totalApprovalRequests = (stats.pendingVoidRequestsCount ?? 0) + (stats.pendingClosedBillAccessRequestsCount ?? 0);
+  useEffect(() => {
+    if (totalApprovalRequests > 0 && totalApprovalRequests > approvalRequestsCountPrev) {
+      setApprovalRequestsCountPrev(totalApprovalRequests);
+      try {
+        const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.value = 800;
+        gain.gain.value = 0.15;
+        osc.start();
+        setTimeout(() => { osc.stop(); }, 150);
+      } catch { /* no sound */ }
+    } else if (totalApprovalRequests === 0) {
+      setApprovalRequestsCountPrev(0);
+    }
+  }, [totalApprovalRequests, approvalRequestsCountPrev]);
 
   const todayStr = toYYYYMMDD(new Date());
   const yesterday = new Date();
@@ -170,6 +201,27 @@ export default function DashboardPage() {
               <div>
                 <p className="text-slate-400 text-sm">Open Tables / Checks</p>
                 <p className="text-xl font-bold text-white">{loading ? "..." : stats.openTables}</p>
+              </div>
+            </button>
+            <button type="button" className={blockButtonClass} onClick={() => { setTicketModalType(null); router.push("/dashboard/approvals"); }}>
+              <Bell className="w-8 h-8 text-orange-400 shrink-0" />
+              <div>
+                <p className="text-slate-400 text-sm">Approval Requests</p>
+                <p className="text-xl font-bold text-white">{loading ? "..." : totalApprovalRequests}</p>
+                <p className="text-xs text-slate-500">Void + Closed Bill · View only here</p>
+              </div>
+            </button>
+            <button
+              type="button"
+              className={blockButtonClass}
+              onClick={() => setClosedBillChangesModal(true)}
+            >
+              <FileEdit className="w-8 h-8 text-rose-400 shrink-0" />
+              <div>
+                <p className="text-slate-400 text-sm">Closed Bill Change</p>
+                <p className="text-xl font-bold text-white">
+                  {loading ? "..." : (closedBillChanges?.count ?? 0)}
+                </p>
               </div>
             </button>
           </div>
@@ -367,6 +419,46 @@ export default function DashboardPage() {
           )}
         </section>
       </main>
+
+      {/* Closed Bill Change modal */}
+      {closedBillChangesModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={() => setClosedBillChangesModal(false)}>
+          <div className="bg-slate-900 rounded-xl border border-slate-700 max-w-lg w-full max-h-[80vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="p-4 border-b border-slate-700 flex justify-between items-center">
+              <h3 className="text-lg font-semibold text-slate-200">Closed Bill Change</h3>
+              <button type="button" onClick={() => setClosedBillChangesModal(false)} className="text-slate-400 hover:text-white">Close</button>
+            </div>
+            <div className="overflow-y-auto flex-1 p-4">
+              {closedBillChanges && closedBillChanges.changes.length > 0 ? (
+                <ul className="space-y-2">
+                  {closedBillChanges.changes.map((c) => (
+                    <li key={c.id}>
+                      <button
+                        type="button"
+                        onClick={() => { setClosedBillChangesModal(false); router.push(`/orders/${c.order_id}`); }}
+                        className="w-full p-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-left"
+                      >
+                        <div className="flex justify-between items-center">
+                          <span className="font-medium text-slate-200">{c.receipt_no ?? "—"} · Table {c.table_number}</span>
+                          <span className="text-red-400">{c.type === "refund_full" ? "Full refund" : "Item refund"}</span>
+                        </div>
+                        <p className="text-slate-500 text-xs mt-1">{fmt(c.amount)} AED · {c.user_name} · {new Date(c.created_at).toLocaleString("tr-TR")}</p>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-slate-500 py-4">No closed bill changes for this day.</p>
+              )}
+            </div>
+            {closedBillChanges && (closedBillChanges.summary.fullRefunds > 0 || closedBillChanges.summary.itemRefunds > 0) && (
+              <div className="p-4 border-t border-slate-700 bg-slate-800/50 text-sm text-slate-300">
+                <p><strong>Summary:</strong> {closedBillChanges.summary.fullRefunds} full bill refund(s), {closedBillChanges.summary.itemRefunds} item refund(s).</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* EOD confirm modal */}
       {eodConfirmOpen && (

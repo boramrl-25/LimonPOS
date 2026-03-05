@@ -331,6 +331,45 @@ export async function getOpenOrders() {
   return res.json();
 }
 
+export async function getVoidRequests(status: string = "pending") {
+  const res = await fetchWithTimeout(`${API_URL}/void-requests?status=${encodeURIComponent(status)}`, { headers: headers() });
+  if (!res.ok) throw new Error("Failed to fetch void requests");
+  return res.json();
+}
+
+export async function patchVoidRequest(id: string, body: { status?: string; approved_by_supervisor_user_id?: string; approved_by_supervisor_user_name?: string; approved_by_supervisor_at?: number; approved_by_kds_user_id?: string; approved_by_kds_user_name?: string; approved_by_kds_at?: number }) {
+  const res = await fetchWithTimeout(`${API_URL}/void-requests/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: headers(),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error("Failed to update void request");
+  return res.json();
+}
+
+export async function getClosedBillAccessRequests(status: string = "pending") {
+  const res = await fetchWithTimeout(`${API_URL}/closed-bill-access-requests?status=${encodeURIComponent(status)}`, { headers: headers() });
+  if (!res.ok) throw new Error("Failed to fetch closed bill access requests");
+  return res.json();
+}
+
+export async function patchClosedBillAccessRequest(id: string, body: { status?: string; approved_by_user_id?: string; approved_by_user_name?: string; approved_at?: number }) {
+  const res = await fetchWithTimeout(`${API_URL}/closed-bill-access-requests/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: headers(),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error("Failed to update closed bill access request");
+  return res.json();
+}
+
+export async function getClosedBillChanges(date?: string): Promise<{ count: number; summary: { fullRefunds: number; itemRefunds: number }; changes: Array<{ id: string; order_id: string; receipt_no: string | null; table_number: string; type: string; product_name: string | null; amount: number; user_name: string; created_at: number }> }> {
+  const url = date ? `${API_URL}/dashboard/closed-bill-changes?date=${encodeURIComponent(date)}` : `${API_URL}/dashboard/closed-bill-changes`;
+  const res = await fetchWithTimeout(url, { headers: headers() });
+  if (!res.ok) throw new Error("Failed to fetch closed bill changes");
+  return res.json();
+}
+
 export async function getOrder(orderId: string) {
   const res = await fetchWithTimeout(`${API_URL}/orders/${encodeURIComponent(orderId)}`, { headers: headers() });
   if (!res.ok) throw new Error("Failed to fetch order");

@@ -34,6 +34,7 @@ class ApiSyncRepository @Inject constructor(
     private val modifierOptionDao: ModifierOptionDao,
     private val voidLogDao: VoidLogDao,
     private val voidRequestDao: VoidRequestDao,
+    private val closedBillAccessRequestDao: ClosedBillAccessRequestDao,
     private val transferLogDao: TransferLogDao,
     private val floorPlanSectionsPreferences: FloorPlanSectionsPreferences,
     private val serverPreferences: ServerPreferences,
@@ -55,6 +56,7 @@ class ApiSyncRepository @Inject constructor(
         paymentDao.deleteAll()
         voidLogDao.deleteAll()
         voidRequestDao.deleteAll()
+        closedBillAccessRequestDao.deleteAll()
         transferLogDao.deleteAll()
         orderDao.deleteAll()
         tableDao.resetAllTables()
@@ -81,6 +83,7 @@ class ApiSyncRepository @Inject constructor(
             syncUsers()
             syncModifierGroups()
             syncVoidRequests()
+            syncClosedBillAccessRequests()
             syncFloorPlanSections()
             true
         } catch (e: Exception) {
@@ -651,6 +654,72 @@ class ApiSyncRepository @Inject constructor(
             }
         } catch (e: Exception) {
             Log.e("ApiSync", "syncVoidRequests error: ${e.message}", e)
+        }
+    }
+
+    private suspend fun syncClosedBillAccessRequests() {
+        if (!isOnline()) return
+        try {
+            val response = apiService.getClosedBillAccessRequests("all")
+            if (!response.isSuccessful) return
+            val dtos = response.body() ?: return
+            for (dto in dtos) {
+                val entity = ClosedBillAccessRequestEntity(
+                    id = dto.id,
+                    requestedByUserId = dto.requestedByUserId,
+                    requestedByUserName = dto.requestedByUserName,
+                    requestedAt = dto.requestedAt,
+                    status = dto.status,
+                    approvedByUserId = dto.approvedByUserId,
+                    approvedByUserName = dto.approvedByUserName,
+                    approvedAt = dto.approvedAt,
+                    expiresAt = dto.expiresAt
+                )
+                closedBillAccessRequestDao.insert(entity)
+            }
+        } catch (e: Exception) {
+            Log.e("ApiSync", "syncClosedBillAccessRequests error: ${e.message}", e)
+        }
+    }
+
+    suspend fun pushClosedBillAccessRequest(entity: ClosedBillAccessRequestEntity): Boolean {
+        if (!isOnline()) return false
+        restoreAuthTokenIfNeeded()
+        return try {
+            val req = CreateClosedBillAccessRequestDto(
+                id = entity.id,
+                requestedByUserId = entity.requestedByUserId,
+                requestedByUserName = entity.requestedByUserName,
+                expiresAt = entity.expiresAt
+            )
+            val response = apiService.createClosedBillAccessRequest(req)
+            response.isSuccessful
+        } catch (e: Exception) {
+            Log.e("ApiSync", "pushClosedBillAccessRequest error: ${e.message}", e)
+            false
+        }
+    }
+
+    suspend fun pushClosedBillAccessRequestUpdate(entity: ClosedBillAccessRequestEntity): Boolean {
+        if (!isOnline()) return false
+        restoreAuthTokenIfNeeded()
+        return try {
+            val dto = ClosedBillAccessRequestDto(
+                id = entity.id,
+                requestedByUserId = entity.requestedByUserId,
+                requestedByUserName = entity.requestedByUserName,
+                requestedAt = entity.requestedAt,
+                status = entity.status,
+                approvedByUserId = entity.approvedByUserId,
+                approvedByUserName = entity.approvedByUserName,
+                approvedAt = entity.approvedAt,
+                expiresAt = entity.expiresAt
+            )
+            val response = apiService.updateClosedBillAccessRequest(entity.id, dto)
+            response.isSuccessful
+        } catch (e: Exception) {
+            Log.e("ApiSync", "pushClosedBillAccessRequestUpdate error: ${e.message}", e)
+            false
         }
     }
 

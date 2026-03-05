@@ -348,6 +348,61 @@ class OrderRepository @Inject constructor(
      * - Table occupied with order (as if never closed)
      * - User can then change payment or add/remove items
      */
+    /** Refund single item from a closed (paid) bill. Logs refund to void_logs. */
+    suspend fun refundItemFromClosedBill(orderId: String, itemId: String, userId: String, userName: String): Boolean {
+        val order = orderDao.getOrderById(orderId) ?: return false
+        if (order.status != "paid") return false
+        val item = orderItemDao.getOrderItemById(itemId) ?: return false
+        if (item.orderId != orderId) return false
+        val amount = item.price * item.quantity
+        orderItemDao.deleteOrderItem(item)
+        updateOrderTotals(orderId)
+        voidLogDao.insert(
+            VoidLogEntity(
+                type = "refund",
+                orderId = orderId,
+                orderItemId = item.id,
+                productName = item.productName,
+                quantity = item.quantity,
+                price = item.price,
+                amount = amount,
+                sourceTableId = order.tableId,
+                sourceTableNumber = order.tableNumber,
+                userId = userId,
+                userName = userName,
+                details = "Refund from closed bill"
+            )
+        )
+        return true
+    }
+
+    /** Full refund of a closed (paid) bill. Logs refund_full, removes items/payments/order, frees table. */
+    suspend fun refundFullClosedBill(orderId: String, userId: String, userName: String): Boolean {
+        val order = orderDao.getOrderById(orderId) ?: return false
+        if (order.status != "paid") return false
+        val items = orderItemDao.getOrderItems(orderId).first()
+        val totalAmount = if (items.isEmpty()) order.total else items.sumOf { it.price * it.quantity }
+        voidLogDao.insert(
+            VoidLogEntity(
+                type = "refund_full",
+                orderId = orderId,
+                productName = items.joinToString(", ") { "${it.quantity}x ${it.productName}" }.ifEmpty { "Full bill" },
+                quantity = items.sumOf { it.quantity },
+                amount = totalAmount,
+                sourceTableId = order.tableId,
+                sourceTableNumber = order.tableNumber,
+                userId = userId,
+                userName = userName,
+                details = "Full bill refund - closed bill"
+            )
+        )
+        orderItemDao.deleteOrderItems(orderId)
+        paymentDao.deletePaymentsByOrder(orderId)
+        orderDao.deleteOrder(order)
+        tableRepository.closeTable(order.tableId)
+        return true
+    }
+
     suspend fun recallOrderToTable(orderId: String, targetTableId: String, userId: String, userName: String): Boolean {
         val order = orderDao.getOrderById(orderId) ?: return false
         if (order.status != "paid") return false

@@ -116,4 +116,10 @@ class AuthRepository @Inject constructor(
         val user = getCurrentUser() ?: return false
         return user.toUserPermissions().kdsModeAccess
     }
+
+    /** True if current user can access closed bills without approval (and can approve others' requests). */
+    suspend fun hasClosedBillAccess(): Boolean {
+        val user = getCurrentUser() ?: return false
+        return user.toUserPermissions().closedBillAccess
+    }
 }

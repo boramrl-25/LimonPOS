@@ -15,6 +15,7 @@ db.data.order_items = [];
 db.data.payments = [];
 db.data.void_logs = [];
 db.data.void_requests = [];
+db.data.closed_bill_access_requests = [];
 
 // Masaları sıfırla
 if (db.data.tables && Array.isArray(db.data.tables)) {

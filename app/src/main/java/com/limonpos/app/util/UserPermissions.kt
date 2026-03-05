@@ -9,7 +9,8 @@ data class UserPermissions(
     val kdsModeAccess: Boolean = false,  // Can access Kitchen Display (KDS) screen
     val preVoid: Boolean = false,   // Remove item before send to kitchen
     val postVoid: Boolean = false,  // Remove item after send to kitchen
-    val tableTransferVoid: Boolean = false  // Table transfer creates void
+    val tableTransferVoid: Boolean = false,  // Table transfer creates void
+    val closedBillAccess: Boolean = false   // Can access closed bills (view/refund) without approval; can approve others' requests
 )
 
 fun UserEntity.permissionsSet(): Set<String> {
@@ -27,7 +28,8 @@ fun UserEntity.toUserPermissions(): UserPermissions {
         kdsModeAccess = perms.contains("kds_mode") || isManagerOrAdmin,
         preVoid = perms.contains("pre_void") || isManagerOrAdmin,
         postVoid = perms.contains("post_void") || isManagerOrAdmin,
-        tableTransferVoid = perms.contains("table_transfer_void") || isManagerOrAdmin
+        tableTransferVoid = perms.contains("table_transfer_void") || isManagerOrAdmin,
+        closedBillAccess = perms.contains("closed_bill_access") || isManagerOrAdmin
     )
 }
 

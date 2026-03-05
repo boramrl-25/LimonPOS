@@ -149,6 +149,15 @@ interface ApiService {
     @PATCH("void-requests/{id}")
     suspend fun updateVoidRequest(@Path("id") id: String, @Body request: VoidRequestDto): Response<VoidRequestDto>
 
+    @GET("closed-bill-access-requests")
+    suspend fun getClosedBillAccessRequests(@Query("status") status: String = "pending"): Response<List<ClosedBillAccessRequestDto>>
+
+    @POST("closed-bill-access-requests")
+    suspend fun createClosedBillAccessRequest(@Body request: CreateClosedBillAccessRequestDto): Response<ClosedBillAccessRequestDto>
+
+    @PATCH("closed-bill-access-requests/{id}")
+    suspend fun updateClosedBillAccessRequest(@Path("id") id: String, @Body request: ClosedBillAccessRequestDto): Response<ClosedBillAccessRequestDto>
+
     @POST("devices/heartbeat")
     suspend fun sendHeartbeat(@Body request: HeartbeatRequest): Response<Unit>
 

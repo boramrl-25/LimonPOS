@@ -20,6 +20,23 @@ val MIGRATION_9_10 = object : Migration(9, 10) {
     }
 }
 
+val MIGRATION_10_11 = object : Migration(10, 11) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS closed_bill_access_requests (" +
+                "id TEXT PRIMARY KEY NOT NULL, " +
+                "requestedByUserId TEXT NOT NULL, " +
+                "requestedByUserName TEXT NOT NULL, " +
+                "requestedAt INTEGER NOT NULL, " +
+                "status TEXT NOT NULL, " +
+                "approvedByUserId TEXT, " +
+                "approvedByUserName TEXT, " +
+                "approvedAt INTEGER, " +
+                "expiresAt INTEGER)" 
+        )
+    }
+}
+
 @Database(
     entities = [
         TableEntity::class,
@@ -35,9 +52,10 @@ val MIGRATION_9_10 = object : Migration(9, 10) {
         TransferLog::class,
         VoidLogEntity::class,
         UserEntity::class,
-        VoidRequestEntity::class
+        VoidRequestEntity::class,
+        ClosedBillAccessRequestEntity::class
     ],
-    version = 10,
+    version = 11,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -55,4 +73,5 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun voidLogDao(): VoidLogDao
     abstract fun userDao(): UserDao
     abstract fun voidRequestDao(): VoidRequestDao
+    abstract fun closedBillAccessRequestDao(): ClosedBillAccessRequestDao
 }

@@ -55,6 +55,7 @@ const defaultData = {
   payments: [],
   void_logs: [],
   void_requests: [],
+  closed_bill_access_requests: [],
   zoho_config: {},
   devices: [],
   setup_complete: false,

@@ -109,7 +109,7 @@ function getTodaySalesSummary() {
 
 async function ensureData() {
   await db.read();
-  if (!db.data) db.data = { users: [], categories: [], products: [], printers: [], payment_methods: [], orders: [], order_items: [], payments: [], tables: [], void_logs: [], void_requests: [], zoho_config: {}, migrations: {}, devices: [], floor_plan_sections: null };
+  if (!db.data) db.data = { users: [], categories: [], products: [], printers: [], payment_methods: [], orders: [], order_items: [], payments: [], tables: [], void_logs: [], void_requests: [], closed_bill_access_requests: [], zoho_config: {}, migrations: {}, devices: [], floor_plan_sections: null };
   if (!db.data.migrations) db.data.migrations = {};
   if (!Array.isArray(db.data.devices)) db.data.devices = [];
   if (!Array.isArray(db.data.products)) db.data.products = [];
@@ -785,6 +785,10 @@ app.get("/api/dashboard/stats", authMiddleware, async (req, res) => {
   const postVoids = voidLogs.filter((v) => v.type === "post_void").length;
   const eodLogs = db.data.eod_logs || [];
   const lastEod = eodLogs.length > 0 ? eodLogs[eodLogs.length - 1] : null;
+  const voidRequests = db.data.void_requests || [];
+  const closedBillAccessRequests = db.data.closed_bill_access_requests || [];
+  const pendingVoidRequestsCount = voidRequests.filter((v) => v.status === "pending").length;
+  const pendingClosedBillAccessRequestsCount = closedBillAccessRequests.filter((r) => r.status === "pending").length;
   res.json({
     todaySales: summary.netSales,
     orderCount: summary.paidToday.length,
@@ -796,6 +800,8 @@ app.get("/api/dashboard/stats", authMiddleware, async (req, res) => {
     postPrintVoids: postVoids,
     lastEod: lastEod ? { ran_at: lastEod.ran_at, user_name: lastEod.user_name, tables_closed_count: lastEod.tables_closed?.length ?? 0 } : null,
     openTablesCount: openCount,
+    pendingVoidRequestsCount,
+    pendingClosedBillAccessRequestsCount,
   });
 });
 
@@ -1191,6 +1197,100 @@ app.patch("/api/void-requests/:id", authMiddleware, async (req, res) => {
   db.data.void_requests[idx] = { ...db.data.void_requests[idx], status: body.status || "approved", approved_by_supervisor_user_id: body.approved_by_supervisor_user_id, approved_by_supervisor_user_name: body.approved_by_supervisor_user_name, approved_by_supervisor_at: body.approved_by_supervisor_at, approved_by_kds_user_id: body.approved_by_kds_user_id, approved_by_kds_user_name: body.approved_by_kds_user_name, approved_by_kds_at: body.approved_by_kds_at };
   await db.write();
   res.json(db.data.void_requests[idx]);
+});
+
+// Closed bill access requests (user requests access; approver approves from app or web)
+app.get("/api/closed-bill-access-requests", authMiddleware, async (req, res) => {
+  await ensureData();
+  const status = (req.query.status || "pending").toString();
+  db.data.closed_bill_access_requests = db.data.closed_bill_access_requests || [];
+  const list = db.data.closed_bill_access_requests;
+  if (status === "all" || status === "") {
+    res.json(list.slice(-100));
+  } else {
+    res.json(list.filter((r) => r.status === status));
+  }
+});
+
+app.post("/api/closed-bill-access-requests", authMiddleware, async (req, res) => {
+  await ensureData();
+  const body = req.body;
+  const id = body.id || `cbar_${uuid().slice(0, 8)}`;
+  db.data.closed_bill_access_requests = db.data.closed_bill_access_requests || [];
+  db.data.closed_bill_access_requests.push({
+    id,
+    requested_by_user_id: body.requested_by_user_id,
+    requested_by_user_name: body.requested_by_user_name || "—",
+    requested_at: Date.now(),
+    status: "pending",
+    approved_by_user_id: null,
+    approved_by_user_name: null,
+    approved_at: null,
+    expires_at: body.expires_at || null,
+  });
+  await db.write();
+  res.json(db.data.closed_bill_access_requests.find((r) => r.id === id));
+});
+
+app.patch("/api/closed-bill-access-requests/:id", authMiddleware, async (req, res) => {
+  await ensureData();
+  db.data.closed_bill_access_requests = db.data.closed_bill_access_requests || [];
+  const idx = db.data.closed_bill_access_requests.findIndex((r) => r.id === req.params.id);
+  if (idx < 0) return res.status(404).json({ error: "Not found" });
+  const body = req.body;
+  const r = db.data.closed_bill_access_requests[idx];
+  db.data.closed_bill_access_requests[idx] = {
+    ...r,
+    status: body.status || "approved",
+    approved_by_user_id: body.approved_by_user_id ?? r.approved_by_user_id,
+    approved_by_user_name: body.approved_by_user_name ?? r.approved_by_user_name,
+    approved_at: body.approved_at ?? (body.status === "approved" || body.status === "rejected" ? Date.now() : r.approved_at),
+    expires_at: body.expires_at !== undefined ? body.expires_at : r.expires_at,
+  };
+  await db.write();
+  res.json(db.data.closed_bill_access_requests[idx]);
+});
+
+// Closed bill changes: refunds/edits on paid (closed) bills for dashboard block
+app.get("/api/dashboard/closed-bill-changes", authMiddleware, async (req, res) => {
+  await ensureData();
+  const dateStr = (req.query.date || "").toString().trim();
+  const todayTs = getTodayStartTimestamp();
+  const dayMs = 24 * 60 * 60 * 1000;
+  let startTs = todayTs;
+  let endTs = todayTs + dayMs;
+  if (dateStr) {
+    const bounds = getDayBounds(dateStr);
+    if (!bounds) return res.status(400).json({ error: "invalid_date" });
+    startTs = bounds.startTs;
+    endTs = bounds.endTs;
+  }
+  const voidLogs = db.data.void_logs || [];
+  const orders = db.data.orders || [];
+  const changes = voidLogs
+    .filter((v) => v.created_at >= startTs && v.created_at < endTs && (v.type === "refund" || v.type === "refund_full"))
+    .map((v) => {
+      const order = orders.find((o) => o.id === v.order_id);
+      return {
+        id: v.id,
+        order_id: v.order_id,
+        receipt_no: order ? `#${(order.table_number || order.id).toString().slice(-6)}` : null,
+        table_number: order?.table_number || v.source_table_number || "—",
+        type: v.type,
+        product_name: v.product_name || null,
+        amount: v.amount || 0,
+        user_name: v.user_name || "—",
+        created_at: v.created_at,
+      };
+    });
+  const count = changes.length;
+  const fullRefunds = changes.filter((c) => c.type === "refund_full").length;
+  const itemRefunds = changes.filter((c) => c.type === "refund").length;
+  res.json({
+    count,
+    summary: { fullRefunds, itemRefunds },
+    changes,
+  });
 });
 
 // Zoho config

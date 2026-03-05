@@ -188,12 +188,6 @@ fun NavGraph(
                 ClosedBillsScreen(
                     onBack = { navController.popBackStack() },
                     onNavigateToFloorPlan = { navController.navigate(Routes.FLOOR_PLAN) { popUpTo(Routes.FLOOR_PLAN) { inclusive = true }; launchSingleTop = true } },
-                    onRecallSuccess = { tableId ->
-                        navController.navigate(Routes.order(tableId)) {
-                            popUpTo(Routes.CLOSED_BILLS) { inclusive = true }
-                            launchSingleTop = true
-                        }
-                    },
                     onNavigateToSettings = { navController.navigate(Routes.SETTINGS) },
                     onSync = onSync
                 )
