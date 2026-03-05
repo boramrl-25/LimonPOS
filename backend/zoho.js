@@ -344,6 +344,21 @@ export async function syncFromZoho(db, options = {}) {
   // Categories are derived from Category Name in items (Excel/Zoho UI), not item groups
   let groups = extractCategoriesFromItems(itemsRes.items || []);
   const items = itemsRes.items || [];
+  const existingProducts = db.data.products || [];
+
+  // Zoho boş liste döndüyse mevcut ürünlere dokunma – app/web liste kaybetmesin
+  if (items.length === 0 && existingProducts.length > 0) {
+    return {
+      categoriesAdded: 0,
+      productsAdded: 0,
+      productsUpdated: 0,
+      productsRemoved: 0,
+      productsSuggestedForRemoval: [],
+      itemsFetched: 0,
+      error: "Zoho ürün listesi boş döndü; mevcut ürünler korundu.",
+    };
+  }
+
   const existingCatIds = new Set((db.data.categories || []).map((c) => c.id));
   const zohoCatIdToLocal = {};
   const zohoCatNameToLocal = {};
@@ -373,7 +388,6 @@ export async function syncFromZoho(db, options = {}) {
   }
 
   // Upsert: önce silme yok. Zoho'da olmayan ürünler sadece zoho_suggest_remove ile işaretlenir; onay verilene kadar satışta kalır.
-  const existingProducts = db.data.products || [];
   const zohoIdsInFetch = new Set(items.map((it) => String(it.item_id)));
   let productsAdded = 0;
   let productsUpdated = 0;
@@ -427,6 +441,19 @@ export async function syncFromZoho(db, options = {}) {
       });
       productsSuggestedForRemoval.push({ id: p.id, name: p.name, sku: p.sku });
     }
+  }
+
+  // Zoho boş veya hata döndüyse mevcut ürünleri silme – Android/app liste boş kalmasın
+  if (merged.length === 0 && existingProducts.length > 0) {
+    return {
+      categoriesAdded,
+      productsAdded: 0,
+      productsUpdated: 0,
+      productsRemoved: 0,
+      productsSuggestedForRemoval: [],
+      itemsFetched: items.length,
+      error: "Zoho ürün listesi boş; mevcut ürünler korundu.",
+    };
   }
 
   db.data.products = merged;
