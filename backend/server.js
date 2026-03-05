@@ -399,7 +399,12 @@ app.get("/api/permissions", authMiddleware, async (req, res) => {
 // Users
 app.get("/api/users", authMiddleware, async (req, res) => {
   await ensureData();
-  res.json(db.data.users.map((r) => ({ ...r, permissions: JSON.parse(r.permissions || "[]"), cash_drawer_permission: !!r.cash_drawer_permission })));
+  res.json(db.data.users.map((r) => ({
+    ...r,
+    active: !!(r.active !== 0 && r.active !== false),
+    permissions: JSON.parse(r.permissions || "[]"),
+    cash_drawer_permission: !!r.cash_drawer_permission,
+  })));
 });
 
 app.post("/api/users", authMiddleware, async (req, res) => {

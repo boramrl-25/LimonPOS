@@ -105,26 +105,6 @@ class ApiSyncRepository @Inject constructor(
         tableDao.resetAllTables()
     }
 
-    /** Clears sales data only for orders created between [fromMs] and [toMs] (inclusive). Frees tables that had those orders. */
-    suspend fun clearLocalSalesInDateRange(fromMs: Long, toMs: Long) {
-        val orders = orderDao.getOrdersByCreatedAtRange(fromMs, toMs)
-        if (orders.isEmpty()) return
-        val orderIds = orders.map { it.id }.toSet().toList()
-        orderIds.forEach { orderId ->
-            orderItemDao.deleteOrderItems(orderId)
-            paymentDao.deletePaymentsByOrder(orderId)
-        }
-        if (orderIds.isNotEmpty()) {
-            voidLogDao.deleteByOrderIds(orderIds)
-            transferLogDao.deleteByOrderIds(orderIds)
-        }
-        val tables = tableDao.getAllTables().first()
-        tables.filter { it.currentOrderId != null && it.currentOrderId in orderIds }.forEach { table ->
-            tableDao.clearTable(table.id)
-        }
-        orderDao.deleteByIds(orderIds)
-    }
-
     /** Full bidirectional sync: orders, tables, catalog, users, printers, modifiers, void requests. */
     suspend fun syncFromApi(): Boolean {
         if (!isOnline()) return false
@@ -638,12 +618,17 @@ class ApiSyncRepository @Inject constructor(
             val dtos = response.body() ?: return
             userDao.deleteAll()
             val entities = dtos.map { dto ->
+                val isActive = when (dto.active) {
+                    is Boolean -> dto.active
+                    is Number -> (dto.active as Number).toInt() != 0
+                    else -> true
+                }
                 UserEntity(
                     id = dto.id,
                     name = dto.name,
                     pin = dto.pin,
                     role = dto.role,
-                    active = dto.active,
+                    active = isActive,
                     permissions = (dto.permissions ?: emptyList()).let { Gson().toJson(it) },
                     cashDrawerPermission = dto.cashDrawerPermission ?: (dto.role == "cashier" || dto.role == "admin"),
                     syncStatus = "SYNCED"

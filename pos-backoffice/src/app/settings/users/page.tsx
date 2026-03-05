@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { ArrowLeft, Plus, Trash2, FileSpreadsheet, FileDown } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, FileSpreadsheet, FileDown, Search } from "lucide-react";
 import { getUsers, createUser, updateUser, deleteUser, importUsers, getPermissions, type RoleOption, type PermissionOption } from "@/lib/api";
 import * as XLSX from "xlsx";
 
@@ -16,7 +16,17 @@ export default function UsersSettingsPage() {
   const [editing, setEditing] = useState<User | null | undefined>(undefined);
   const [form, setForm] = useState({ name: "", pin: "", role: "waiter", active: true, permissions: [] as string[], cashDrawerPermission: false });
   const [importing, setImporting] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [roleFilter, setRoleFilter] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const filteredUsers = users
+    .filter((u) => {
+      const matchSearch = !searchQuery.trim() || u.name.toLowerCase().includes(searchQuery.trim().toLowerCase());
+      const matchRole = !roleFilter || u.role === roleFilter;
+      return matchSearch && matchRole;
+    })
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 
   useEffect(() => {
     load();
@@ -180,8 +190,33 @@ export default function UsersSettingsPage() {
       <p className="text-slate-400 mb-8">Staff management. Tap row to edit. Default admin PIN: 1234</p>
       <p className="text-slate-500 text-sm mb-4">Excel veya CSV: Örnek dosyayı indir, doldur, yükle.</p>
 
-      <div className="flex justify-between items-center mb-8 flex-wrap gap-4">
-        <span className="text-slate-400">Staff list</span>
+      <div className="flex flex-col sm:flex-row gap-4 mb-4">
+        <div className="flex-1 flex gap-2">
+          <div className="relative flex-1 min-w-0">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search staff..."
+              className="w-full pl-9 pr-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white placeholder-slate-500 text-sm"
+            />
+          </div>
+          <select
+            value={roleFilter}
+            onChange={(e) => setRoleFilter(e.target.value)}
+            className="px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white text-sm min-w-[120px]"
+          >
+            <option value="">All roles</option>
+            {roles.map((r) => (
+              <option key={r.id} value={r.id}>{r.label} / {r.labelTr}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className="flex justify-between items-center mb-4 flex-wrap gap-4">
+        <span className="text-slate-400">Staff list (A–Z)</span>
         <div className="flex gap-2">
           <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFileImport} />
           <button
@@ -229,7 +264,7 @@ export default function UsersSettingsPage() {
             </tr>
           </thead>
           <tbody>
-            {users.map((u) => (
+            {filteredUsers.map((u) => (
               <tr
                 key={u.id}
                 onClick={() => openEdit(u)}
