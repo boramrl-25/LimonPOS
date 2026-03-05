@@ -59,11 +59,6 @@ fun VoidReportScreen(
                         }
                         DropdownMenu(expanded = settingsMenuExpanded, onDismissRequest = { settingsMenuExpanded = false }) {
                             DropdownMenuItem(
-                                text = { Text("Table Service", color = LimonText) },
-                                onClick = { settingsMenuExpanded = false; onNavigateToFloorPlan() },
-                                leadingIcon = { Icon(Icons.Default.Restaurant, contentDescription = null, tint = LimonPrimary) }
-                            )
-                            DropdownMenuItem(
                                 text = { Text("Sync Data", color = LimonText) },
                                 onClick = { settingsMenuExpanded = false; onSync() },
                                 leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null, tint = LimonPrimary) }

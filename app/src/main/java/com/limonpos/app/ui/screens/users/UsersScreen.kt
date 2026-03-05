@@ -61,11 +61,6 @@ fun UsersScreen(
                         }
                         DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
                             DropdownMenuItem(
-                                text = { Text("Table Service", color = LimonText) },
-                                onClick = { menuExpanded = false; onNavigateToFloorPlan() },
-                                leadingIcon = { Icon(Icons.Default.Restaurant, contentDescription = null, tint = LimonPrimary) }
-                            )
-                            DropdownMenuItem(
                                 text = { Text("Sync Data", color = LimonText) },
                                 onClick = { menuExpanded = false; onSync() },
                                 leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null, tint = LimonPrimary) }

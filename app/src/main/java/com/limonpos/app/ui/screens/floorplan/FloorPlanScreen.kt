@@ -248,11 +248,6 @@ fun FloorPlanScreen(
                             onDismissRequest = { viewModel.dismissMenu() }
                         ) {
                             DropdownMenuItem(
-                                text = { Text("Table Service", color = LimonText) },
-                                onClick = { viewModel.dismissMenu() },
-                                leadingIcon = { Icon(Icons.Default.Restaurant, contentDescription = null, tint = LimonPrimary) }
-                            )
-                            DropdownMenuItem(
                                 text = { Text("Sync Data", color = LimonText) },
                                 onClick = {
                                     viewModel.dismissMenu()

@@ -130,24 +130,6 @@ fun SettingsScreen(
             }
             Spacer(modifier = Modifier.height(12.dp))
             OutlinedButton(
-                onClick = onNavigateToKds,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Default.Restaurant, contentDescription = null, modifier = Modifier.size(20.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Kitchen Display (KDS)", color = LimonText)
-            }
-            Spacer(modifier = Modifier.height(12.dp))
-            OutlinedButton(
-                onClick = onNavigateToBackOfficeSettings,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(20.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Daily Sales", color = LimonText)
-            }
-            Spacer(modifier = Modifier.height(12.dp))
-            OutlinedButton(
                 onClick = onNavigateToServerSettings,
                 modifier = Modifier.fillMaxWidth()
             ) {

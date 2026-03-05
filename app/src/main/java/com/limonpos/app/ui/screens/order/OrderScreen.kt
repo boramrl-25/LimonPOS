@@ -186,11 +186,6 @@ fun OrderScreen(
                         }
                         DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
                             DropdownMenuItem(
-                                text = { Text("Table Service", color = LimonText) },
-                                onClick = { menuExpanded = false; onNavigateToFloorPlan() },
-                                leadingIcon = { Icon(Icons.Default.Restaurant, contentDescription = null, tint = LimonPrimary) }
-                            )
-                            DropdownMenuItem(
                                 text = { Text("Settings", color = LimonText) },
                                 onClick = { menuExpanded = false; onNavigateToSettings() },
                                 leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null, tint = LimonPrimary) }

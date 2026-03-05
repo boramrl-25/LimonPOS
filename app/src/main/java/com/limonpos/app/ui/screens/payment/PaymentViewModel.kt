@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.limonpos.app.data.local.entity.OrderItemEntity
+import com.limonpos.app.data.local.entity.PaymentEntity
 import com.limonpos.app.data.repository.ApiSyncRepository
 import com.limonpos.app.data.repository.AuthRepository
 import com.limonpos.app.data.repository.OrderRepository
@@ -39,6 +40,7 @@ data class PaymentUiState(
     val orderWithItems: OrderWithItems? = null,
     val splits: List<PaymentSplit> = emptyList(),
     val completedPaymentsTotal: Double = 0.0,
+    val completedPayments: List<PaymentEntity> = emptyList(),
     val paymentMode: String = "split", // cash | card | split
     val message: String? = null,
     val paymentComplete: Boolean = false,
@@ -90,7 +92,7 @@ class PaymentViewModel @Inject constructor(
                     _uiState.update { it.copy(orderWithItems = ow, isRecalledOrder = isRecalled) }
                     paymentRepository.getPaymentsByOrder(ow.order.id).collect { payments ->
                         val total = payments.sumOf { it.amount }
-                        _uiState.update { it.copy(completedPaymentsTotal = total) }
+                        _uiState.update { it.copy(completedPaymentsTotal = total, completedPayments = payments) }
                     }
                 }
             }
@@ -117,24 +119,21 @@ class PaymentViewModel @Inject constructor(
                 "card" -> it.copy(paymentMode = "card", splits = listOf(
                     PaymentSplit(id = "split_${System.currentTimeMillis()}", amount = orderTotal, method = "card")
                 ))
-                "split" -> it.copy(paymentMode = "split", splits = it.splits.ifEmpty {
-                    listOf(PaymentSplit(id = "split_${System.currentTimeMillis()}", amount = 0.0, method = ""))
-                })
+                "split" -> it.copy(paymentMode = "split", splits = listOf(
+                    PaymentSplit(id = "split_${System.currentTimeMillis()}", amount = 0.0, method = "")
+                ))
                 else -> it
             }
         }
     }
 
-    fun addSplit() {
-        val splits = _uiState.value.splits.toMutableList()
-        splits.add(
-            PaymentSplit(
-                id = "split_${System.currentTimeMillis()}",
-                amount = 0.0,
-                method = ""
-            )
-        )
-        _uiState.update { it.copy(splits = splits) }
+    /** Ensures one current split row when in split mode (e.g. initial load or after pay). */
+    fun ensureOneSplitRow() {
+        _uiState.update {
+            if (it.paymentMode == "split" && it.splits.isEmpty()) {
+                it.copy(splits = listOf(PaymentSplit(id = "split_${System.currentTimeMillis()}", amount = 0.0, method = "")))
+            } else it
+        }
     }
 
     fun removeSplit(id: String) {
@@ -214,13 +213,10 @@ class PaymentViewModel @Inject constructor(
                     }
                 }
 
-                val newSplits = _uiState.value.splits.filter { it.id != splitId }.toMutableList()
-                newSplits.add(
-                    PaymentSplit(id = "split_${System.currentTimeMillis()}", amount = 0.0, method = "")
-                )
+                // Single next row for next payment (no Add Person)
                 _uiState.update {
                     it.copy(
-                        splits = newSplits,
+                        splits = listOf(PaymentSplit(id = "split_${System.currentTimeMillis()}", amount = 0.0, method = "")),
                         message = if (failedPrinters.isNotEmpty()) "Payment saved. Receipt failed: ${failedPrinters.joinToString(", ")}" else "Receipt printed"
                     )
                 }
@@ -331,6 +327,13 @@ class PaymentViewModel @Inject constructor(
             } catch (e: Exception) {
                 _uiState.update { it.copy(message = e.message ?: "Payment error") }
             }
+        }
+    }
+
+    fun cancelPayment(paymentId: String) {
+        viewModelScope.launch {
+            paymentRepository.deletePayment(paymentId)
+            // completedPayments updates via getPaymentsByOrder flow
         }
     }
 

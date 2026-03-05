@@ -1,14 +1,11 @@
 package com.limonpos.app.ui.screens.payment
 
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Home
@@ -28,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.limonpos.app.data.local.entity.OrderItemEntity
+import com.limonpos.app.data.local.entity.PaymentEntity
 import com.limonpos.app.ui.theme.*
 import com.limonpos.app.util.CurrencyUtils
 import kotlinx.coroutines.delay
@@ -95,11 +93,6 @@ fun PaymentScreen(
                         }
                         DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
                             DropdownMenuItem(
-                                text = { Text("Table Service", color = LimonText) },
-                                onClick = { menuExpanded = false; onNavigateToFloorPlan() },
-                                leadingIcon = { Icon(Icons.Default.Restaurant, contentDescription = null, tint = LimonPrimary) }
-                            )
-                            DropdownMenuItem(
                                 text = { Text("Sync Data", color = LimonText) },
                                 onClick = { menuExpanded = false; onSync() },
                                 leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null, tint = LimonPrimary) }
@@ -140,8 +133,14 @@ fun PaymentScreen(
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text("Order Summary", fontWeight = FontWeight.Bold, color = LimonText, fontSize = 16.sp)
                         Spacer(Modifier.height(12.dp))
-                        ow.items.forEach { item ->
-                            PaymentOrderItemRow(item)
+                        Column(
+                            modifier = Modifier
+                                .heightIn(max = 200.dp)
+                                .verticalScroll(rememberScrollState())
+                        ) {
+                            ow.items.forEach { item ->
+                                PaymentOrderItemRow(item)
+                            }
                         }
                         Spacer(Modifier.height(12.dp))
                         Row(
@@ -182,39 +181,38 @@ fun PaymentScreen(
                 }
                 Spacer(Modifier.height(16.dp))
                 if (uiState.paymentMode == "split") {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Split Payment", fontWeight = FontWeight.Bold, color = LimonText)
-                        TextButton(onClick = { viewModel.addSplit() }) {
-                            Icon(Icons.Default.Add, contentDescription = null, tint = LimonPrimary, modifier = Modifier.size(20.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("Add Person", color = LimonPrimary)
+                    LaunchedEffect(uiState.paymentMode, uiState.splits.size) {
+                        if (uiState.paymentMode == "split" && uiState.splits.isEmpty()) {
+                            viewModel.ensureOneSplitRow()
                         }
                     }
-                    Spacer(Modifier.height(12.dp))
-                }
-                uiState.splits.forEach { split ->
-                    val otherSplitsTotal = uiState.completedPaymentsTotal + uiState.splits.filter { it.id != split.id }.sumOf { it.amount }
-                    if (uiState.paymentMode == "split") {
+                    uiState.splits.firstOrNull()?.let { split ->
+                        val otherSplitsTotal = uiState.completedPaymentsTotal
                         SplitRow(
                             split = split,
                             orderTotal = ow.order.total,
                             otherSplitsTotal = otherSplitsTotal,
+                            isFirstSplit = uiState.completedPayments.isEmpty(),
                             onUpdate = { amt, method, received, change ->
                                 viewModel.updateSplit(split.id, amt, method, received, change)
                             },
-                            onRemove = { viewModel.removeSplit(split.id) },
+                            onRemove = { },
                             onPay = { viewModel.paySplit(split.id) },
-                            showRemove = uiState.splits.size > 1
+                            showRemove = false
                         )
                     }
-                    Spacer(Modifier.height(8.dp))
-                }
-                if (uiState.paymentMode == "split" && uiState.splits.isEmpty()) {
-                    Text("Tap +Add Person to add another split.", color = LimonTextSecondary, fontSize = 14.sp)
+                    if (uiState.completedPayments.isNotEmpty()) {
+                        Spacer(Modifier.height(16.dp))
+                        Text("Previous payments", fontWeight = FontWeight.Bold, color = LimonText, fontSize = 14.sp)
+                        Spacer(Modifier.height(8.dp))
+                        uiState.completedPayments.forEach { payment ->
+                            CompletedPaymentRow(
+                                payment = payment,
+                                onCancel = { viewModel.cancelPayment(payment.id) }
+                            )
+                            Spacer(Modifier.height(4.dp))
+                        }
+                    }
                 }
                 Spacer(Modifier.height(24.dp))
                 val totalPaid = if (uiState.paymentMode == "split") uiState.completedPaymentsTotal else uiState.splits.sumOf { it.amount }
@@ -310,21 +308,60 @@ private fun PaymentOrderItemRow(item: OrderItemEntity) {
     }
 }
 
+@Composable
+private fun CompletedPaymentRow(
+    payment: PaymentEntity,
+    onCancel: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = LimonSurface.copy(alpha = 0.7f)),
+        shape = RoundedCornerShape(8.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = payment.method.uppercase(),
+                    fontWeight = FontWeight.Bold,
+                    color = LimonPrimary,
+                    fontSize = 14.sp,
+                    modifier = Modifier.padding(end = 12.dp)
+                )
+                Text(CurrencyUtils.format(payment.amount), color = LimonText, fontSize = 14.sp)
+            }
+            TextButton(onClick = onCancel) {
+                Text("İptal", color = LimonError, fontSize = 14.sp)
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SplitRow(
     split: PaymentSplit,
     orderTotal: Double,
     otherSplitsTotal: Double = 0.0,
+    isFirstSplit: Boolean = false,
     onUpdate: (amount: Double, method: String, received: Double, change: Double) -> Unit,
     onRemove: () -> Unit,
     onPay: () -> Unit = {},
     showRemove: Boolean = true
 ) {
-    var amountStr by remember(split.id) { mutableStateOf(if (split.amount > 0) "%.2f".format(split.amount) else "") }
-    var method by remember(split.id) { mutableStateOf(split.method) }
     val balanceAmount = (orderTotal - otherSplitsTotal).coerceAtLeast(0.0)
+    // First split: no Balance button, amount stays empty (user types). Second+: Balance button, amount fills only when Balance pressed.
+    var amountStr by remember(split.id) {
+        mutableStateOf(if (split.amount > 0) "%.2f".format(split.amount) else "")
+    }
+    var method by remember(split.id) { mutableStateOf(split.method) }
     val methodSelected = method == "cash" || method == "card"
+    val showBalanceButton = methodSelected && !isFirstSplit
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -338,79 +375,109 @@ private fun SplitRow(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    FilterChip(
-                        selected = method == "cash",
-                        onClick = {
-                            method = "cash"
-                            val amt = if (amountStr.isBlank()) balanceAmount else amountStr.toDoubleOrNull() ?: 0.0
-                            amountStr = if (amt > 0) "%.2f".format(amt) else ""
-                            onUpdate(amt, "cash", amt, 0.0)
-                        },
-                        label = { Text("Cash", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = if (method == "cash") Color.Black else LimonText) },
-                        modifier = Modifier.weight(1f).heightIn(min = 56.dp),
-                        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = LimonPrimary, containerColor = LimonSurface, selectedLabelColor = Color.Black, labelColor = LimonText)
-                    )
-                    FilterChip(
-                        selected = method == "card",
-                        onClick = {
-                            method = "card"
-                            val amt = if (amountStr.isBlank()) balanceAmount else amountStr.toDoubleOrNull() ?: 0.0
-                            amountStr = if (amt > 0) "%.2f".format(amt) else ""
-                            onUpdate(amt, "card", 0.0, 0.0)
-                        },
-                        label = { Text("Card", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = if (method == "card") Color.Black else LimonText) },
-                        modifier = Modifier.weight(1f).heightIn(min = 56.dp),
-                        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = LimonPrimary, containerColor = LimonSurface, selectedLabelColor = Color.Black, labelColor = LimonText)
-                    )
-                }
-                if (methodSelected) {
-                    Spacer(Modifier.height(12.dp))
+                if (!methodSelected) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.Bottom
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        OutlinedTextField(
-                            value = amountStr,
-                            onValueChange = {
-                                val raw = it.toDoubleOrNull() ?: 0.0
-                                val v = raw.coerceIn(0.0, balanceAmount)
-                                amountStr = when {
-                                    it.isEmpty() -> ""
-                                    raw > balanceAmount -> "%.2f".format(v)
-                                    else -> it
-                                }
-                                onUpdate(v, method, v, 0.0)
-                            },
-                            label = { Text("Amount") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            singleLine = true,
-                            modifier = Modifier.weight(1f),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = LimonText,
-                                unfocusedTextColor = LimonText,
-                                focusedBorderColor = LimonPrimary,
-                                unfocusedBorderColor = LimonTextSecondary
-                            )
-                        )
-                        Button(
+                        FilterChip(
+                            selected = method == "cash",
                             onClick = {
-                                amountStr = "%.2f".format(balanceAmount)
-                                onUpdate(balanceAmount, method, balanceAmount, 0.0)
+                                method = "cash"
+                                val amt = if (amountStr.isBlank()) (if (isFirstSplit) 0.0 else balanceAmount) else amountStr.toDoubleOrNull() ?: 0.0
+                                amountStr = if (amt > 0) "%.2f".format(amt) else amountStr
+                                onUpdate(amt, "cash", amt, 0.0)
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = LimonPrimary)
+                            label = { Text("Cash", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = if (method == "cash") Color.Black else LimonText) },
+                            modifier = Modifier.weight(1f).heightIn(min = 56.dp),
+                            colors = FilterChipDefaults.filterChipColors(selectedContainerColor = LimonPrimary, containerColor = LimonSurface, selectedLabelColor = Color.Black, labelColor = LimonText)
+                        )
+                        FilterChip(
+                            selected = method == "card",
+                            onClick = {
+                                method = "card"
+                                val amt = if (amountStr.isBlank()) (if (isFirstSplit) 0.0 else balanceAmount) else amountStr.toDoubleOrNull() ?: 0.0
+                                amountStr = if (amt > 0) "%.2f".format(amt) else amountStr
+                                onUpdate(amt, "card", 0.0, 0.0)
+                            },
+                            label = { Text("Card", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = if (method == "card") Color.Black else LimonText) },
+                            modifier = Modifier.weight(1f).heightIn(min = 56.dp),
+                            colors = FilterChipDefaults.filterChipColors(selectedContainerColor = LimonPrimary, containerColor = LimonSurface, selectedLabelColor = Color.Black, labelColor = LimonText)
+                        )
+                    }
+                } else {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("Balance", color = Color.Black)
+                            FilterChip(
+                                selected = true,
+                                onClick = { },
+                                label = { Text(if (method == "cash") "Cash" else "Card", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color.Black) },
+                                modifier = Modifier.heightIn(min = 52.dp),
+                                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = LimonPrimary, containerColor = LimonSurface, selectedLabelColor = Color.Black, labelColor = LimonText)
+                            )
+                            OutlinedTextField(
+                                value = amountStr,
+                                onValueChange = {
+                                    val raw = it.toDoubleOrNull() ?: 0.0
+                                    val v = raw.coerceIn(0.0, balanceAmount)
+                                    amountStr = when {
+                                        it.isEmpty() -> ""
+                                        raw > balanceAmount -> "%.2f".format(v)
+                                        else -> it
+                                    }
+                                    val received = if (method == "cash") v else 0.0
+                                    onUpdate(v, method, received, 0.0)
+                                },
+                                label = { Text("Amount") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                singleLine = true,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .widthIn(min = 140.dp)
+                                    .heightIn(min = 56.dp),
+                                textStyle = LocalTextStyle.current.copy(fontSize = 18.sp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedTextColor = LimonText,
+                                    unfocusedTextColor = LimonText,
+                                    focusedBorderColor = LimonPrimary,
+                                    unfocusedBorderColor = LimonTextSecondary
+                                )
+                            )
                         }
-                        Button(
-                            onClick = onPay,
-                            colors = ButtonDefaults.buttonColors(containerColor = LimonSuccess)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("Pay", color = Color.Black, fontWeight = FontWeight.Bold)
+                            if (showBalanceButton) {
+                                Button(
+                                    onClick = {
+                                        amountStr = "%.2f".format(balanceAmount)
+                                        val received = if (method == "cash") balanceAmount else 0.0
+                                        onUpdate(balanceAmount, method, received, 0.0)
+                                    },
+                                    modifier = Modifier.heightIn(min = 48.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = LimonPrimary)
+                                ) {
+                                    Text("Balance", color = Color.Black, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                            Button(
+                                onClick = onPay,
+                                modifier = Modifier.heightIn(min = 48.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = LimonSuccess)
+                            ) {
+                                Text("Pay", color = Color.Black, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }
