@@ -50,6 +50,8 @@ export default function DashboardPage() {
     totalVoidAmount: number;
     totalRefundAmount: number;
     paidTickets?: PaidTicket[];
+    lastEod?: { ran_at: number; user_name: string; tables_closed_count: number } | null;
+    openTablesCount?: number;
     categorySales: Array<{ categoryId: string; categoryName: string; totalAmount: number; totalQuantity: number }>;
     itemSales: Array<{ productId: string; productName: string; totalAmount: number; totalQuantity: number }>;
     voids: Array<{ id: string; order_id?: string; type: string; product_name: string; quantity: number; amount: number; user_name: string; created_at: number }>;
