@@ -121,7 +121,7 @@ class FloorPlanViewModel @Inject constructor(
                 val minutes = apiSyncRepository.getOverdueUndeliveredMinutes()
                 val list = orderRepository.getOverdueUndelivered(minutes * 60 * 1000L)
                 if (list.isNotEmpty()) _overdueWarning.value = list
-                delay(60 * 1000L) // re-check every 1 minute
+                delay(30 * 1000L) // re-check every 30 seconds so 1-min setting triggers warning soon
             }
         }
     }

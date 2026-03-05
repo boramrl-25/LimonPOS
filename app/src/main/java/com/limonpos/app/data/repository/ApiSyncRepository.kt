@@ -45,7 +45,8 @@ class ApiSyncRepository @Inject constructor(
 
     private var cachedOverdueMinutes: Int? = null
     private var cachedOverdueMinutesAt: Long = 0L
-    private val OVERDUE_CACHE_MS = 5 * 60 * 1000L
+    /** Cache 1 dakika: Web’de 1 dk seçildiğinde kısa sürede güncel değer kullanılsın, uyarı zamanında çıksın. */
+    private val OVERDUE_CACHE_MS = 60 * 1000L
 
     /** Web’deki Ayarlar’da tanımlı “masaya gitmeyen ürün uyarı süresi” (dakika). Offline veya hata durumunda 10. */
     suspend fun getOverdueUndeliveredMinutes(): Int {

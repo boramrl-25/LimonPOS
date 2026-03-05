@@ -41,6 +41,31 @@ fun PaymentScreen(
     onSync: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val receiptWarning by viewModel.receiptPrintWarningState.collectAsState(null)
+
+    receiptWarning?.let { warning ->
+        key(warning.id) {
+            AlertDialog(
+                onDismissRequest = { viewModel.dismissReceiptWarning() },
+                title = { Text("Receipt print failed", color = LimonText) },
+                text = { Text(warning.message, color = LimonTextSecondary) },
+                confirmButton = {
+                    Button(
+                        onClick = { viewModel.retryReceiptPrint() },
+                        colors = ButtonDefaults.buttonColors(containerColor = LimonPrimary)
+                    ) {
+                        Text("Retry", color = Color.Black)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { viewModel.dismissReceiptWarning() }) {
+                        Text("Dismiss", color = LimonTextSecondary)
+                    }
+                },
+                containerColor = LimonSurface
+            )
+        }
+    }
 
     LaunchedEffect(uiState.redirectToOrder) {
         if (uiState.redirectToOrder) {
@@ -217,35 +242,39 @@ fun PaymentScreen(
                 Spacer(Modifier.height(24.dp))
                 val totalPaid = if (uiState.paymentMode == "split") uiState.completedPaymentsTotal else uiState.splits.sumOf { it.amount }
                 val remainder = ow.order.total - totalPaid
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = LimonSurface.copy(alpha = 0.5f)),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Amount Paid:", color = LimonTextSecondary, fontSize = 14.sp)
-                            Text(CurrencyUtils.format(totalPaid), color = LimonText, fontSize = 14.sp)
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Balance:", fontWeight = FontWeight.Bold, color = LimonText, fontSize = 16.sp)
-                            Text(
-                                CurrencyUtils.format(remainder),
-                                color = when {
-                                    kotlin.math.abs(remainder) < 0.01 -> LimonSuccess
-                                    remainder < 0 -> LimonError
-                                    else -> LimonPrimary
-                                },
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp
-                            )
+                // Split ilk seçenekte (henüz ödeme yokken) Balance kartı gösterme; direkt ödeme alınsın
+                val showBalanceCard = uiState.paymentMode != "split" || uiState.completedPayments.isNotEmpty()
+                if (showBalanceCard) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = LimonSurface.copy(alpha = 0.5f)),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Amount Paid:", color = LimonTextSecondary, fontSize = 14.sp)
+                                Text(CurrencyUtils.format(totalPaid), color = LimonText, fontSize = 14.sp)
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Balance:", fontWeight = FontWeight.Bold, color = LimonText, fontSize = 16.sp)
+                                Text(
+                                    CurrencyUtils.format(remainder),
+                                    color = when {
+                                        kotlin.math.abs(remainder) < 0.01 -> LimonSuccess
+                                        remainder < 0 -> LimonError
+                                        else -> LimonPrimary
+                                    },
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp
+                                )
+                            }
                         }
                     }
                 }
@@ -384,8 +413,9 @@ private fun SplitRow(
                             selected = method == "cash",
                             onClick = {
                                 method = "cash"
-                                val amt = if (amountStr.isBlank()) (if (isFirstSplit) 0.0 else balanceAmount) else amountStr.toDoubleOrNull() ?: 0.0
-                                amountStr = if (amt > 0) "%.2f".format(amt) else amountStr
+                                // İkinci/üçüncü split: amount otomatik gelmesin, sadece Balance butonuna basınca dolsun
+                                val amt = if (amountStr.isBlank()) 0.0 else amountStr.toDoubleOrNull() ?: 0.0
+                                if (isFirstSplit && amt > 0) amountStr = "%.2f".format(amt)
                                 onUpdate(amt, "cash", amt, 0.0)
                             },
                             label = { Text("Cash", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = if (method == "cash") Color.Black else LimonText) },
@@ -396,8 +426,9 @@ private fun SplitRow(
                             selected = method == "card",
                             onClick = {
                                 method = "card"
-                                val amt = if (amountStr.isBlank()) (if (isFirstSplit) 0.0 else balanceAmount) else amountStr.toDoubleOrNull() ?: 0.0
-                                amountStr = if (amt > 0) "%.2f".format(amt) else amountStr
+                                // İkinci/üçüncü split: amount otomatik gelmesin, sadece Balance butonuna basınca dolsun
+                                val amt = if (amountStr.isBlank()) 0.0 else amountStr.toDoubleOrNull() ?: 0.0
+                                if (isFirstSplit && amt > 0) amountStr = "%.2f".format(amt)
                                 onUpdate(amt, "card", 0.0, 0.0)
                             },
                             label = { Text("Card", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = if (method == "card") Color.Black else LimonText) },
