@@ -56,7 +56,7 @@ export default function DashboardPage() {
     lastEod?: { ran_at: number; user_name: string; tables_closed_count: number } | null;
     openTablesCount?: number;
     categorySales: Array<{ categoryId: string; categoryName: string; totalAmount: number; totalQuantity: number }>;
-    itemSales: Array<{ productId: string; productName: string; totalAmount: number; totalQuantity: number }>;
+    itemSales: Array<{ productId: string; productName: string; categoryId?: string; totalAmount: number; totalQuantity: number }>;
     voids: Array<{ id: string; order_id?: string; type: string; product_name: string; quantity: number; amount: number; user_name: string; created_at: number }>;
     refunds: Array<{ id: string; order_id?: string; type: string; product_name?: string; amount: number; user_name: string; source_table_number?: string; created_at: number }>;
   } | null>(null);
@@ -72,6 +72,7 @@ export default function DashboardPage() {
   const [closedBillChanges, setClosedBillChanges] = useState<{ count: number; summary: { fullRefunds: number; itemRefunds: number }; changes: Array<{ id: string; order_id: string; receipt_no: string | null; table_number: string; type: string; product_name: string | null; amount: number; user_name: string; created_at: number }> } | null>(null);
   const [closedBillChangesModal, setClosedBillChangesModal] = useState(false);
   const [approvalRequestsCountPrev, setApprovalRequestsCountPrev] = useState(0);
+  const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(null);
   const router = useRouter();
 
   const fetchData = useCallback(async () => {
@@ -328,96 +329,52 @@ export default function DashboardPage() {
 
               {dailySales.categorySales.length > 0 && (
                 <>
-                  <h3 className="text-base font-semibold text-slate-200">Category Sales</h3>
+                  <h3 className="text-base font-semibold text-slate-200">Category Sales (tap to see items)</h3>
                   <div className="space-y-2">
-                    {dailySales.categorySales.map((row) => (
-                      <div
-                        key={row.categoryId}
-                        className="flex justify-between items-center p-4 rounded-lg bg-slate-800/40 border border-slate-700"
-                      >
-                        <div>
-                          <p className="font-medium text-white">{row.categoryName || row.categoryId}</p>
-                          <p className="text-slate-500 text-sm">Qty: {row.totalQuantity}</p>
+                    {dailySales.categorySales.map((row) => {
+                      const isExpanded = expandedCategoryId === row.categoryId;
+                      const categoryItems = (dailySales.itemSales || []).filter(
+                        (item) => (item.categoryId || "") === row.categoryId
+                      );
+                      return (
+                        <div key={row.categoryId} className="rounded-lg bg-slate-800/40 border border-slate-700 overflow-hidden">
+                          <button
+                            type="button"
+                            onClick={() => setExpandedCategoryId(isExpanded ? null : row.categoryId)}
+                            className="flex justify-between items-center p-4 w-full text-left hover:bg-slate-700/40 transition-colors"
+                          >
+                            <div>
+                              <p className="font-medium text-white">{row.categoryName || row.categoryId}</p>
+                              <p className="text-slate-500 text-sm">Qty: {row.totalQuantity}</p>
+                            </div>
+                            <p className="font-bold text-sky-400">{fmt(row.totalAmount)} AED</p>
+                            <span className="text-slate-400 text-sm ml-2">{isExpanded ? "▼" : "▶"}</span>
+                          </button>
+                          {isExpanded && categoryItems.length > 0 && (
+                            <div className="border-t border-slate-700 p-3 bg-slate-900/50">
+                              <p className="text-slate-400 text-sm font-medium mb-2">Items in this category</p>
+                              <div className="space-y-1.5">
+                                {categoryItems.map((item) => (
+                                  <div
+                                    key={item.productId}
+                                    className="flex justify-between items-center py-2 px-3 rounded bg-slate-800/60"
+                                  >
+                                    <span className="text-slate-200 text-sm">{item.productName}</span>
+                                    <span className="text-slate-400 text-sm">x{item.totalQuantity}</span>
+                                    <span className="text-sky-400 font-medium text-sm">{fmt(item.totalAmount)} AED</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {isExpanded && categoryItems.length === 0 && (
+                            <div className="border-t border-slate-700 p-3 bg-slate-900/50 text-slate-500 text-sm">
+                              No item breakdown for this category.
+                            </div>
+                          )}
                         </div>
-                        <p className="font-bold text-sky-400">{fmt(row.totalAmount)} AED</p>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-
-              {dailySales.itemSales.length > 0 && (
-                <>
-                  <h3 className="text-base font-semibold text-slate-200">Item Sales</h3>
-                  <div className="space-y-2">
-                    {dailySales.itemSales.slice(0, 20).map((row) => (
-                      <div
-                        key={row.productId}
-                        className="flex justify-between items-center p-4 rounded-lg bg-slate-800/40 border border-slate-700"
-                      >
-                        <div>
-                          <p className="font-medium text-white">{row.productName}</p>
-                          <p className="text-slate-500 text-sm">x{row.totalQuantity}</p>
-                        </div>
-                        <p className="font-bold text-sky-400">{fmt(row.totalAmount)} AED</p>
-                      </div>
-                    ))}
-                    {dailySales.itemSales.length > 20 && (
-                      <p className="text-slate-500 text-sm">+{dailySales.itemSales.length - 20} more items</p>
-                    )}
-                  </div>
-                </>
-              )}
-
-              {dailySales.voids.length > 0 && (
-                <>
-                  <h3 className="text-base font-semibold text-slate-200">Void Details</h3>
-                  <div className="space-y-2">
-                    {dailySales.voids.map((v) => (
-                      <div
-                        key={v.id}
-                        className="p-4 rounded-lg bg-slate-800/40 border border-slate-700"
-                      >
-                        <div className="flex justify-between">
-                          <span className="text-amber-400 font-medium">
-                            {v.type === "pre_void" ? "Pre-Void" : v.type === "post_void" ? "Post-Void" : v.type}
-                          </span>
-                          <span className="text-slate-500 text-sm">
-                            {new Date(v.created_at).toLocaleTimeString()}
-                          </span>
-                        </div>
-                        {v.product_name && <p className="text-slate-400 text-sm">{v.product_name} x{v.quantity || 1}</p>}
-                        <p className="text-red-400">Amount: {fmt(v.amount || 0)} AED</p>
-                        <p className="text-slate-500 text-xs">By: {v.user_name}</p>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-
-              {dailySales.refunds.length > 0 && (
-                <>
-                  <h3 className="text-base font-semibold text-slate-200">Refund Details</h3>
-                  <div className="space-y-2">
-                    {dailySales.refunds.map((v) => (
-                      <div
-                        key={v.id}
-                        className="p-4 rounded-lg bg-slate-800/40 border border-slate-700"
-                      >
-                        <div className="flex justify-between">
-                          <span className="text-red-400 font-medium">
-                            {v.type === "refund_full" ? "Full Bill Refund" : "Refund"}
-                          </span>
-                          <span className="text-slate-500 text-sm">
-                            {new Date(v.created_at).toLocaleTimeString()}
-                          </span>
-                        </div>
-                        {v.product_name && <p className="text-slate-400 text-sm">{v.product_name}</p>}
-                        {v.source_table_number && <p className="text-slate-400 text-sm">Table {v.source_table_number}</p>}
-                        <p className="text-red-400">Amount: {fmt(v.amount || 0)} AED</p>
-                        <p className="text-slate-500 text-xs">By: {v.user_name}</p>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </>
               )}

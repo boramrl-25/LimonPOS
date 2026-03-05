@@ -397,16 +397,16 @@ export default function CategoriesPage() {
 
       {editing !== undefined && (
         <div
-          className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"
+          className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 overflow-y-auto"
           onClick={() => setEditing(undefined)}
           role="presentation"
         >
           <div
-            className="bg-slate-900 rounded-xl border border-slate-700 p-6 max-w-md w-full"
+            className="bg-slate-900 rounded-xl border border-slate-700 max-w-md w-full max-h-[90vh] flex flex-col my-4"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 className="text-xl font-bold text-sky-400 mb-4">{editing ? "Edit Category" : "New Category"}</h2>
-            <div className="space-y-4">
+            <h2 className="text-xl font-bold text-sky-400 mb-4 p-6 pb-0 shrink-0">{editing ? "Edit Category" : "New Category"}</h2>
+            <div className="space-y-4 p-6 flex-1 overflow-y-auto min-h-0">
               <div>
                 <label className="block text-sm text-slate-400 mb-1">Name</label>
                 <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white" placeholder="Category name" />
@@ -478,7 +478,7 @@ export default function CategoriesPage() {
                 </div>
               </div>
             </div>
-            <div className="flex gap-2 mt-6">
+            <div className="flex gap-2 p-6 pt-4 shrink-0 border-t border-slate-700">
               <button onClick={save} className="flex-1 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium">Save</button>
               <button onClick={() => setEditing(undefined)} className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white">Cancel</button>
             </div>
