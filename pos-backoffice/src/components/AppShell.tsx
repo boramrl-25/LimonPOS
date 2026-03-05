@@ -8,15 +8,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const hideSidebar = pathname === "/login" || pathname === "/setup";
 
   if (hideSidebar) {
-    return <div className="flex-1 min-h-screen">{children}</div>;
+    return <div className="flex-1 min-h-screen overflow-y-auto">{children}</div>;
   }
 
   return (
-    <div className="flex">
+    <div className="flex min-h-screen">
       <div className="hidden md:block">
         <Sidebar />
       </div>
-      <div className="flex-1">{children}</div>
+      <div className="flex-1 min-h-0 overflow-y-auto">{children}</div>
     </div>
   );
 }
