@@ -295,6 +295,22 @@ export async function deletePaymentMethod(id: string) {
   if (!res.ok) throw new Error("Failed to delete payment method");
 }
 
+export async function getSettings(): Promise<{ timezone_offset_minutes: number }> {
+  const res = await fetchWithTimeout(`${API_URL}/settings`, { headers: headers() });
+  if (!res.ok) throw new Error("Failed to fetch settings");
+  return res.json();
+}
+
+export async function updateSettings(settings: { timezone_offset_minutes?: number }) {
+  const res = await fetchWithTimeout(`${API_URL}/settings`, {
+    method: "PATCH",
+    headers: headers(),
+    body: JSON.stringify(settings),
+  });
+  if (!res.ok) throw new Error("Failed to update settings");
+  return res.json();
+}
+
 export async function getDashboardStats() {
   const res = await fetchWithTimeout(`${API_URL}/dashboard/stats`, { headers: headers() });
   if (!res.ok) throw new Error("Failed to fetch dashboard stats");

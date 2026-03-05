@@ -8,6 +8,7 @@ node_modules/
 
 # Build / output
 backend/data.json
+backend/data.json.backup
 pos-backoffice/.next/
 pos-backoffice/out/
 app/build/

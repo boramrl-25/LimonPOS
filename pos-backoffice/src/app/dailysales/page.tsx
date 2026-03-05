@@ -13,6 +13,7 @@ type DailySalesData = {
   totalCash: number;
   totalCard: number;
   totalSales: number;
+  netSales?: number;
   totalVoidAmount: number;
   totalRefundAmount: number;
   categorySales: Array<{ categoryId: string; categoryName: string; totalAmount: number; totalQuantity: number }>;
@@ -84,7 +85,7 @@ export default function DailySalesPage() {
             {/* Summary Cards */}
             <section>
               <h2 className="text-lg font-semibold text-slate-200 mb-4">Today&apos;s Summary</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
                 <div className="p-5 rounded-xl bg-slate-800/60 border border-slate-700">
                   <p className="text-slate-400 text-sm">Cash</p>
                   <p className="text-2xl font-bold text-white">{fmt(data.totalCash)}</p>
@@ -97,6 +98,12 @@ export default function DailySalesPage() {
                   <p className="text-slate-400 text-sm">Total Sales</p>
                   <p className="text-2xl font-bold text-emerald-400">{fmt(data.totalSales)}</p>
                 </div>
+                {typeof data.netSales === "number" && (
+                  <div className="p-5 rounded-xl bg-slate-800/60 border border-slate-700">
+                    <p className="text-slate-400 text-sm">Net (iade düşülmüş)</p>
+                    <p className="text-2xl font-bold text-sky-400">{fmt(data.netSales)}</p>
+                  </div>
+                )}
                 <div className="p-5 rounded-xl bg-slate-800/60 border border-slate-700">
                   <p className="text-slate-400 text-sm">Total Void</p>
                   <p className="text-xl font-bold text-red-400">{fmt(data.totalVoidAmount)}</p>

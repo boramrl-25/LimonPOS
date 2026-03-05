@@ -59,6 +59,7 @@ const defaultData = {
   devices: [],
   setup_complete: false,
   audit_log: [],
+  settings: { timezone_offset_minutes: 0 },
 };
 
 let db;

@@ -24,6 +24,43 @@ app.use(express.json());
 
 const DEFAULT_ADMIN = { id: "u1", name: "Admin", pin: "1234", role: "admin", active: 1, permissions: "[\"post_void\",\"pre_void\"]", cash_drawer_permission: 1 };
 
+/** Bugünün başlangıç timestamp'i (iş saatleri timezone'una göre). settings.timezone_offset_minutes kullanılır (örn. 180 = GMT+3). */
+function getTodayStartTimestamp() {
+  const offsetMin = (db.data?.settings?.timezone_offset_minutes ?? 0) | 0;
+  const now = Date.now();
+  const dayMs = 24 * 60 * 60 * 1000;
+  const localNow = now + offsetMin * 60 * 1000;
+  return Math.floor(localNow / dayMs) * dayMs - offsetMin * 60 * 1000;
+}
+
+/** Tek kaynak: bugünkü ödemeler + iade/void. Dashboard ve daily-sales aynı mantığı kullanır. */
+function getTodaySalesSummary() {
+  const orders = db.data.orders || [];
+  const payments = db.data.payments || [];
+  const voidLogs = db.data.void_logs || [];
+  const todayTs = getTodayStartTimestamp();
+  const paidToday = orders.filter((o) => {
+    if (o.status !== "paid") return false;
+    const paidAt = o.paid_at ?? o.updated_at ?? o.created_at ?? 0;
+    return paidAt >= todayTs;
+  });
+  const paidOrderIds = new Set(paidToday.map((o) => o.id));
+  let totalCash = 0;
+  let totalCard = 0;
+  for (const p of payments) {
+    if (!paidOrderIds.has(p.order_id)) continue;
+    const m = (p.method || "").toLowerCase();
+    if (m === "cash") totalCash += p.amount || 0;
+    else if (m === "card") totalCard += p.amount || 0;
+  }
+  const totalSales = totalCash + totalCard;
+  const todayVoids = voidLogs.filter((v) => v.created_at >= todayTs);
+  const totalVoidAmount = todayVoids.filter((v) => v.type !== "refund_full" && v.type !== "recalled_void").reduce((s, v) => s + (v.amount || 0), 0);
+  const totalRefundAmount = todayVoids.filter((v) => v.type === "refund_full" || v.type === "refund").reduce((s, v) => s + (v.amount || 0), 0);
+  const netSales = totalSales - totalRefundAmount;
+  return { todayTs, paidOrderIds, totalCash, totalCard, totalSales, totalVoidAmount, totalRefundAmount, netSales, paidToday };
+}
+
 async function ensureData() {
   await db.read();
   if (!db.data) db.data = { users: [], categories: [], products: [], printers: [], payment_methods: [], orders: [], order_items: [], payments: [], tables: [], void_logs: [], void_requests: [], zoho_config: {}, migrations: {}, devices: [], floor_plan_sections: null };
@@ -55,6 +92,10 @@ async function ensureData() {
   // Tables: only fill defaults when truly empty AND no orders (first run). If we have orders but tables empty (e.g. bad restart), rebuild from orders so data is not lost.
   if (!Array.isArray(db.data.tables)) db.data.tables = [];
   if (!Array.isArray(db.data.audit_log)) db.data.audit_log = [];
+  if (!db.data.settings || typeof db.data.settings.timezone_offset_minutes !== "number") {
+    db.data.settings = db.data.settings || {};
+    db.data.settings.timezone_offset_minutes = (db.data.settings.timezone_offset_minutes ?? 0) | 0;
+  }
   if (db.data.tables.length === 0) {
     const defaultTable = (i) => ({
       id: `main-${i + 1}`,
@@ -529,31 +570,42 @@ app.delete("/api/modifier-groups/:id", authMiddleware, async (req, res) => {
   res.status(204).send();
 });
 
-// Dashboard stats
+// Settings (timezone vb.)
+app.get("/api/settings", authMiddleware, async (req, res) => {
+  await ensureData();
+  const settings = db.data.settings || {};
+  res.json({ timezone_offset_minutes: settings.timezone_offset_minutes ?? 0 });
+});
+
+app.patch("/api/settings", authMiddleware, async (req, res) => {
+  await ensureData();
+  db.data.settings = db.data.settings || {};
+  if (typeof req.body.timezone_offset_minutes === "number") {
+    db.data.settings.timezone_offset_minutes = Math.round(req.body.timezone_offset_minutes);
+    if (db.data.settings.timezone_offset_minutes < -720) db.data.settings.timezone_offset_minutes = -720;
+    if (db.data.settings.timezone_offset_minutes > 840) db.data.settings.timezone_offset_minutes = 840;
+  }
+  await db.write();
+  res.json({ timezone_offset_minutes: db.data.settings.timezone_offset_minutes ?? 0 });
+});
+
+// Dashboard stats (tek kaynak: getTodaySalesSummary)
 app.get("/api/dashboard/stats", authMiddleware, async (req, res) => {
   await ensureData();
-  const orders = db.data.orders || [];
-  const payments = db.data.payments || [];
+  const summary = getTodaySalesSummary();
   const tables = db.data.tables || [];
+  const orders = db.data.orders || [];
   const voidLogs = db.data.void_logs || [];
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-  const todayTs = todayStart.getTime();
-  const paidToday = orders.filter((o) => o.status === "paid" && o.paid_at >= todayTs);
-  const todaySales = paidToday.reduce((s, o) => s + (o.total || 0), 0);
   const paymentByMethod = {};
-  for (const p of payments) {
-    const o = orders.find((x) => x.id === p.order_id);
-    if (!o || o.status !== "paid" || o.paid_at < todayTs) continue;
-    paymentByMethod[p.method] = (paymentByMethod[p.method] || 0) + (p.amount || 0);
-  }
+  if (summary.totalCash) paymentByMethod.cash = summary.totalCash;
+  if (summary.totalCard) paymentByMethod.card = summary.totalCard;
   const openTables = tables.filter((t) => t.status === "occupied" || t.current_order_id).length;
   const openChecks = orders.filter((o) => o.status === "open" || o.status === "sent").length;
   const preVoids = voidLogs.filter((v) => v.type === "pre_void").length;
   const postVoids = voidLogs.filter((v) => v.type === "post_void").length;
   res.json({
-    todaySales,
-    orderCount: paidToday.length,
+    todaySales: summary.netSales,
+    orderCount: summary.paidToday.length,
     openTables,
     openChecks,
     paymentBreakdown: paymentByMethod,
@@ -562,29 +614,15 @@ app.get("/api/dashboard/stats", authMiddleware, async (req, res) => {
   });
 });
 
-// Daily Sales (matches app Daily Sales screen)
+// Daily Sales (tek kaynak: getTodaySalesSummary, timezone + void düzgün)
 app.get("/api/dashboard/daily-sales", authMiddleware, async (req, res) => {
   await ensureData();
+  const summary = getTodaySalesSummary();
   const orders = db.data.orders || [];
   const orderItems = db.data.order_items || [];
-  const payments = db.data.payments || [];
   const products = db.data.products || [];
   const categories = db.data.categories || [];
   const voidLogs = db.data.void_logs || [];
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-  const todayTs = todayStart.getTime();
-
-  const paidOrderIds = new Set(orders.filter((o) => o.status === "paid" && o.paid_at >= todayTs).map((o) => o.id));
-  let totalCash = 0;
-  let totalCard = 0;
-  for (const p of payments) {
-    if (!paidOrderIds.has(p.order_id)) continue;
-    const m = (p.method || "").toLowerCase();
-    if (m === "cash") totalCash += p.amount || 0;
-    else if (m === "card") totalCard += p.amount || 0;
-  }
-  const totalSales = totalCash + totalCard;
 
   const catMap = Object.fromEntries((categories || []).map((c) => [c.id, c.name]));
   const prodCat = Object.fromEntries((products || []).map((p) => [p.id, p.category_id]));
@@ -592,7 +630,7 @@ app.get("/api/dashboard/daily-sales", authMiddleware, async (req, res) => {
   const itemSales = {};
   for (const oi of orderItems) {
     const order = orders.find((o) => o.id === oi.order_id);
-    if (!order || !paidOrderIds.has(order.id)) continue;
+    if (!order || !summary.paidOrderIds.has(order.id)) continue;
     const amt = (oi.quantity || 0) * (oi.price || 0);
     const qty = oi.quantity || 0;
     const catId = prodCat[oi.product_id] || "uncategorized";
@@ -609,18 +647,17 @@ app.get("/api/dashboard/daily-sales", authMiddleware, async (req, res) => {
   const categorySalesList = Object.values(categorySales).sort((a, b) => b.totalAmount - a.totalAmount);
   const itemSalesList = Object.values(itemSales).sort((a, b) => b.totalAmount - a.totalAmount);
 
-  const todayVoids = voidLogs.filter((v) => v.created_at >= todayTs);
-  const totalVoidAmount = todayVoids.filter((v) => v.type !== "refund_full" && v.type !== "recalled_void").reduce((s, v) => s + (v.amount || 0), 0);
-  const totalRefundAmount = todayVoids.filter((v) => v.type === "refund_full" || v.type === "refund").reduce((s, v) => s + (v.amount || 0), 0);
+  const todayVoids = voidLogs.filter((v) => v.created_at >= summary.todayTs);
   const voids = todayVoids.filter((v) => v.type === "pre_void" || v.type === "post_void" || v.type === "recalled_void");
   const refunds = todayVoids.filter((v) => v.type === "refund" || v.type === "refund_full");
 
   res.json({
-    totalCash,
-    totalCard,
-    totalSales,
-    totalVoidAmount,
-    totalRefundAmount,
+    totalCash: summary.totalCash,
+    totalCard: summary.totalCard,
+    totalSales: summary.totalSales,
+    netSales: summary.netSales,
+    totalVoidAmount: summary.totalVoidAmount,
+    totalRefundAmount: summary.totalRefundAmount,
     categorySales: categorySalesList,
     itemSales: itemSalesList,
     voids,
