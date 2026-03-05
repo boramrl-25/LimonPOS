@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.limonpos.app.data.local.entity.OrderEntity
+import com.limonpos.app.data.local.entity.PaymentEntity
 import com.limonpos.app.data.local.entity.TableEntity
 import com.limonpos.app.data.repository.OrderWithItems
 import com.limonpos.app.ui.theme.*
@@ -45,6 +46,7 @@ fun ClosedBillsScreen(
 ) {
     val paidOrders by viewModel.paidOrders.collectAsState(emptyList())
     val selectedOrderWithItems by viewModel.selectedOrderWithItems.collectAsState()
+    val paymentsForSelectedOrder by viewModel.paymentsForSelectedOrder.collectAsState(emptyList())
     val message by viewModel.message.collectAsState()
     val pinError by viewModel.pinError.collectAsState()
     val accessGranted by viewModel.accessGranted.collectAsState(false)
@@ -215,9 +217,11 @@ fun ClosedBillsScreen(
     selectedOrderWithItems?.let { ow ->
         BillDetailDialog(
             orderWithItems = ow,
+            payments = paymentsForSelectedOrder,
             onDismiss = { viewModel.dismissBillDialog() },
             onRefundItem = { orderId, itemId -> viewModel.refundItemFromClosedBill(orderId, itemId) },
-            onRefundFull = { orderId -> viewModel.refundFullClosedBill(orderId) }
+            onRefundFull = { orderId -> viewModel.refundFullClosedBill(orderId) },
+            onChangePaymentMethod = { orderId, paymentId, newMethod -> viewModel.changePaymentMethod(orderId, paymentId, newMethod) }
         )
     }
 
@@ -283,9 +287,11 @@ fun ClosedBillsScreen(
 @Composable
 private fun BillDetailDialog(
     orderWithItems: OrderWithItems,
+    payments: List<PaymentEntity>,
     onDismiss: () -> Unit,
     onRefundItem: (orderId: String, itemId: String) -> Unit,
-    onRefundFull: (orderId: String) -> Unit
+    onRefundFull: (orderId: String) -> Unit,
+    onChangePaymentMethod: (orderId: String, paymentId: String, newMethod: String) -> Unit
 ) {
     val order = orderWithItems.order
     val items = orderWithItems.items
@@ -333,6 +339,33 @@ private fun BillDetailDialog(
                 }
                 Spacer(Modifier.height(8.dp))
                 Divider(color = LimonTextSecondary.copy(alpha = 0.3f))
+                if (payments.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text("Payments", color = LimonText, fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                    payments.forEach { payment ->
+                        val methodLabel = payment.method.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("$methodLabel AED ${String.format("%.2f", payment.amount)}", color = LimonText, fontSize = 14.sp)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (payment.method.lowercase() == "card") {
+                                    TextButton(onClick = { onChangePaymentMethod(order.id, payment.id, "cash") }) {
+                                        Text("Change to Cash", fontSize = 12.sp, color = LimonPrimary)
+                                    }
+                                } else {
+                                    TextButton(onClick = { onChangePaymentMethod(order.id, payment.id, "card") }) {
+                                        Text("Change to Card", fontSize = 12.sp, color = LimonPrimary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Divider(color = LimonTextSecondary.copy(alpha = 0.3f))
+                }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("Subtotal", color = LimonTextSecondary, fontSize = 14.sp)
                     Text("AED ${String.format("%.2f", order.subtotal)}", color = LimonText, fontSize = 14.sp)

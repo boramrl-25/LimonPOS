@@ -150,6 +150,10 @@ fun NavGraph(
                     OrderScreen(
                         onBack = { navController.popBackStack() },
                         onNavigateToFloorPlan = { navController.navigate(Routes.FLOOR_PLAN) { popUpTo(Routes.FLOOR_PLAN) { inclusive = true }; launchSingleTop = true } },
+                        onNavigateToTable = { targetTableId ->
+                            navController.popBackStack()
+                            navController.navigate(Routes.order(targetTableId))
+                        },
                         onNavigateToPayment = { tid -> navController.navigate(Routes.payment(tid)) },
                         onNavigateToSettings = { navController.navigate(Routes.SETTINGS) },
                         onSync = onSync

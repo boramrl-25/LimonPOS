@@ -8,8 +8,10 @@ import com.limonpos.app.data.local.entity.TableEntity
 import com.limonpos.app.data.local.dao.ClosedBillAccessRequestDao
 import com.limonpos.app.data.repository.ApiSyncRepository
 import com.limonpos.app.data.repository.AuthRepository
+import com.limonpos.app.data.local.entity.PaymentEntity
 import com.limonpos.app.data.repository.OrderRepository
 import com.limonpos.app.data.repository.OrderWithItems
+import com.limonpos.app.data.repository.PaymentRepository
 import com.limonpos.app.data.repository.TableRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -25,6 +27,7 @@ import javax.inject.Inject
 @HiltViewModel
 class ClosedBillsViewModel @Inject constructor(
     private val orderRepository: OrderRepository,
+    private val paymentRepository: PaymentRepository,
     private val tableRepository: TableRepository,
     private val authRepository: AuthRepository,
     private val closedBillAccessRequestDao: ClosedBillAccessRequestDao,
@@ -39,6 +42,9 @@ class ClosedBillsViewModel @Inject constructor(
 
     private val _selectedOrderWithItems = MutableStateFlow<OrderWithItems?>(null)
     val selectedOrderWithItems: StateFlow<OrderWithItems?> = _selectedOrderWithItems.asStateFlow()
+
+    private val _paymentsForSelectedOrder = MutableStateFlow<List<PaymentEntity>>(emptyList())
+    val paymentsForSelectedOrder: StateFlow<List<PaymentEntity>> = _paymentsForSelectedOrder.asStateFlow()
 
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
@@ -114,11 +120,30 @@ class ClosedBillsViewModel @Inject constructor(
                 orderRepository.getOrderWithItems(order.id).first()
             }
             _selectedOrderWithItems.value = ow
+            _paymentsForSelectedOrder.value = ow?.let { paymentRepository.getPaymentsByOrderSync(it.order.id) } ?: emptyList()
         }
     }
 
     fun dismissBillDialog() {
         _selectedOrderWithItems.value = null
+        _paymentsForSelectedOrder.value = emptyList()
+    }
+
+    /** Change payment method (e.g. Card → Cash) on closed bill. Logs to void for Closed Bill Change dashboard. */
+    fun changePaymentMethod(orderId: String, paymentId: String, newMethod: String) {
+        viewModelScope.launch {
+            val userId = authRepository.getCurrentUserIdSync() ?: return@launch
+            val userName = authRepository.getCurrentUserNameSync() ?: "—"
+            val ok = withContext(Dispatchers.IO) {
+                orderRepository.changePaymentMethodOnClosedBill(orderId, paymentId, newMethod, userId, userName)
+            }
+            if (ok) {
+                _message.value = "Payment method changed."
+                _paymentsForSelectedOrder.value = paymentRepository.getPaymentsByOrderSync(orderId)
+            } else {
+                _message.value = "Change failed."
+            }
+        }
     }
 
     fun clearMessage() {

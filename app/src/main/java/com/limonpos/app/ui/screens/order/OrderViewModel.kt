@@ -30,6 +30,8 @@ import com.limonpos.app.service.PrinterService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -321,6 +323,8 @@ class OrderViewModel @Inject constructor(
         _productToAddWithNotes.value = null
     }
 
+    private val addToCartMutex = Mutex()
+
     fun addToCart(
         product: ProductEntity,
         selectedOptions: List<ModifierOptionEntity>,
@@ -361,29 +365,31 @@ class OrderViewModel @Inject constructor(
                 val modifierNames = selectedOptions.joinToString(", ") { it.name }
                 val productName = if (modifierNames.isNotEmpty()) "${product.name} ($modifierNames)" else product.name
                 withContext(Dispatchers.IO) {
-                    val existing = orderRepository.getOrderWithItems(finalOrderId).first()
-                        ?.items
-                        ?.firstOrNull {
-                            it.status == "pending" &&
-                                it.productId == product.id &&
-                                it.price == totalPrice &&
-                                it.notes == notes
+                    addToCartMutex.withLock {
+                        val existing = orderRepository.getOrderWithItems(finalOrderId).first()
+                            ?.items
+                            ?.firstOrNull {
+                                it.status == "pending" &&
+                                    it.productId == product.id &&
+                                    it.price == totalPrice &&
+                                    it.notes == notes
+                            }
+                        if (existing != null) {
+                            orderRepository.updateItemQuantityAndNotes(
+                                itemId = existing.id,
+                                quantity = existing.quantity + safeQuantity,
+                                notes = existing.notes
+                            )
+                        } else {
+                            orderRepository.addItem(
+                                orderId = finalOrderId,
+                                productId = product.id,
+                                productName = productName,
+                                price = totalPrice,
+                                quantity = safeQuantity,
+                                notes = notes
+                            )
                         }
-                    if (existing != null) {
-                        orderRepository.updateItemQuantityAndNotes(
-                            itemId = existing.id,
-                            quantity = existing.quantity + safeQuantity,
-                            notes = existing.notes
-                        )
-                    } else {
-                        orderRepository.addItem(
-                            orderId = finalOrderId,
-                            productId = product.id,
-                            productName = productName,
-                            price = totalPrice,
-                            quantity = safeQuantity,
-                            notes = notes
-                        )
                     }
                 }
                 val updated = withContext(Dispatchers.IO) {
@@ -487,11 +493,12 @@ class OrderViewModel @Inject constructor(
 
     private fun startOverdueCheckLoop() {
         viewModelScope.launch {
+            apiSyncRepository.clearOverdueMinutesCache() // ilk döngüde web’deki 1 dk ayarı hemen kullanılsın
             while (true) {
                 val minutes = apiSyncRepository.getOverdueUndeliveredMinutes()
                 val list = orderRepository.getOverdueUndelivered(minutes * 60 * 1000L)
                 if (list.isNotEmpty()) _overdueWarning.value = list
-                delay(30 * 1000L) // re-check every 30 seconds so 1-min setting triggers warning soon
+                delay(30 * 1000L) // 30 sn: 1 dk uyarı çalışsın, API/DB yükü makul kalsın
             }
         }
     }

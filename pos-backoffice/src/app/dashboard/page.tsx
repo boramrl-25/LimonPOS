@@ -69,7 +69,7 @@ export default function DashboardPage() {
   const [openOrders, setOpenOrders] = useState<OpenOrderRow[]>([]);
   const [openOrdersLoading, setOpenOrdersLoading] = useState(false);
   const [eodConfirmOpen, setEodConfirmOpen] = useState(false);
-  const [closedBillChanges, setClosedBillChanges] = useState<{ count: number; summary: { fullRefunds: number; itemRefunds: number }; changes: Array<{ id: string; order_id: string; receipt_no: string | null; table_number: string; type: string; product_name: string | null; amount: number; user_name: string; created_at: number }> } | null>(null);
+  const [closedBillChanges, setClosedBillChanges] = useState<{ count: number; summary: { fullRefunds: number; itemRefunds: number; paymentMethodChanges?: number }; changes: Array<{ id: string; order_id: string; receipt_no: string | null; table_number: string; type: string; product_name: string | null; amount: number; user_name: string; created_at: number; details?: string | null }> } | null>(null);
   const [closedBillChangesModal, setClosedBillChangesModal] = useState(false);
   const [approvalRequestsCountPrev, setApprovalRequestsCountPrev] = useState(0);
   const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(null);
@@ -84,7 +84,7 @@ export default function DashboardPage() {
       const [statsRes, dailyRes, closedChangesRes] = await Promise.all([
         getDashboardStats(),
         useRange ? getDailySales(undefined, from, to) : getDailySales(singleDate),
-        useRange ? getClosedBillChanges(undefined, from, to) : getClosedBillChanges(singleDate).catch(() => ({ count: 0, summary: { fullRefunds: 0, itemRefunds: 0 }, changes: [] })),
+        useRange ? getClosedBillChanges(undefined, from, to) : getClosedBillChanges(singleDate).catch(() => ({ count: 0, summary: { fullRefunds: 0, itemRefunds: 0, paymentMethodChanges: 0 }, changes: [] })),
       ]);
       setClosedBillChanges(closedChangesRes);
       setStats({
@@ -432,9 +432,13 @@ export default function DashboardPage() {
                       >
                         <div className="flex justify-between items-center">
                           <span className="font-medium text-slate-200">{c.receipt_no ?? "—"} · Table {c.table_number}</span>
-                          <span className="text-red-400">{c.type === "refund_full" ? "Full refund" : "Item refund"}</span>
+                          <span className={c.type === "payment_method_change" ? "text-amber-400" : "text-red-400"}>
+                            {c.type === "refund_full" ? "Full refund" : c.type === "payment_method_change" ? (c.details || "Payment method change") : "Item refund"}
+                          </span>
                         </div>
-                        <p className="text-slate-500 text-xs mt-1">{fmt(c.amount)} AED · {c.user_name} · {new Date(c.created_at).toLocaleString("tr-TR")}</p>
+                        <p className="text-slate-500 text-xs mt-1">
+                          {c.type === "payment_method_change" ? "" : `${fmt(c.amount)} AED · `}{c.user_name} · {new Date(c.created_at).toLocaleString("tr-TR")}
+                        </p>
                       </button>
                     </li>
                   ))}
@@ -443,9 +447,9 @@ export default function DashboardPage() {
                 <p className="text-slate-500 py-4">No closed bill changes for this day.</p>
               )}
             </div>
-            {closedBillChanges && (closedBillChanges.summary.fullRefunds > 0 || closedBillChanges.summary.itemRefunds > 0) && (
+            {closedBillChanges && (closedBillChanges.summary.fullRefunds > 0 || closedBillChanges.summary.itemRefunds > 0 || (closedBillChanges.summary.paymentMethodChanges ?? 0) > 0) && (
               <div className="p-4 border-t border-slate-700 bg-slate-800/50 text-sm text-slate-300">
-                <p><strong>Summary:</strong> {closedBillChanges.summary.fullRefunds} full bill refund(s), {closedBillChanges.summary.itemRefunds} item refund(s).</p>
+                <p><strong>Summary:</strong> {closedBillChanges.summary.fullRefunds} full bill refund(s), {closedBillChanges.summary.itemRefunds} item refund(s){closedBillChanges.summary.paymentMethodChanges ? `, ${closedBillChanges.summary.paymentMethodChanges} payment method change(s)` : ""}.</p>
               </div>
             )}
           </div>

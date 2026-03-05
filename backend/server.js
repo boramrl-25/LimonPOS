@@ -1300,7 +1300,7 @@ app.get("/api/dashboard/closed-bill-changes", authMiddleware, async (req, res) =
   const voidLogs = db.data.void_logs || [];
   const orders = db.data.orders || [];
   const changes = voidLogs
-    .filter((v) => v.created_at >= startTs && v.created_at < endTs && (v.type === "refund" || v.type === "refund_full"))
+    .filter((v) => v.created_at >= startTs && v.created_at < endTs && (v.type === "refund" || v.type === "refund_full" || v.type === "payment_method_change"))
     .map((v) => {
       const order = orders.find((o) => o.id === v.order_id);
       return {
@@ -1313,14 +1313,16 @@ app.get("/api/dashboard/closed-bill-changes", authMiddleware, async (req, res) =
         amount: v.amount || 0,
         user_name: v.user_name || "—",
         created_at: v.created_at,
+        details: v.details || null,
       };
     });
   const count = changes.length;
   const fullRefunds = changes.filter((c) => c.type === "refund_full").length;
   const itemRefunds = changes.filter((c) => c.type === "refund").length;
+  const paymentMethodChanges = changes.filter((c) => c.type === "payment_method_change").length;
   res.json({
     count,
-    summary: { fullRefunds, itemRefunds },
+    summary: { fullRefunds, itemRefunds, paymentMethodChanges },
     changes,
   });
 });

@@ -117,11 +117,12 @@ class FloorPlanViewModel @Inject constructor(
 
     private fun startOverdueCheckLoop() {
         viewModelScope.launch {
+            apiSyncRepository.clearOverdueMinutesCache() // ilk döngüde web’deki 1 dk ayarı hemen kullanılsın
             while (true) {
                 val minutes = apiSyncRepository.getOverdueUndeliveredMinutes()
                 val list = orderRepository.getOverdueUndelivered(minutes * 60 * 1000L)
                 if (list.isNotEmpty()) _overdueWarning.value = list
-                delay(30 * 1000L) // re-check every 30 seconds so 1-min setting triggers warning soon
+                delay(30 * 1000L) // 30 sn: 1 dk uyarı çalışsın, API/DB yükü makul kalsın
             }
         }
     }

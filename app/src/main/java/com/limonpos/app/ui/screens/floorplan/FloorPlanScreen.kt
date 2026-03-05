@@ -161,9 +161,9 @@ fun FloorPlanScreen(
         OverdueUndeliveredDialogFloor(
             list = list,
             onDismiss = { viewModel.dismissOverdueWarning() },
-            onGoToTable = { tableNumber ->
+            onGoToTable = { tableId ->
                 val tablesOnFloor = uiState.tablesByFloor[uiState.selectedFloor].orEmpty()
-                val target = tablesOnFloor.firstOrNull { it.number == tableNumber }
+                val target = tablesOnFloor.firstOrNull { it.id == tableId }
                 if (target != null) {
                     viewModel.dismissOverdueWarning()
                     viewModel.onTableClick(target, onNavigateToOrder)
@@ -797,7 +797,7 @@ private fun OverdueUndeliveredDialogFloor(
                     Card(
                         colors = CardDefaults.cardColors(containerColor = LimonSurface),
                         shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.clickable { onGoToTable(block.tableNumber) }
+                        modifier = Modifier.clickable { onGoToTable(block.tableId) }
                     ) {
                         Column(modifier = Modifier.padding(12.dp)) {
                             Text("Masa ${block.tableNumber}", fontWeight = FontWeight.Bold, color = LimonPrimary, fontSize = 15.sp)

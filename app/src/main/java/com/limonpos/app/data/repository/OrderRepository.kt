@@ -22,6 +22,7 @@ data class OrderWithItems(
 
 data class OverdueUndelivered(
     val tableNumber: String,
+    val tableId: String,
     val orderId: String,
     val items: List<OrderItemEntity>
 )
@@ -146,17 +147,19 @@ class OrderRepository @Inject constructor(
         val now = System.currentTimeMillis()
         val cutoff = now - olderThanMs
         for (order in orders) {
-            // Skip closed/paid orders and tables (no "ürün masaya gelmedi" for closed tables)
-            if (order.status == "paid") continue
+            // Kapanmış/ödeme alınmış masalarda "ürün masaya gitmedi" uyarısı gösterme
+            if (order.status == "paid" || order.status == "closed") continue
             val table = tableRepository.getTableById(order.tableId)
             if (table == null || table.status == "free") continue
+            // Masa kapatıldıysa veya masanın mevcut siparişi bu sipariş değilse uyarı gösterme (saatler önce kapanan masa uyarı vermesin)
+            if (table.currentOrderId == null || table.currentOrderId != order.id) continue
             // Ödeme alındıysa (toplam ödeme >= sipariş tutarı) uyarı gösterme
             val totalPaid = paymentDao.getPaymentsSumByOrder(order.id)
             if (totalPaid >= order.total - 0.01) continue
             val items = orderItemDao.getOrderItems(order.id).first()
             val overdue = items.filter { it.sentAt != null && it.deliveredAt == null && it.sentAt < cutoff }
             if (overdue.isNotEmpty()) {
-                result.add(OverdueUndelivered(tableNumber = order.tableNumber, orderId = order.id, items = overdue))
+                result.add(OverdueUndelivered(tableNumber = order.tableNumber, tableId = order.tableId, orderId = order.id, items = overdue))
             }
         }
         return result
@@ -402,6 +405,31 @@ class OrderRepository @Inject constructor(
         paymentDao.deletePaymentsByOrder(orderId)
         orderDao.deleteOrder(order)
         tableRepository.closeTable(order.tableId)
+        return true
+    }
+
+    /** Change payment method on a closed (paid) bill. Logs to void_logs as payment_method_change for dashboard. */
+    suspend fun changePaymentMethodOnClosedBill(orderId: String, paymentId: String, newMethod: String, userId: String, userName: String): Boolean {
+        val order = orderDao.getOrderById(orderId) ?: return false
+        if (order.status != "paid") return false
+        val payment = paymentDao.getPaymentById(paymentId) ?: return false
+        if (payment.orderId != orderId) return false
+        val normalizedMethod = newMethod.lowercase().let { if (it == "cash" || it == "card") it else payment.method }
+        if (payment.method == normalizedMethod) return true
+        paymentDao.updatePayment(payment.copy(method = normalizedMethod))
+        val details = "${payment.method} → $normalizedMethod"
+        voidLogDao.insert(
+            VoidLogEntity(
+                type = "payment_method_change",
+                orderId = orderId,
+                amount = payment.amount,
+                sourceTableId = order.tableId,
+                sourceTableNumber = order.tableNumber,
+                userId = userId,
+                userName = userName,
+                details = details
+            )
+        )
         return true
     }
 

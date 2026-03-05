@@ -66,6 +66,7 @@ fun OrderScreen(
     viewModel: OrderViewModel = hiltViewModel(),
     onBack: () -> Unit,
     onNavigateToFloorPlan: () -> Unit = {},
+    onNavigateToTable: (String) -> Unit = {},
     onNavigateToPayment: (String) -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
     onSync: () -> Unit = {}
@@ -138,14 +139,6 @@ fun OrderScreen(
                                     tint = LimonPrimary,
                                     modifier = Modifier.size(20.dp)
                                 )
-                            }
-                            IconButton(
-                                onClick = {
-                                    val hasItems = (uiState.orderWithItems?.items?.size ?: 0) > 0
-                                    if (hasItems) showCloseTableConfirm = true else viewModel.closeTableManually()
-                                }
-                            ) {
-                                Icon(Icons.Default.Close, contentDescription = "Close Table", tint = LimonError, modifier = Modifier.size(24.dp))
                             }
                         }
                     }
@@ -306,7 +299,11 @@ fun OrderScreen(
     overdueWarning?.let { list ->
         OverdueUndeliveredDialog(
             overdueList = list,
-            onDismiss = { viewModel.dismissOverdueWarning() }
+            onDismiss = { viewModel.dismissOverdueWarning() },
+            onGoToTable = { tableId ->
+                viewModel.dismissOverdueWarning()
+                onNavigateToTable(tableId)
+            }
         )
     }
     LaunchedEffect(overdueWarning) {
@@ -1010,7 +1007,8 @@ private fun EditItemNoteDialog(
 @Composable
 private fun OverdueUndeliveredDialog(
     overdueList: List<OverdueUndelivered>,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onGoToTable: (tableId: String) -> Unit = {}
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1023,7 +1021,8 @@ private fun OverdueUndeliveredDialog(
                 overdueList.forEach { block ->
                     Card(
                         colors = CardDefaults.cardColors(containerColor = LimonSurface),
-                        shape = RoundedCornerShape(8.dp)
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.clickable { onGoToTable(block.tableId) }
                     ) {
                         Column(modifier = Modifier.padding(12.dp)) {
                             Text("Masa ${block.tableNumber}", fontWeight = FontWeight.Bold, color = LimonPrimary, fontSize = 15.sp)
