@@ -407,7 +407,7 @@ class ApiSyncRepository @Inject constructor(
                         is Number -> (dto.active as Number).toInt() != 0
                         else -> true
                     }
-                    val showTill = (dto.showTill ?: 0) != 0
+                    val showTill = (dto.showTill ?: 1) != 0
                     CategoryEntity(
                         id = dto.id,
                         name = dto.name,
