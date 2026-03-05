@@ -3,8 +3,8 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { LayoutDashboard, Settings, Package, Users, Printer, FolderOpen, BarChart3, SlidersHorizontal, Map, RefreshCw } from "lucide-react";
-import { getToken, getSetupStatus, getTables, getProducts, getCategories, getModifierGroups, getPrinters, getUsers, getDashboardStats } from "@/lib/api";
+import { LayoutDashboard, Settings, Package, Users, Printer, FolderOpen, BarChart3, SlidersHorizontal, Map, RefreshCw, LogOut } from "lucide-react";
+import { getToken, getSetupStatus, getTables, getProducts, getCategories, getModifierGroups, getPrinters, getUsers, getDashboardStats, logout } from "@/lib/api";
 
 function fmt(n: number) {
   return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -94,9 +94,19 @@ export default function Home() {
 
   return (
     <div className="min-h-screen flex flex-col bg-black">
-      <header className="border-b border-slate-800 bg-black px-6 py-4">
-        <h1 className="text-xl font-bold text-sky-400">Limon POS Back-Office</h1>
-        <p className="text-slate-400 text-sm mt-1">Dashboard & Settings</p>
+      <header className="border-b border-slate-800 bg-black px-6 py-4 flex items-center justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-bold text-sky-400">Limon POS Back-Office</h1>
+          <p className="text-slate-400 text-sm mt-1">Dashboard & Settings</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => { logout(); router.replace("/login"); router.refresh(); }}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors"
+        >
+          <LogOut className="w-4 h-4" />
+          Logout
+        </button>
       </header>
 
       <main className="flex-1 p-6">
