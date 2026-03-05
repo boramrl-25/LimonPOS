@@ -24,7 +24,7 @@ type TicketModalType = "cash" | "card" | "all" | "void" | "refund" | "open" | nu
 function toYYYYMMDD(d: Date) {
   return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
 }
-const blockButtonClass = "flex items-center gap-4 p-5 rounded-xl bg-slate-800/60 border border-slate-700 hover:border-sky-500/50 hover:bg-slate-800/80 transition-colors text-left cursor-pointer w-full";
+const blockButtonClass = "flex items-center gap-4 p-5 rounded-xl bg-slate-800/60 border border-slate-700 hover:border-sky-500/50 hover:bg-slate-800/80 transition-colors text-left cursor-pointer w-full min-h-[88px]";
 
 function fmt(n: number) {
   return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -190,81 +190,75 @@ export default function DashboardPage() {
       </header>
 
       <main className="p-6 space-y-8 max-w-4xl mx-auto">
-        {/* Row 1: Total Sales, Total Card, Total Cash, Open Tables */}
+        {/* Overview blocks — tap to view tickets */}
         <section>
           <h2 className="text-lg font-semibold text-slate-200 mb-4">Overview (tap to view tickets)</h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
             <button type="button" className={blockButtonClass} onClick={() => setTicketModalType("all")}>
               <Coins className="w-8 h-8 text-emerald-400 shrink-0" />
-              <div>
-                <p className="text-slate-400 text-sm">Total Sales</p>
-                <p className="text-xl font-bold text-white">{loading ? "..." : fmt(dailySales?.totalSales ?? stats.todaySales ?? 0)} AED</p>
+              <div className="min-w-0 flex-1">
+                <p className="text-slate-400 text-xs uppercase tracking-wide">Total Sales</p>
+                <p className="text-lg font-bold text-white truncate">{loading ? "..." : `${fmt(dailySales?.totalSales ?? stats.todaySales ?? 0)} AED`}</p>
               </div>
             </button>
             <button type="button" className={blockButtonClass} onClick={() => setTicketModalType("card")}>
               <Receipt className="w-8 h-8 text-sky-400 shrink-0" />
-              <div>
-                <p className="text-slate-400 text-sm">Total Card</p>
-                <p className="text-xl font-bold text-white">{loading ? "..." : fmt(dailySales?.totalCard ?? 0)} AED</p>
+              <div className="min-w-0 flex-1">
+                <p className="text-slate-400 text-xs uppercase tracking-wide">Total Card</p>
+                <p className="text-lg font-bold text-white truncate">{loading ? "..." : `${fmt(dailySales?.totalCard ?? 0)} AED`}</p>
               </div>
             </button>
             <button type="button" className={blockButtonClass} onClick={() => setTicketModalType("cash")}>
               <Coins className="w-8 h-8 text-amber-400 shrink-0" />
-              <div>
-                <p className="text-slate-400 text-sm">Total Cash</p>
-                <p className="text-xl font-bold text-white">{loading ? "..." : fmt(dailySales?.totalCash ?? 0)} AED</p>
+              <div className="min-w-0 flex-1">
+                <p className="text-slate-400 text-xs uppercase tracking-wide">Total Cash</p>
+                <p className="text-lg font-bold text-white truncate">{loading ? "..." : `${fmt(dailySales?.totalCash ?? 0)} AED`}</p>
               </div>
             </button>
             <button type="button" className={blockButtonClass} onClick={handleOpenTablesClick}>
               <UtensilsCrossed className="w-8 h-8 text-amber-400 shrink-0" />
-              <div>
-                <p className="text-slate-400 text-sm">Open Tables</p>
-                <p className="text-xl font-bold text-white">{loading ? "..." : stats.openTables}</p>
+              <div className="min-w-0 flex-1">
+                <p className="text-slate-400 text-xs uppercase tracking-wide">Open Tables</p>
+                <p className="text-lg font-bold text-white">{loading ? "..." : stats.openTables}</p>
               </div>
             </button>
-          </div>
-          {/* Row 2: Approval Request, Closed Bill Changes, Total Void, Refund Total, Cash Drawer Opens */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-4">
             <button type="button" className={blockButtonClass} onClick={() => { setTicketModalType(null); router.push("/dashboard/approvals"); }}>
               <Bell className="w-8 h-8 text-orange-400 shrink-0" />
-              <div>
-                <p className="text-slate-400 text-sm">Approval Request</p>
-                <p className="text-xl font-bold text-white">{loading ? "..." : totalApprovalRequests}</p>
+              <div className="min-w-0 flex-1">
+                <p className="text-slate-400 text-xs uppercase tracking-wide">Approval Request</p>
+                <p className="text-lg font-bold text-white">{loading ? "..." : totalApprovalRequests}</p>
                 <p className="text-xs text-slate-500">Void + Closed Bill</p>
               </div>
             </button>
-            <button
-              type="button"
-              className={blockButtonClass}
-              onClick={() => setClosedBillChangesModal(true)}
-            >
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+            <button type="button" className={blockButtonClass} onClick={() => setClosedBillChangesModal(true)}>
               <FileEdit className="w-8 h-8 text-rose-400 shrink-0" />
-              <div>
-                <p className="text-slate-400 text-sm">Closed Bill Changes</p>
-                <p className="text-xl font-bold text-white">
-                  {loading ? "..." : (closedBillChanges?.count ?? 0)}
-                </p>
+              <div className="min-w-0 flex-1">
+                <p className="text-slate-400 text-xs uppercase tracking-wide">Closed Bill Changes</p>
+                <p className="text-lg font-bold text-white">{loading ? "..." : (closedBillChanges?.count ?? 0)}</p>
               </div>
             </button>
             <button type="button" className={blockButtonClass} onClick={() => setTicketModalType("void")}>
               <Receipt className="w-8 h-8 text-red-400 shrink-0" />
-              <div>
-                <p className="text-slate-400 text-sm">Total Void</p>
-                <p className="text-xl font-bold text-red-400">{loading ? "..." : fmt(dailySales?.totalVoidAmount ?? 0)} AED</p>
+              <div className="min-w-0 flex-1">
+                <p className="text-slate-400 text-xs uppercase tracking-wide">Total Void</p>
+                <p className="text-lg font-bold text-red-400 truncate">{loading ? "..." : `${fmt(dailySales?.totalVoidAmount ?? 0)} AED`}</p>
               </div>
             </button>
             <button type="button" className={blockButtonClass} onClick={() => setTicketModalType("refund")}>
               <Receipt className="w-8 h-8 text-red-400 shrink-0" />
-              <div>
-                <p className="text-slate-400 text-sm">Refund Total</p>
-                <p className="text-xl font-bold text-red-400">{loading ? "..." : fmt(dailySales?.totalRefundAmount ?? 0)} AED</p>
+              <div className="min-w-0 flex-1">
+                <p className="text-slate-400 text-xs uppercase tracking-wide">Refund Total</p>
+                <p className="text-lg font-bold text-red-400 truncate">{loading ? "..." : `${fmt(dailySales?.totalRefundAmount ?? 0)} AED`}</p>
               </div>
             </button>
             <button type="button" className={blockButtonClass} onClick={() => setCashDrawerModalOpen(true)}>
               <Banknote className="w-8 h-8 text-amber-400 shrink-0" />
-              <div>
-                <p className="text-slate-400 text-sm">Cash Drawer Opens (No Sale)</p>
-                <p className="text-xl font-bold text-white">{loading ? "..." : (cashDrawerOpens?.count ?? 0)}</p>
+              <div className="min-w-0 flex-1">
+                <p className="text-slate-400 text-xs uppercase tracking-wide">Cash Drawer Opens</p>
+                <p className="text-lg font-bold text-white">{loading ? "..." : (cashDrawerOpens?.count ?? 0)}</p>
+                <p className="text-xs text-slate-500">No sale</p>
               </div>
             </button>
           </div>

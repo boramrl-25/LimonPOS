@@ -11,7 +11,6 @@ import {
   Package,
   Printer,
   FolderOpen,
-  Banknote,
   Map,
   LogOut,
   FileText,
@@ -26,7 +25,6 @@ import { logout } from "@/lib/api";
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/floorplan", label: "Floor Plan", icon: Map },
-  { href: "/dashboard/logs/cash-drawer", label: "Kasa / Cash Drawer", icon: Banknote },
   { href: "/settings", label: "Settings", icon: Settings },
   { href: "/settings/payment", label: "Payment Methods", icon: CreditCard },
   { href: "/settings/zoho", label: "Zoho Books", icon: BookOpen },
