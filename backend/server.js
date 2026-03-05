@@ -459,14 +459,19 @@ app.delete("/api/products/:id", authMiddleware, async (req, res) => {
   res.status(204).send();
 });
 
-// Zoho'dan sync (upsert); önce silme yok. Zoho'da olmayan ürünler zoho_suggest_remove ile işaretlenir, onay verilene kadar satışta kalır.
+// Zoho'dan sync (upsert); önce silme yok. Hata olursa ürünler geri yüklenir – ürün kaybı önlenir.
 app.post("/api/products/clear-and-sync", authMiddleware, async (req, res) => {
   await ensureData();
+  const backupProducts = [...(db.data.products || [])];
+  const backupCategories = [...(db.data.categories || [])];
   let syncResult = { categoriesAdded: 0, productsAdded: 0, productsUpdated: 0, productsRemoved: 0, productsSuggestedForRemoval: [], itemsFetched: 0, error: null };
   try {
     syncResult = await syncFromZoho(db, {});
   } catch (e) {
     syncResult.error = (e && e.message) || "Sync failed";
+    db.data.products = backupProducts;
+    db.data.categories = backupCategories;
+    await db.write();
   }
   await db.read();
   const cats = Object.fromEntries((db.data.categories || []).map((r) => [r.id, r.name]));
@@ -1139,10 +1144,10 @@ app.get("/api/zoho/item-groups", authMiddleware, async (req, res) => {
   res.json(result);
 });
 
+// Zoho sync: sadece upsert (clearZohoProductsFirst kullanılmaz – ürün kaybı önlenir).
 app.post("/api/zoho/sync", authMiddleware, async (req, res) => {
   try {
-    const clearFirst = !!(req.body && req.body.clearZohoProductsFirst);
-    const result = await syncFromZoho(db, { clearZohoProductsFirst: clearFirst });
+    const result = await syncFromZoho(db, {});
     res.json(result);
   } catch (e) {
     res.status(500).json({ error: (e && e.message) || "Sync failed", categoriesAdded: 0, productsAdded: 0, productsUpdated: 0, productsRemoved: 0, itemsFetched: 0 });
