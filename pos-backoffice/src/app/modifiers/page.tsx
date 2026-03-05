@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { ArrowLeft, Plus, Pencil, Trash2 } from "lucide-react";
+import { ArrowLeft, Plus, Pencil, Trash2, FileSpreadsheet, FileDown } from "lucide-react";
+import * as XLSX from "xlsx";
 import { getModifierGroups, createModifierGroup, updateModifierGroup, deleteModifierGroup } from "@/lib/api";
 
 type ModifierOption = { id: string; name: string; price: number };
@@ -13,6 +14,8 @@ export default function ModifiersPage() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<ModifierGroup | null | undefined>(undefined);
   const [form, setForm] = useState({ name: "", min_select: 0, max_select: 1, required: false, options: [] as ModifierOption[] });
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     load();
@@ -95,20 +98,150 @@ export default function ModifiersPage() {
     }
   }
 
+  function downloadModifiersTemplate() {
+    const rows = [
+      { GroupName: "Size", MinSelect: 0, MaxSelect: 1, Required: "No", OptionName: "Small", OptionPrice: 0 },
+      { GroupName: "Size", MinSelect: 0, MaxSelect: 1, Required: "No", OptionName: "Large", OptionPrice: 2.5 },
+      { GroupName: "Extras", MinSelect: 0, MaxSelect: 3, Required: "No", OptionName: "Cheese", OptionPrice: 1 },
+    ];
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Modifiers");
+    XLSX.writeFile(wb, "modifiers_import_template.xlsx");
+  }
+
+  function exportModifiersToExcel() {
+    if (!groups.length) {
+      alert("No modifier groups to export");
+      return;
+    }
+    const rows: Array<Record<string, string | number>> = [];
+    for (const g of groups) {
+      const minSelect = g.min_select ?? 0;
+      const maxSelect = g.max_select ?? 1;
+      const required = g.required ? "Yes" : "No";
+      if (!(g.options || []).length) {
+        rows.push({ GroupName: g.name, MinSelect: minSelect, MaxSelect: maxSelect, Required: required, OptionName: "", OptionPrice: 0 });
+      } else {
+        for (const o of g.options) {
+          rows.push({ GroupName: g.name, MinSelect: minSelect, MaxSelect: maxSelect, Required: required, OptionName: o.name, OptionPrice: o.price ?? 0 });
+        }
+      }
+    }
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Modifiers");
+    XLSX.writeFile(wb, "modifiers.xlsx");
+  }
+
+  async function handleModifiersImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    try {
+      let wb: XLSX.WorkBook;
+      if (file.name.toLowerCase().endsWith(".csv")) {
+        const text = await file.text();
+        wb = XLSX.read(text, { type: "string", raw: true });
+      } else {
+        const data = await file.arrayBuffer();
+        wb = XLSX.read(data, { type: "array" });
+      }
+      const sheetName = wb.SheetNames[0];
+      const sheet = wb.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet);
+
+      const byGroup = new Map<string, { min_select: number; max_select: number; required: boolean; options: Array<{ name: string; price: number }> }>();
+
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const groupName = String(row.GroupName ?? row.groupName ?? "").trim();
+        if (!groupName) continue;
+        const minSelect = Number(row.MinSelect ?? row.min_select ?? 0) || 0;
+        const maxSelect = Number(row.MaxSelect ?? row.max_select ?? 1) || 1;
+        const reqRaw = String(row.Required ?? row.required ?? "").toLowerCase();
+        const required = reqRaw === "yes" || reqRaw === "1" || reqRaw === "true" || reqRaw === "on";
+        const optionName = String(row.OptionName ?? row.optionName ?? "").trim();
+        const optionPrice = Number(row.OptionPrice ?? row.optionPrice ?? 0) || 0;
+
+        if (!byGroup.has(groupName)) {
+          byGroup.set(groupName, { min_select: minSelect, max_select: maxSelect, required, options: [] });
+        }
+        const entry = byGroup.get(groupName)!;
+        entry.min_select = minSelect;
+        entry.max_select = maxSelect;
+        entry.required = required;
+        if (optionName) {
+          entry.options.push({ name: optionName, price: optionPrice });
+        }
+      }
+
+      for (const [name, data] of byGroup) {
+        const existing = groups.find((g) => g.name.toLowerCase() === name.toLowerCase());
+        const opts = data.options.length ? data.options : [{ name: "Option", price: 0 }];
+        const payload = { name, min_select: data.min_select, max_select: data.max_select, required: data.required, options: opts };
+        if (existing) {
+          await updateModifierGroup(existing.id, payload);
+        } else {
+          await createModifierGroup(payload);
+        }
+      }
+
+      await load();
+      alert(`${byGroup.size} modifier group(s) imported.`);
+    } catch (err) {
+      alert((err as Error).message);
+    } finally {
+      setImporting(false);
+      e.target.value = "";
+    }
+  }
+
   return (
     <div className="p-6 max-w-4xl">
       <Link href="/" className="inline-flex items-center gap-2 text-slate-400 hover:text-white mb-6">
         <ArrowLeft className="w-4 h-4" /> Back
       </Link>
 
-      <div className="flex justify-between items-center mb-8">
+      <div className="flex justify-between items-center mb-8 flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-sky-400">Modifier Groups</h1>
-          <p className="text-slate-400">Modifier groups to attach to products (e.g. Size, Extras)</p>
+          <p className="text-slate-400">Modifier groups to attach to products (e.g. Size, Extras). Excel şablonu ile toplu içe aktarabilirsiniz.</p>
         </div>
-        <button onClick={() => openEdit()} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium">
-          <Plus className="w-4 h-4" /> New Modifier Group
-        </button>
+        <div className="flex gap-2 flex-wrap">
+          <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleModifiersImport} />
+          <button
+            type="button"
+            onClick={downloadModifiersTemplate}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-medium"
+            title="Import için Excel şablonu indir"
+          >
+            <FileDown className="w-4 h-4" /> Şablon indir
+          </button>
+          <button
+            type="button"
+            onClick={exportModifiersToExcel}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-medium"
+          >
+            <FileSpreadsheet className="w-4 h-4" /> Excel export
+          </button>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={importing}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-medium disabled:opacity-50"
+          >
+            {importing ? (
+              <div className="w-4 h-4 border-2 border-sky-500 border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <FileSpreadsheet className="w-4 h-4" />
+            )}
+            Excel import
+          </button>
+          <button onClick={() => openEdit()} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium">
+            <Plus className="w-4 h-4" /> New Modifier Group
+          </button>
+        </div>
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-slate-700 mb-8 relative min-h-[120px]">

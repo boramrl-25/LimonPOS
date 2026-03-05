@@ -60,6 +60,7 @@ const defaultData = {
   setup_complete: false,
   audit_log: [],
   settings: { timezone_offset_minutes: 0 },
+  eod_logs: [],
 };
 
 let db;

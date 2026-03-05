@@ -92,6 +92,7 @@ async function ensureData() {
   // Tables: only fill defaults when truly empty AND no orders (first run). If we have orders but tables empty (e.g. bad restart), rebuild from orders so data is not lost.
   if (!Array.isArray(db.data.tables)) db.data.tables = [];
   if (!Array.isArray(db.data.audit_log)) db.data.audit_log = [];
+  if (!Array.isArray(db.data.eod_logs)) db.data.eod_logs = [];
   if (!db.data.settings || typeof db.data.settings.timezone_offset_minutes !== "number") {
     db.data.settings = db.data.settings || {};
     db.data.settings.timezone_offset_minutes = (db.data.settings.timezone_offset_minutes ?? 0) | 0;
@@ -589,6 +590,93 @@ app.patch("/api/settings", authMiddleware, async (req, res) => {
   res.json({ timezone_offset_minutes: db.data.settings.timezone_offset_minutes ?? 0 });
 });
 
+// End of Day (Günü Kapat) – gece 12 sonrası satışlar için; açık masalar varsa uyarı veya kapatıp ödeme alınmış say
+app.get("/api/eod/status", authMiddleware, async (req, res) => {
+  await ensureData();
+  const tables = db.data.tables || [];
+  const orders = db.data.orders || [];
+  const eodLogs = db.data.eod_logs || [];
+  const lastEod = eodLogs.length > 0 ? eodLogs[eodLogs.length - 1] : null;
+  const openTablesNow = tables
+    .filter((t) => t.current_order_id)
+    .map((t) => {
+      const order = orders.find((o) => o.id === t.current_order_id);
+      return { table_id: t.id, table_number: t.number, order_id: t.current_order_id, order_total: order?.total ?? 0 };
+    });
+  res.json({
+    lastEod: lastEod ? { ran_at: lastEod.ran_at, user_name: lastEod.user_name, tables_closed_count: lastEod.tables_closed?.length ?? 0, orders_closed_count: lastEod.orders_closed_count ?? 0 } : null,
+    openTablesNow,
+    openTablesCount: openTablesNow.length,
+  });
+});
+
+app.post("/api/eod/run", authMiddleware, async (req, res) => {
+  await ensureData();
+  const closeOpenTables = !!req.body?.closeOpenTables;
+  const tables = db.data.tables || [];
+  const orders = db.data.orders || [];
+  db.data.payments = db.data.payments || [];
+  const openTables = tables.filter((t) => t.current_order_id);
+  const now = Date.now();
+  const userId = req.user?.id ?? "";
+  const userName = req.user?.name ?? "Admin";
+
+  if (openTables.length > 0 && !closeOpenTables) {
+    const openList = openTables.map((t) => {
+      const order = orders.find((o) => o.id === t.current_order_id);
+      return { table_id: t.id, table_number: t.number, order_id: t.current_order_id, order_total: order?.total ?? 0 };
+    });
+    return res.status(400).json({
+      error: "OPEN_TABLES",
+      message: `${openTables.length} masa hâlâ açık. Günü kapatmak için önce masaları kapatın veya "Açık masaları kapat (ödeme alınmış say)" ile onaylayın.`,
+      openTablesCount: openTables.length,
+      openTables: openList,
+    });
+  }
+
+  const tablesClosed = [];
+  for (const t of openTables) {
+    const orderId = t.current_order_id;
+    const order = orders.find((o) => o.id === orderId);
+    if (!order || order.status === "paid") continue;
+    const amount = order.total ?? 0;
+    db.data.payments.push({ id: `pay_${uuid().slice(0, 8)}`, order_id: orderId, amount, method: "cash", received_amount: amount, change_amount: 0, user_id: userId, created_at: now });
+    const oidx = orders.findIndex((o) => o.id === orderId);
+    if (oidx >= 0) {
+      db.data.orders[oidx].status = "paid";
+      db.data.orders[oidx].paid_at = now;
+    }
+    db.data.tables.forEach((tbl) => {
+      if (tbl.current_order_id === orderId) {
+        tbl.status = "free";
+        tbl.current_order_id = null;
+        tbl.guest_count = 0;
+        tbl.waiter_id = null;
+        tbl.waiter_name = null;
+        tbl.opened_at = null;
+      }
+    });
+    tablesClosed.push({ table_id: t.id, table_number: t.number, order_id: orderId, amount });
+  }
+
+  db.data.eod_logs = db.data.eod_logs || [];
+  db.data.eod_logs.push({
+    id: `eod_${uuid().slice(0, 8)}`,
+    ran_at: now,
+    user_id: userId,
+    user_name: userName,
+    tables_closed: tablesClosed,
+    orders_closed_count: tablesClosed.length,
+  });
+  await db.write();
+
+  res.json({
+    success: true,
+    tablesClosedCount: tablesClosed.length,
+    lastEod: { ran_at: now, user_name: userName, tables_closed_count: tablesClosed.length, orders_closed_count: tablesClosed.length },
+  });
+});
+
 // Dashboard stats (tek kaynak: getTodaySalesSummary)
 app.get("/api/dashboard/stats", authMiddleware, async (req, res) => {
   await ensureData();
@@ -603,6 +691,8 @@ app.get("/api/dashboard/stats", authMiddleware, async (req, res) => {
   const openChecks = orders.filter((o) => o.status === "open" || o.status === "sent").length;
   const preVoids = voidLogs.filter((v) => v.type === "pre_void").length;
   const postVoids = voidLogs.filter((v) => v.type === "post_void").length;
+  const eodLogs = db.data.eod_logs || [];
+  const lastEod = eodLogs.length > 0 ? eodLogs[eodLogs.length - 1] : null;
   res.json({
     todaySales: summary.netSales,
     orderCount: summary.paidToday.length,
@@ -611,6 +701,8 @@ app.get("/api/dashboard/stats", authMiddleware, async (req, res) => {
     paymentBreakdown: paymentByMethod,
     prePrintVoids: preVoids,
     postPrintVoids: postVoids,
+    lastEod: lastEod ? { ran_at: lastEod.ran_at, user_name: lastEod.user_name, tables_closed_count: lastEod.tables_closed?.length ?? 0 } : null,
+    openTablesCount: tables.filter((t) => t.status === "occupied" || t.current_order_id).length,
   });
 });
 
@@ -651,6 +743,9 @@ app.get("/api/dashboard/daily-sales", authMiddleware, async (req, res) => {
   const voids = todayVoids.filter((v) => v.type === "pre_void" || v.type === "post_void" || v.type === "recalled_void");
   const refunds = todayVoids.filter((v) => v.type === "refund" || v.type === "refund_full");
 
+  const eodLogs = db.data.eod_logs || [];
+  const lastEod = eodLogs.length > 0 ? eodLogs[eodLogs.length - 1] : null;
+  const openTablesCount = (db.data.tables || []).filter((t) => t.current_order_id).length;
   res.json({
     totalCash: summary.totalCash,
     totalCard: summary.totalCard,
@@ -662,6 +757,8 @@ app.get("/api/dashboard/daily-sales", authMiddleware, async (req, res) => {
     itemSales: itemSalesList,
     voids,
     refunds,
+    lastEod: lastEod ? { ran_at: lastEod.ran_at, user_name: lastEod.user_name, tables_closed_count: lastEod.tables_closed?.length ?? 0 } : null,
+    openTablesCount,
   });
 });
 

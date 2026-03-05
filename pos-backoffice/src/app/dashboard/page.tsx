@@ -9,11 +9,16 @@ import {
   UtensilsCrossed,
   Receipt,
   RefreshCw,
+  Moon,
 } from "lucide-react";
 import { getDashboardStats, getDailySales } from "@/lib/api";
 
 function fmt(n: number) {
   return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function formatEodTime(ts: number) {
+  return new Date(ts).toLocaleString("tr-TR", { dateStyle: "short", timeStyle: "short" });
 }
 
 const POLL_INTERVAL_MS = 8000;
@@ -24,6 +29,8 @@ export default function DashboardPage() {
     orderCount: 0,
     openTables: 0,
     openChecks: 0,
+    lastEod: null as { ran_at: number; user_name: string; tables_closed_count: number } | null,
+    openTablesCount: 0,
   });
   const [dailySales, setDailySales] = useState<{
     totalCash: number;
@@ -51,11 +58,13 @@ export default function DashboardPage() {
         orderCount: statsRes.orderCount ?? 0,
         openTables: statsRes.openTables ?? 0,
         openChecks: statsRes.openChecks ?? 0,
+        lastEod: statsRes.lastEod ?? null,
+        openTablesCount: statsRes.openTablesCount ?? statsRes.openTables ?? 0,
       });
       setDailySales(dailyRes);
       setLastRefresh(new Date());
     } catch {
-      setStats({ todaySales: 0, orderCount: 0, openTables: 0, openChecks: 0 });
+      setStats({ todaySales: 0, orderCount: 0, openTables: 0, openChecks: 0, lastEod: null, openTablesCount: 0 });
       setDailySales(null);
     } finally {
       setLoading(false);
@@ -136,6 +145,34 @@ export default function DashboardPage() {
           {lastRefresh && (
             <p className="text-slate-500 text-xs mt-2">Last updated: {lastRefresh.toLocaleTimeString()}</p>
           )}
+
+          {/* End of Day bilgisi */}
+          <div className="mt-4 p-4 rounded-xl bg-slate-800/40 border border-slate-700 flex flex-wrap items-center gap-4">
+            <Moon className="w-5 h-5 text-amber-400 shrink-0" />
+            <div className="flex-1 min-w-0">
+              {stats.lastEod ? (
+                <p className="text-slate-400 text-sm">
+                  Son gün kapatma: <span className="text-slate-200">{formatEodTime(stats.lastEod.ran_at)}</span>
+                  {stats.lastEod.tables_closed_count > 0 && (
+                    <span className="text-amber-400 ml-1">({stats.lastEod.tables_closed_count} masa EOD&apos;da kapatıldı)</span>
+                  )}
+                </p>
+              ) : (
+                <p className="text-slate-400 text-sm">Henüz gün kapatma yapılmadı.</p>
+              )}
+              {stats.openTablesCount > 0 && (
+                <p className="text-amber-400 text-sm mt-1">
+                  <strong>{stats.openTablesCount}</strong> masa açık. Günü kapatmak için Daily Sales sayfasında &quot;Günü Kapat&quot; kullanın.
+                </p>
+              )}
+            </div>
+            <Link
+              href="/dailysales"
+              className="px-3 py-1.5 rounded-lg bg-amber-600/80 hover:bg-amber-500 text-white text-sm font-medium"
+            >
+              Daily Sales / Günü Kapat
+            </Link>
+          </div>
         </section>
 
         {/* Daily Sales - matches app Daily Sales screen */}

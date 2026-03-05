@@ -323,6 +323,32 @@ export async function getDailySales() {
   return res.json();
 }
 
+export type EodStatus = {
+  lastEod: { ran_at: number; user_name: string; tables_closed_count: number; orders_closed_count: number } | null;
+  openTablesNow: Array<{ table_id: string; table_number: string | number; order_id: string; order_total: number }>;
+  openTablesCount: number;
+};
+
+export async function getEodStatus(): Promise<EodStatus> {
+  const res = await fetchWithTimeout(`${API_URL}/eod/status`, { headers: headers() });
+  if (!res.ok) throw new Error("Failed to fetch EOD status");
+  return res.json();
+}
+
+export async function runEod(closeOpenTables: boolean): Promise<{ success: boolean; tablesClosedCount: number; lastEod: EodStatus["lastEod"] }> {
+  const res = await fetchWithTimeout(`${API_URL}/eod/run`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({ closeOpenTables }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    if (data.error === "OPEN_TABLES") throw new Error(data.message || `${data.openTablesCount} masa açık.`);
+    throw new Error(data.message || "EOD failed");
+  }
+  return data;
+}
+
 export async function getTables() {
   const res = await fetchWithTimeout(`${API_URL}/tables`, { headers: headers() });
   if (!res.ok) throw new Error("Failed to fetch tables");
