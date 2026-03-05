@@ -504,6 +504,13 @@ class OrderViewModel @Inject constructor(
         }
     }
 
+    fun markAllSentItemsDelivered() {
+        viewModelScope.launch {
+            val orderId = _uiState.value.orderWithItems?.order?.id ?: return@launch
+            orderRepository.markAllItemsDeliveredForOrder(orderId)
+        }
+    }
+
     fun dismissOverdueWarning() {
         _overdueWarning.value = null
     }

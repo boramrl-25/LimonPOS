@@ -112,12 +112,21 @@ fun OrderScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text(
-                            "Order - ${uiState.table?.name ?: "Table"}",
-                            fontWeight = FontWeight.Bold,
-                            color = LimonText,
-                            fontSize = 18.sp
-                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "Order - ${uiState.table?.name ?: "Table"}",
+                                fontWeight = FontWeight.Bold,
+                                color = LimonText,
+                                fontSize = 18.sp
+                            )
+                            uiState.orderWithItems?.order?.id?.takeLast(6)?.uppercase()?.let { shortId ->
+                                Text(
+                                    text = "Ticket ID: $shortId",
+                                    color = LimonTextSecondary,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
                         if (uiState.table != null && uiState.table?.status != "free") {
                             IconButton(
                                 onClick = { viewModel.openTransferTable() },
@@ -339,7 +348,8 @@ fun OrderScreen(
             },
             canTakePayment = viewModel.canTakePayment.collectAsState(false).value,
             hasPrinterWarning = viewModel.hasPrinterWarningForTable.collectAsState(false).value,
-            printerWarning = uiState.printerWarning
+            printerWarning = uiState.printerWarning,
+            onMarkAllDelivered = { viewModel.markAllSentItemsDelivered() }
         )
     }
     viewModel.itemToRefund.collectAsState(null).value?.let { item ->
@@ -595,7 +605,8 @@ private fun CartBottomSheet(
     onPayment: () -> Unit,
     canTakePayment: Boolean,
     hasPrinterWarning: Boolean = false,
-    printerWarning: String? = null
+    printerWarning: String? = null,
+    onMarkAllDelivered: () -> Unit = {}
 ) {
     Dialog(
         onDismissRequest = onDismiss,
@@ -653,7 +664,18 @@ private fun CartBottomSheet(
                     ) {
                         if (sentItems.isNotEmpty()) {
                             item {
-                                Text("Sent to kitchen", color = LimonTextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(vertical = 4.dp))
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("Sent to kitchen", color = LimonTextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                                    TextButton(onClick = onMarkAllDelivered) {
+                                        Text("Mark all delivered", color = LimonPrimary, fontSize = 12.sp)
+                                    }
+                                }
                             }
                             items(sentItems, key = { it.id }) { item ->
                                 OrderItemRow(

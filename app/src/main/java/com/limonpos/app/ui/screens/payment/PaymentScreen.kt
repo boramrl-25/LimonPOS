@@ -67,7 +67,18 @@ fun PaymentScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Payment", fontWeight = FontWeight.Bold, color = LimonText) },
+                title = {
+                    Column {
+                        Text("Payment", fontWeight = FontWeight.Bold, color = LimonText)
+                        uiState.orderWithItems?.order?.id?.takeLast(6)?.uppercase()?.let { shortId ->
+                            Text(
+                                text = "Ticket ID: $shortId",
+                                color = LimonTextSecondary,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = LimonText)
