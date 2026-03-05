@@ -140,11 +140,6 @@ class OrderRepository @Inject constructor(
         return true
     }
 
-    suspend fun markAllItemsDeliveredForOrder(orderId: String) {
-        val now = System.currentTimeMillis()
-        orderItemDao.markAllDeliveredForOrder(orderId, now)
-    }
-
     suspend fun getOverdueUndelivered(olderThanMs: Long): List<OverdueUndelivered> {
         val orders = orderDao.getOpenAndSentOrders()
         val result = mutableListOf<OverdueUndelivered>()

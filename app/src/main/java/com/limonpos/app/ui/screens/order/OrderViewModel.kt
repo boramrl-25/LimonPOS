@@ -431,7 +431,6 @@ class OrderViewModel @Inject constructor(
             val pendingItemIds = pendingItems.map { it.id }
 
             if (pendingItems.isEmpty()) {
-                _navigateToFloorPlanRequest.value = _navigateToFloorPlanRequest.value + 1
                 printerWarningHolder.setWarning(PrinterWarningState("Table $tableNumber: All items already sent to kitchen", orderId, tableId, emptyList()))
                 return@launch
             }
@@ -439,7 +438,6 @@ class OrderViewModel @Inject constructor(
                 p.printerType == "kitchen" && p.ipAddress.isNotBlank()
             }
             if (printers.isEmpty()) {
-                _navigateToFloorPlanRequest.value = _navigateToFloorPlanRequest.value + 1
                 printerWarningHolder.setWarning(PrinterWarningState("Table $tableNumber: No kitchen printer configured", orderId, tableId, pendingItemIds))
                 return@launch
             }
@@ -452,7 +450,6 @@ class OrderViewModel @Inject constructor(
             if (updated != null) {
                 _uiState.update { it.copy(orderWithItems = updated) }
             }
-            _navigateToFloorPlanRequest.value = _navigateToFloorPlanRequest.value + 1
 
             // In background: push to API, then print (no need to mark again)
             applicationScope.launch {
@@ -484,7 +481,6 @@ class OrderViewModel @Inject constructor(
                 orderRepository.markItemsAsSent(ow.order.id, pendingItems.map { it.id })
             }
             _uiState.update { it.copy(printerWarning = null) }
-            _navigateToFloorPlanRequest.value = _navigateToFloorPlanRequest.value + 1
         }
     }
 
@@ -501,13 +497,6 @@ class OrderViewModel @Inject constructor(
     fun markItemDelivered(itemId: String) {
         viewModelScope.launch {
             orderRepository.markItemDelivered(itemId)
-        }
-    }
-
-    fun markAllSentItemsDelivered() {
-        viewModelScope.launch {
-            val orderId = _uiState.value.orderWithItems?.order?.id ?: return@launch
-            orderRepository.markAllItemsDeliveredForOrder(orderId)
         }
     }
 

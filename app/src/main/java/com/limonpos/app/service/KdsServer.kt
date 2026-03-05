@@ -334,6 +334,45 @@ class KdsServer @Inject constructor(
                                 newFixedLengthResponse(result.first, "application/json", result.second)
                             }
                         }
+                        uri.matches(Regex("^/orders/([^/]+)$")) && session.method == Method.GET -> {
+                            val orderId = Regex("^/orders/([^/]+)$").find(uri)?.groupValues?.get(1)
+                            if (orderId == null) {
+                                newFixedLengthResponse(Response.Status.BAD_REQUEST, "application/json", """{"ok":false}""")
+                            } else {
+                                val result = runBlocking {
+                                    try {
+                                        val order = orderDao.getOrderById(orderId)
+                                        if (order == null) {
+                                            Pair(Response.Status.NOT_FOUND, """{"ok":false,"error":"Order not found"}""")
+                                        } else {
+                                            val items = orderItemDao.getOrderItems(orderId).first()
+                                            val resp = mapOf(
+                                                "ok" to true,
+                                                "id" to order.id,
+                                                "tableNumber" to order.tableNumber,
+                                                "status" to order.status,
+                                                "items" to items.map { it2 ->
+                                                    mapOf(
+                                                        "id" to it2.id,
+                                                        "productName" to it2.productName,
+                                                        "quantity" to it2.quantity,
+                                                        "price" to it2.price,
+                                                        "notes" to it2.notes,
+                                                        "status" to it2.status,
+                                                        "sentAt" to it2.sentAt,
+                                                        "deliveredAt" to it2.deliveredAt
+                                                    )
+                                                }
+                                            )
+                                            Pair(Response.Status.OK, gson.toJson(resp))
+                                        }
+                                    } catch (e: Exception) {
+                                        Pair(Response.Status.INTERNAL_ERROR, """{"ok":false,"error":"${e.message?.replace("\"", "'") ?: "Unknown"}"}""")
+                                    }
+                                }
+                                newFixedLengthResponse(result.first, "application/json", result.second)
+                            }
+                        }
                         uri.matches(Regex("^/orders/([^/]+)/items$")) && session.method == Method.POST -> {
                             val orderId = Regex("^/orders/([^/]+)/items$").find(uri)?.groupValues?.get(1)
                             if (orderId == null) {
@@ -973,10 +1012,12 @@ body{font-family:system-ui,-apple-system,sans-serif;margin:0;background:#0a0a0a;
 </div>
 <div id="add-order-modal" class="modal-overlay" style="display:none">
   <div class="modal-box" style="max-width:500px">
-    <h3>Add Order — Table <span id="add-table-name"></span></h3>
-    <label>Products</label>
+    <h3>Table <span id="add-table-name"></span> — Order</h3>
+    <label>Existing items (from app)</label>
+    <div class="cart-list" id="add-existing"></div>
+    <label>Add new products</label>
     <div class="product-grid" id="add-products"></div>
-    <label>Cart</label>
+    <label>New items to send</label>
     <div class="cart-list" id="add-cart"></div>
     <div id="add-msg"></div>
     <div class="modal-btns">
@@ -992,7 +1033,7 @@ let tables = [], users = [], products = [];
 let selectedSection = 'Main';
 let searchQuery = '';
 let openTableId = null;
-let addOrderId = null, addTableName = '', addCart = [];
+let addOrderId = null, addTableName = '', addCart = [], addExisting = [];
 let editingSectionKey = null;
 
 var DEFAULT_SECTIONS = { A: [29,30,31,32,33,34,35,40], B: [24,25,26,27,28,29,36,37,38,39], C: [1,2,3,4,5,6,7,8,9,10], D: [11,12,13,14,15,16,17,18,19,20,21], E: [41,42,43] };
@@ -1154,9 +1195,11 @@ function onTableClick(tableId, status) {
     addOrderId = tbl.currentOrderId;
     addTableName = (tbl && tbl.number) ? tbl.number : tableId;
     addCart = [];
+    addExisting = [];
     document.getElementById('add-table-name').textContent = addTableName;
     loadProductsForAdd();
     renderAddCart();
+    renderAddExisting();
     document.getElementById('add-msg').innerHTML = '';
     document.getElementById('add-order-modal').style.display = 'flex';
   }
@@ -1224,6 +1267,55 @@ function renderAddCart() {
   el.innerHTML = html;
 }
 
+function renderAddExisting() {
+  var el = document.getElementById('add-existing');
+  if (!el) return;
+  if (!addExisting.length) {
+    el.innerHTML = '<p style="color:#94a3b8">No existing items on this table.</p>';
+    return;
+  }
+  var html = '';
+  for (var i = 0; i < addExisting.length; i++) {
+    var it = addExisting[i];
+    var total = (it.price != null ? it.price : 0) * (it.quantity != null ? it.quantity : 1);
+    var status = (it.status || '').toLowerCase();
+    var label = '';
+    if (status === 'sent') label = 'Sent to kitchen';
+    else if (status === 'preparing') label = 'Preparing in kitchen';
+    else if (status === 'ready') label = 'Ready';
+    else if (status === 'delivered') label = 'Delivered to table';
+    else label = 'Pending';
+    html += '<div class="cart-item"><span>' + escapeHtml(it.productName || '') + ' x' + (it.quantity || 1) + ' — ' + total.toFixed(2) + ' AED</span><span style="font-size:11px;color:#a5b4fc">' + label + '</span></div>';
+  }
+  el.innerHTML = html;
+}
+
+async function loadExistingItemsForAdd() {
+  if (!addOrderId) {
+    addExisting = [];
+    renderAddExisting();
+    return;
+  }
+  try {
+    var r = await fetch(base + '/orders/' + encodeURIComponent(addOrderId));
+    if (!r.ok) {
+      addExisting = [];
+      renderAddExisting();
+      return;
+    }
+    var j = await r.json();
+    if (j && j.ok && Array.isArray(j.items)) {
+      addExisting = j.items;
+    } else {
+      addExisting = [];
+    }
+    renderAddExisting();
+  } catch (e) {
+    addExisting = [];
+    renderAddExisting();
+  }
+}
+
 function removeCartItem(i) { addCart.splice(i, 1); renderAddCart(); }
 
 async function sendOrderToKitchen() {
@@ -1246,6 +1338,7 @@ async function sendOrderToKitchen() {
       document.getElementById('add-msg').innerHTML = '<p class="msg ok">Sent to kitchen. Synced with app.</p>';
       addCart = [];
       renderAddCart();
+      await loadExistingItemsForAdd();
       setTimeout(function(){ closeAddModal(); loadFloorPlan(); }, 800);
     } else {
       document.getElementById('add-msg').innerHTML = '<p class="msg err">' + (j.error || 'Error') + '</p>';
@@ -1259,6 +1352,7 @@ function closeAddModal() {
   document.getElementById('add-order-modal').style.display = 'none';
   addOrderId = null;
   addCart = [];
+   addExisting = [];
 }
 
 loadFloorPlan();

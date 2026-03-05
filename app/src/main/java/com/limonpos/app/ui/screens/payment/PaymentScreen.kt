@@ -187,11 +187,11 @@ fun PaymentScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Payment Split (Unlimited)", fontWeight = FontWeight.Bold, color = LimonText)
+                        Text("Split Payment", fontWeight = FontWeight.Bold, color = LimonText)
                         TextButton(onClick = { viewModel.addSplit() }) {
                             Icon(Icons.Default.Add, contentDescription = null, tint = LimonPrimary, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("Add", color = LimonPrimary)
+                            Text("Add Person", color = LimonPrimary)
                         }
                     }
                     Spacer(Modifier.height(12.dp))
@@ -214,7 +214,7 @@ fun PaymentScreen(
                     Spacer(Modifier.height(8.dp))
                 }
                 if (uiState.paymentMode == "split" && uiState.splits.isEmpty()) {
-                    Text("Click +Add to add a payment (Unlimited splits)", color = LimonTextSecondary, fontSize = 14.sp)
+                    Text("Tap +Add Person to add another split.", color = LimonTextSecondary, fontSize = 14.sp)
                 }
                 Spacer(Modifier.height(24.dp))
                 val totalPaid = if (uiState.paymentMode == "split") uiState.completedPaymentsTotal else uiState.splits.sumOf { it.amount }
@@ -346,7 +346,8 @@ private fun SplitRow(
                         selected = method == "cash",
                         onClick = {
                             method = "cash"
-                            val amt = amountStr.toDoubleOrNull() ?: 0.0
+                            val amt = if (amountStr.isBlank()) balanceAmount else amountStr.toDoubleOrNull() ?: 0.0
+                            amountStr = if (amt > 0) "%.2f".format(amt) else ""
                             onUpdate(amt, "cash", amt, 0.0)
                         },
                         label = { Text("Cash", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = if (method == "cash") Color.Black else LimonText) },
@@ -357,7 +358,8 @@ private fun SplitRow(
                         selected = method == "card",
                         onClick = {
                             method = "card"
-                            val amt = amountStr.toDoubleOrNull() ?: 0.0
+                            val amt = if (amountStr.isBlank()) balanceAmount else amountStr.toDoubleOrNull() ?: 0.0
+                            amountStr = if (amt > 0) "%.2f".format(amt) else ""
                             onUpdate(amt, "card", 0.0, 0.0)
                         },
                         label = { Text("Card", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = if (method == "card") Color.Black else LimonText) },

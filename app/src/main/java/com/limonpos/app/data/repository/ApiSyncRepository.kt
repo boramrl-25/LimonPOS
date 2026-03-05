@@ -356,8 +356,33 @@ class ApiSyncRepository @Inject constructor(
                 val filteredItems = items.filter { it.id !in voidedIds }
 
                 val localItems = orderItemDao.getOrderItems(dto.id).first()
-                if (filteredItems.isEmpty() && localItems.isNotEmpty()) {
+                // Merge duplicate lines from API (same product/price/notes/status) into single rows with summed quantity
+                val mergedItems = filteredItems
+                    .groupBy {
+                        listOf(
+                            it.productId,
+                            it.productName,
+                            it.price,
+                            it.notes,
+                            it.status,
+                            it.sentAt
+                        )
+                    }
+                    .values
+                    .map { group ->
+                        val first = group.first()
+                        val totalQty = group.sumOf { it.quantity }
+                        first.copy(quantity = totalQty)
+                    }
+
+                val remoteTotalQty = mergedItems.sumOf { it.quantity.toLong() }
+                val localTotalQty = localItems.sumOf { it.quantity.toLong() }
+                if (mergedItems.isEmpty() && localItems.isNotEmpty()) {
                     // Remote has no (non-voided) items but local still has some: keep local version.
+                    continue
+                }
+                if (remoteTotalQty < localTotalQty && localItems.isNotEmpty()) {
+                    // Remote has fewer items than local (possibly stale API state) – do not overwrite local.
                     continue
                 }
                 val orderEntity = OrderEntity(
@@ -377,8 +402,11 @@ class ApiSyncRepository @Inject constructor(
                     syncStatus = "SYNCED"
                 )
                 orderDao.insertOrder(orderEntity)
+                // Keep local deliveredAt information when pulling from API
+                val localItemsById = localItems.associateBy { it.id }
                 orderItemDao.deleteOrderItems(dto.id)
-                val itemEntities = filteredItems.map { item ->
+                val itemEntities = mergedItems.map { item ->
+                    val local = localItemsById[item.id]
                     OrderItemEntity(
                         id = item.id,
                         orderId = dto.id,
@@ -389,6 +417,7 @@ class ApiSyncRepository @Inject constructor(
                         notes = item.notes,
                         status = item.status,
                         sentAt = item.sentAt,
+                        deliveredAt = local?.deliveredAt,
                         apiId = item.id,
                         syncStatus = "SYNCED"
                     )

@@ -331,8 +331,12 @@ fun OrderScreen(
             orderWithItems = uiState.orderWithItems,
             onDismiss = { viewModel.dismissCart() },
             onItemClick = { item ->
-                if (item.status != "pending" && item.deliveredAt == null) viewModel.markItemDelivered(item.id)
-                else viewModel.showEditNoteForItem(item)
+                if (item.status != "pending" && item.deliveredAt == null) {
+                    viewModel.markItemDelivered(item.id)
+                }
+            },
+            onEditNote = { item ->
+                viewModel.showEditNoteForItem(item)
             },
             onRemoveItem = { viewModel.removeItem(it.id) },
             onVoidItem = { viewModel.showVoidConfirm(it) },
@@ -348,8 +352,7 @@ fun OrderScreen(
             },
             canTakePayment = viewModel.canTakePayment.collectAsState(false).value,
             hasPrinterWarning = viewModel.hasPrinterWarningForTable.collectAsState(false).value,
-            printerWarning = uiState.printerWarning,
-            onMarkAllDelivered = { viewModel.markAllSentItemsDelivered() }
+            printerWarning = uiState.printerWarning
         )
     }
     viewModel.itemToRefund.collectAsState(null).value?.let { item ->
@@ -594,6 +597,7 @@ private fun CartBottomSheet(
     orderWithItems: com.limonpos.app.data.repository.OrderWithItems?,
     onDismiss: () -> Unit,
     onItemClick: (OrderItemEntity) -> Unit,
+    onEditNote: (OrderItemEntity) -> Unit,
     onRemoveItem: (OrderItemEntity) -> Unit,
     onVoidItem: (OrderItemEntity) -> Unit,
     onRefundItem: (OrderItemEntity) -> Unit,
@@ -605,8 +609,7 @@ private fun CartBottomSheet(
     onPayment: () -> Unit,
     canTakePayment: Boolean,
     hasPrinterWarning: Boolean = false,
-    printerWarning: String? = null,
-    onMarkAllDelivered: () -> Unit = {}
+    printerWarning: String? = null
 ) {
     Dialog(
         onDismissRequest = onDismiss,
@@ -664,18 +667,13 @@ private fun CartBottomSheet(
                     ) {
                         if (sentItems.isNotEmpty()) {
                             item {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 4.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text("Sent to kitchen", color = LimonTextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                                    TextButton(onClick = onMarkAllDelivered) {
-                                        Text("Mark all delivered", color = LimonPrimary, fontSize = 12.sp)
-                                    }
-                                }
+                                Text(
+                                    "Sent to kitchen",
+                                    color = LimonTextSecondary,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    modifier = Modifier.padding(vertical = 4.dp)
+                                )
                             }
                             items(sentItems, key = { it.id }) { item ->
                                 OrderItemRow(
@@ -685,7 +683,8 @@ private fun CartBottomSheet(
                                     onClick = { onItemClick(item) },
                                     onRemove = null,
                                     onVoid = if (isRecalledOrder) null else { { onVoidItem(item) } },
-                                    onRefund = if (isRecalledOrder) { { onRefundItem(item) } } else null
+                                    onRefund = if (isRecalledOrder) { { onRefundItem(item) } } else null,
+                                    onNote = { onEditNote(item) }
                                 )
                             }
                         }
@@ -697,8 +696,9 @@ private fun CartBottomSheet(
                                 OrderItemRow(
                                     item = item,
                                     isSent = false,
-                                    onClick = { onItemClick(item) },
-                                    onRemove = { onRemoveItem(item) }
+                                    onClick = null,
+                                    onRemove = { onRemoveItem(item) },
+                                    onNote = { onEditNote(item) }
                                 )
                             }
                         }
@@ -1058,7 +1058,8 @@ private fun OrderItemRow(
     onClick: (() -> Unit)? = null,
     onRemove: (() -> Unit)? = null,
     onVoid: (() -> Unit)? = null,
-    onRefund: (() -> Unit)? = null
+    onRefund: (() -> Unit)? = null,
+    onNote: (() -> Unit)? = null
 ) {
     val backgroundColor = when {
         isDelivered -> LimonSuccess.copy(alpha = 0.25f)
@@ -1105,6 +1106,14 @@ private fun OrderItemRow(
                 color = LimonTextSecondary,
                 fontSize = 14.sp
             )
+            if (onNote != null) {
+                TextButton(
+                    onClick = onNote,
+                    colors = ButtonDefaults.textButtonColors(contentColor = LimonPrimary)
+                ) {
+                    Text("Note", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                }
+            }
             if (onRefund != null) {
                 TextButton(
                     onClick = onRefund,

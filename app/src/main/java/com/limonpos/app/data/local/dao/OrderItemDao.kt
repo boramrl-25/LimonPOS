@@ -26,9 +26,6 @@ interface OrderItemDao {
     @Query("UPDATE order_items SET deliveredAt = :deliveredAt WHERE id = :itemId")
     suspend fun markDelivered(itemId: String, deliveredAt: Long)
 
-    @Query("UPDATE order_items SET deliveredAt = :deliveredAt WHERE orderId = :orderId AND sentAt IS NOT NULL AND deliveredAt IS NULL")
-    suspend fun markAllDeliveredForOrder(orderId: String, deliveredAt: Long)
-
     @Delete
     suspend fun deleteOrderItem(item: OrderItemEntity)
 

@@ -15,6 +15,7 @@ import com.limonpos.app.data.zoho.ZohoBooksRepository
 import com.limonpos.app.service.PrinterService
 import com.limonpos.app.util.CurrencyUtils
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -23,6 +24,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 data class PaymentSplit(
@@ -189,23 +191,26 @@ class PaymentViewModel @Inject constructor(
                 val totalPaidAfter = totalPaidBefore + split.amount
                 val newBalance = ow.order.total - totalPaidAfter
 
-                val cashierPrinters = printerRepository.getAllPrinters().first()
-                    .filter { it.printerType == "cashier" && it.ipAddress.isNotBlank() }
+                // Do partial receipt printing on IO thread so UI does not freeze
                 val failedPrinters = mutableListOf<String>()
-                for (printer in cashierPrinters) {
-                    val receipt = printerService.buildPartialReceipt(
-                        order = ow.order,
-                        items = ow.items,
-                        paymentAmount = split.amount,
-                        paymentMethod = split.method,
-                        totalPaidSoFar = totalPaidAfter,
-                        balanceRemaining = newBalance
-                    )
-                    val printResult = printerService.sendToPrinter(printer.ipAddress, printer.port, receipt)
-                    if (printResult.isFailure) failedPrinters.add(printer.name)
-                    if (split.method == "cash") {
-                        val drawerResult = printerService.openCashDrawer(printer.ipAddress, printer.port)
-                        if (drawerResult.isFailure && printer.name !in failedPrinters) failedPrinters.add("${printer.name} (drawer)")
+                withContext(Dispatchers.IO) {
+                    val cashierPrinters = printerRepository.getAllPrinters().first()
+                        .filter { it.printerType == "cashier" && it.ipAddress.isNotBlank() }
+                    for (printer in cashierPrinters) {
+                        val receipt = printerService.buildPartialReceipt(
+                            order = ow.order,
+                            items = ow.items,
+                            paymentAmount = split.amount,
+                            paymentMethod = split.method,
+                            totalPaidSoFar = totalPaidAfter,
+                            balanceRemaining = newBalance
+                        )
+                        val printResult = printerService.sendToPrinter(printer.ipAddress, printer.port, receipt)
+                        if (printResult.isFailure) failedPrinters.add(printer.name)
+                        if (split.method == "cash") {
+                            val drawerResult = printerService.openCashDrawer(printer.ipAddress, printer.port)
+                            if (drawerResult.isFailure && printer.name !in failedPrinters) failedPrinters.add("${printer.name} (drawer)")
+                        }
                     }
                 }
 
@@ -221,16 +226,34 @@ class PaymentViewModel @Inject constructor(
                 }
 
                 if (kotlin.math.abs(newBalance) < 0.01) {
-                    orderRepository.markOrderPaid(ow.order.id)
-                    tableRepository.closeTable(tableId)
-                    if (apiSyncRepository.isOnline()) apiSyncRepository.pushCloseTable(tableId)
-                    val finalReceipt = printerService.buildReceipt(ow.order, ow.items)
-                    for (printer in cashierPrinters) {
-                        printerService.sendToPrinter(printer.ipAddress, printer.port, finalReceipt)
+                    // Mark order paid & close table quickly (local only)
+                    withContext(Dispatchers.IO) {
+                        orderRepository.markOrderPaid(ow.order.id)
+                        tableRepository.closeTable(tableId)
                     }
-                    zohoBooksRepository.pushSalesReceipt(ow.order, ow.items, split.method)
-                    if (apiSyncRepository.isOnline()) apiSyncRepository.syncFromApi()
+                    // Immediately finish payment on UI so screen can close fast
                     _uiState.update { it.copy(paymentComplete = true, message = "Payment completed") }
+
+                    // Fire-and-forget background work: close table on server, final receipt, Zoho, full sync
+                    viewModelScope.launch(Dispatchers.IO) {
+                        try {
+                            if (apiSyncRepository.isOnline()) {
+                                apiSyncRepository.pushCloseTable(tableId)
+                            }
+                            val cashierPrinters = printerRepository.getAllPrinters().first()
+                                .filter { it.printerType == "cashier" && it.ipAddress.isNotBlank() }
+                            val finalReceipt = printerService.buildReceipt(ow.order, ow.items)
+                            for (printer in cashierPrinters) {
+                                printerService.sendToPrinter(printer.ipAddress, printer.port, finalReceipt)
+                            }
+                            zohoBooksRepository.pushSalesReceipt(ow.order, ow.items, split.method)
+                            if (apiSyncRepository.isOnline()) {
+                                apiSyncRepository.syncFromApi()
+                            }
+                        } catch (_: Exception) {
+                            // Ignore background errors here; payment is already completed locally
+                        }
+                    }
                 }
             } catch (e: Exception) {
                 _uiState.update { it.copy(message = e.message ?: "Payment error") }
@@ -258,41 +281,53 @@ class PaymentViewModel @Inject constructor(
             }
             val userId = authRepository.getCurrentUserIdSync() ?: return@launch
             try {
-                for (split in splits) {
-                    val received = if (split.method == "cash") split.receivedAmount else split.amount
-                    val change = if (split.method == "cash") split.changeAmount else 0.0
-                    paymentRepository.createPayment(
-                        orderId = ow.order.id,
-                        amount = split.amount,
-                        method = split.method,
-                        receivedAmount = received,
-                        changeAmount = change,
-                        userId = userId
-                    )
+                // Save all payments on IO thread
+                withContext(Dispatchers.IO) {
+                    for (split in splits) {
+                        val received = if (split.method == "cash") split.receivedAmount else split.amount
+                        val change = if (split.method == "cash") split.changeAmount else 0.0
+                        paymentRepository.createPayment(
+                            orderId = ow.order.id,
+                            amount = split.amount,
+                            method = split.method,
+                            receivedAmount = received,
+                            changeAmount = change,
+                            userId = userId
+                        )
+                    }
+                    orderRepository.markOrderPaid(ow.order.id)
+                    tableRepository.closeTable(tableId)
                 }
-                orderRepository.markOrderPaid(ow.order.id)
-                tableRepository.closeTable(tableId)
-                if (apiSyncRepository.isOnline()) apiSyncRepository.pushCloseTable(tableId)
-                // Print receipt and open cash drawer
-                val cashierPrinters = printerRepository.getAllPrinters().first()
-                    .filter { it.printerType == "cashier" && it.ipAddress.isNotBlank() }
-                val failedPrinters = mutableListOf<String>()
-                for (printer in cashierPrinters) {
-                    val receipt = printerService.buildReceipt(ow.order, ow.items)
-                    val printResult = printerService.sendToPrinter(printer.ipAddress, printer.port, receipt)
-                    if (printResult.isFailure) failedPrinters.add(printer.name)
-                    val drawerResult = printerService.openCashDrawer(printer.ipAddress, printer.port)
-                    if (drawerResult.isFailure && printer.name !in failedPrinters) failedPrinters.add("${printer.name} (drawer)")
+
+                // Immediately mark payment as complete so UI can close fast
+                _uiState.update { it.copy(paymentComplete = true, message = "Payment completed") }
+
+                // Background: close table on server, print receipt, open drawer, Zoho, full sync
+                viewModelScope.launch(Dispatchers.IO) {
+                    try {
+                        if (apiSyncRepository.isOnline()) {
+                            apiSyncRepository.pushCloseTable(tableId)
+                        }
+                        val cashierPrinters = printerRepository.getAllPrinters().first()
+                            .filter { it.printerType == "cashier" && it.ipAddress.isNotBlank() }
+                        val failedPrinters = mutableListOf<String>()
+                        val receipt = printerService.buildReceipt(ow.order, ow.items)
+                        for (printer in cashierPrinters) {
+                            val printResult = printerService.sendToPrinter(printer.ipAddress, printer.port, receipt)
+                            if (printResult.isFailure) failedPrinters.add(printer.name)
+                            val drawerResult = printerService.openCashDrawer(printer.ipAddress, printer.port)
+                            if (drawerResult.isFailure && printer.name !in failedPrinters) failedPrinters.add("${printer.name} (drawer)")
+                        }
+                        val primaryMethod = splits.firstOrNull()?.method ?: "cash"
+                        zohoBooksRepository.pushSalesReceipt(ow.order, ow.items, primaryMethod)
+                        if (apiSyncRepository.isOnline()) {
+                            apiSyncRepository.syncFromApi()
+                        }
+                        // Optionally we could update message with printer failures, but screen may already be closed.
+                    } catch (_: Exception) {
+                        // Ignore background errors here; payment is already completed locally
+                    }
                 }
-                val primaryMethod = splits.firstOrNull()?.method ?: "cash"
-                zohoBooksRepository.pushSalesReceipt(ow.order, ow.items, primaryMethod)
-                if (apiSyncRepository.isOnline()) apiSyncRepository.syncFromApi()
-                val msg = if (failedPrinters.isNotEmpty()) {
-                    "Payment completed. Failed printers: ${failedPrinters.joinToString(", ")}"
-                } else {
-                    "Payment completed"
-                }
-                _uiState.update { it.copy(paymentComplete = true, message = msg) }
             } catch (e: Exception) {
                 _uiState.update { it.copy(message = e.message ?: "Payment error") }
             }
