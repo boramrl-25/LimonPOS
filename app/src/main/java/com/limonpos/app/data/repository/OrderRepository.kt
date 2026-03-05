@@ -146,6 +146,11 @@ class OrderRepository @Inject constructor(
         val now = System.currentTimeMillis()
         val cutoff = now - olderThanMs
         for (order in orders) {
+            // Skip if table is already free (bill paid and table closed)
+            val table = tableRepository.getTableById(order.tableId)
+            if (table == null || table.status == "free") {
+                continue
+            }
             val items = orderItemDao.getOrderItems(order.id).first()
             val overdue = items.filter { it.sentAt != null && it.deliveredAt == null && it.sentAt < cutoff }
             if (overdue.isNotEmpty()) {
