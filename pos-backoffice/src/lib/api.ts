@@ -61,13 +61,34 @@ export async function completeSetup(): Promise<{ setupComplete: boolean }> {
   return res.json();
 }
 
-export type RoleOption = { id: string; label: string; labelTr: string };
+export type RoleOption = { id: string; label: string; labelTr: string; isCustom?: boolean };
 export type PermissionOption = { id: string; scope: string; label: string; labelTr: string };
 
 export async function getPermissions(): Promise<{ roles: RoleOption[]; permissions: PermissionOption[] }> {
   const res = await fetchWithTimeout(`${API_URL}/permissions`, { headers: headers() });
   if (!res.ok) throw new Error("Failed to fetch permissions");
   return res.json();
+}
+
+export async function createRole(body: { id?: string; label: string; labelTr?: string }): Promise<{ id: string; label: string; labelTr: string }> {
+  const res = await fetchWithTimeout(`${API_URL}/roles`, {
+    method: "POST",
+    headers: { ...headers(), "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || "Failed to create role");
+  }
+  return res.json();
+}
+
+export async function deleteRole(id: string): Promise<void> {
+  const res = await fetchWithTimeout(`${API_URL}/roles/${encodeURIComponent(id)}`, { method: "DELETE", headers: headers() });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || "Failed to delete role");
+  }
 }
 
 export async function getUsers() {

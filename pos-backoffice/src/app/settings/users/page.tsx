@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { ArrowLeft, Plus, Trash2, FileSpreadsheet, FileDown, Search } from "lucide-react";
-import { getUsers, createUser, updateUser, deleteUser, importUsers, getPermissions, type RoleOption, type PermissionOption } from "@/lib/api";
+import { getUsers, createUser, updateUser, deleteUser, importUsers, getPermissions, createRole, deleteRole, type RoleOption, type PermissionOption } from "@/lib/api";
 import * as XLSX from "xlsx";
 
 type User = { id: string; name: string; pin: string; role: string; active?: number | boolean; permissions?: string[]; cash_drawer_permission?: boolean };
@@ -23,7 +23,12 @@ export default function UsersSettingsPage() {
   const [importing, setImporting] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("");
+  const [newRoleLabel, setNewRoleLabel] = useState("");
+  const [newRoleLabelTr, setNewRoleLabelTr] = useState("");
+  const [addingRole, setAddingRole] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const customRoles = roles.filter((r) => r.isCustom);
 
   const filteredUsers = users
     .filter((u) => {
@@ -111,6 +116,36 @@ export default function UsersSettingsPage() {
       await load();
     } catch (e) {
       alert((e as Error).message);
+    }
+  }
+
+  async function addNewRole(e: React.FormEvent) {
+    e.preventDefault();
+    const label = newRoleLabel.trim();
+    if (!label) {
+      alert("Rol adı gerekli");
+      return;
+    }
+    setAddingRole(true);
+    try {
+      await createRole({ label, labelTr: newRoleLabelTr.trim() || label });
+      setNewRoleLabel("");
+      setNewRoleLabelTr("");
+      await load();
+    } catch (err) {
+      alert((err as Error).message);
+    } finally {
+      setAddingRole(false);
+    }
+  }
+
+  async function removeRole(roleId: string) {
+    if (!confirm("Bu rolü silmek istediğinize emin misiniz? Bu role atanmış kullanıcılar etkilenebilir.")) return;
+    try {
+      await deleteRole(roleId);
+      await load();
+    } catch (err) {
+      alert((err as Error).message);
     }
   }
 
@@ -237,6 +272,50 @@ export default function UsersSettingsPage() {
           </select>
         </div>
       </div>
+
+      <section className="mb-6 p-4 rounded-xl bg-slate-800/50 border border-slate-700">
+        <h3 className="text-sm font-semibold text-slate-200 mb-3">Yeni rol ekle / Add new role</h3>
+        <form onSubmit={addNewRole} className="flex flex-wrap items-end gap-3 mb-4">
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">Rol adı (EN)</label>
+            <input
+              type="text"
+              value={newRoleLabel}
+              onChange={(e) => setNewRoleLabel(e.target.value)}
+              placeholder="e.g. Host"
+              className="px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white text-sm w-40"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">Rol adı (TR)</label>
+            <input
+              type="text"
+              value={newRoleLabelTr}
+              onChange={(e) => setNewRoleLabelTr(e.target.value)}
+              placeholder="e.g. Host"
+              className="px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white text-sm w-40"
+            />
+          </div>
+          <button type="submit" disabled={addingRole || !newRoleLabel.trim()} className="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-sm font-medium disabled:opacity-50">
+            {addingRole ? "..." : "Rol ekle"}
+          </button>
+        </form>
+        {customRoles.length > 0 && (
+          <div>
+            <p className="text-xs text-slate-500 mb-2">Özel roller (silebilirsiniz):</p>
+            <ul className="flex flex-wrap gap-2">
+              {customRoles.map((r) => (
+                <li key={r.id} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-700/80 border border-slate-600">
+                  <span className="text-sm text-slate-200">{r.labelTr || r.label}</span>
+                  <button type="button" onClick={() => removeRole(r.id)} className="p-0.5 rounded hover:bg-red-600/30 text-red-400" title="Rolü sil">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </section>
 
       <div className="flex justify-between items-center mb-4 flex-wrap gap-4">
         <span className="text-slate-400">Staff list (A–Z)</span>

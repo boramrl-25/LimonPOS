@@ -393,7 +393,34 @@ const PERMISSIONS = [
 ];
 
 app.get("/api/permissions", authMiddleware, async (req, res) => {
-  res.json({ roles: ROLES, permissions: PERMISSIONS });
+  await ensureData();
+  const customRoles = (db.data.custom_roles || []).map((r) => ({ ...r, isCustom: true }));
+  const builtIn = ROLES.map((r) => ({ ...r, isCustom: false }));
+  res.json({ roles: [...builtIn, ...customRoles], permissions: PERMISSIONS });
+});
+
+app.post("/api/roles", authMiddleware, async (req, res) => {
+  await ensureData();
+  const body = req.body || {};
+  const id = (body.id || "custom_" + (body.label || "role").toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "")).trim();
+  if (!id) return res.status(400).json({ error: "id or label required" });
+  const allRoleIds = [...ROLES.map((r) => r.id), ...(db.data.custom_roles || []).map((r) => r.id)];
+  if (allRoleIds.includes(id)) return res.status(400).json({ error: "Role id already exists" });
+  const label = (body.label || id).trim();
+  const labelTr = (body.labelTr || body.label || id).trim();
+  db.data.custom_roles = db.data.custom_roles || [];
+  db.data.custom_roles.push({ id, label, labelTr });
+  await db.write();
+  res.json({ id, label, labelTr });
+});
+
+app.delete("/api/roles/:id", authMiddleware, async (req, res) => {
+  await ensureData();
+  const { id } = req.params;
+  if (ROLES.some((r) => r.id === id)) return res.status(400).json({ error: "Cannot delete built-in role" });
+  db.data.custom_roles = (db.data.custom_roles || []).filter((r) => r.id !== id);
+  await db.write();
+  res.status(204).send();
 });
 
 // Users
