@@ -369,6 +369,21 @@ export default function ProductsPage() {
     }
   }
 
+  const PRODUCT_EXPORT_COLUMNS = [
+    "Name",
+    "NameArabic",
+    "NameTurkish",
+    "SKU",
+    "Category",
+    "Price",
+    "VATPercent",
+    "Till",
+    "Printers",
+    "Modifiers",
+    "OverdueMinutes",
+    "ImageURL",
+  ] as const;
+
   function downloadProductsTemplate() {
     const rows = [
       {
@@ -400,7 +415,7 @@ export default function ProductsPage() {
         ImageURL: "",
       },
     ];
-    const ws = XLSX.utils.json_to_sheet(rows);
+    const ws = XLSX.utils.json_to_sheet(rows, { header: [...PRODUCT_EXPORT_COLUMNS] });
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Products");
     XLSX.writeFile(wb, "products_import_template.xlsx");
@@ -408,34 +423,34 @@ export default function ProductsPage() {
 
   function exportProductsToExcel() {
     if (!products.length) {
-      alert("No products to export");
+      alert("Export edilecek urun yok");
       return;
     }
-    const printerById = new Map(printers.map((pr) => [pr.id, pr.name]));
+    const printerById = new Map(
+      (Array.isArray(printers) ? printers : []).map((pr: { id?: string; name?: string }) => [pr?.id ?? "", pr?.name ?? ""])
+    );
     const modifierById = new Map(modifierGroups.map((mg) => [mg.id, mg.name]));
     const rows = products.map((p) => {
-      const printerNames = (Array.isArray(p.printers) ? p.printers : [])
-        .map((id) => printerById.get(id))
-        .filter(Boolean) as string[];
-      const modifierNames = (toModifierIds(p.modifier_groups) || [])
-        .map((id) => modifierById.get(id))
-        .filter(Boolean) as string[];
+      const printerIds = Array.isArray(p.printers) ? p.printers : [];
+      const modifierIds = toModifierIds(p.modifier_groups) || [];
+      const printerNames = printerIds.map((id) => printerById.get(id)).filter(Boolean) as string[];
+      const modifierNames = modifierIds.map((id) => modifierById.get(id)).filter(Boolean) as string[];
       return {
-        Name: p.name,
-        NameArabic: p.name_arabic || "",
-        NameTurkish: p.name_turkish || "",
-        SKU: p.sku || "",
-        Category: p.category || "",
+        Name: p.name ?? "",
+        NameArabic: p.name_arabic ?? "",
+        NameTurkish: p.name_turkish ?? "",
+        SKU: p.sku ?? "",
+        Category: p.category ?? "",
         Price: p.price ?? 0,
         VATPercent: (p.tax_rate ?? 0) * 100,
         Till: Boolean(p.pos_enabled) ? "On" : "Off",
         Printers: printerNames.join(", "),
         Modifiers: modifierNames.join(", "),
         OverdueMinutes: p.overdue_undelivered_minutes ?? "",
-        ImageURL: p.image_url || "",
+        ImageURL: p.image_url ?? "",
       };
     });
-    const ws = XLSX.utils.json_to_sheet(rows);
+    const ws = XLSX.utils.json_to_sheet(rows, { header: [...PRODUCT_EXPORT_COLUMNS] });
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Products");
     XLSX.writeFile(wb, "products.xlsx");
