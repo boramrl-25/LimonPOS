@@ -53,7 +53,9 @@ data class PaymentUiState(
     /** Discount: pending request for this order (web approval needed). */
     val discountRequestPending: Boolean = false,
     val discountRequestLoading: Boolean = false,
-    val showDiscountRequestDialog: Boolean = false
+    val showDiscountRequestDialog: Boolean = false,
+    /** After discount request sent successfully, navigate to floor plan. */
+    val navigateToFloorPlanAfterDiscount: Boolean = false
 )
 
 @HiltViewModel
@@ -138,7 +140,7 @@ class PaymentViewModel @Inject constructor(
             }
             _uiState.update { it.copy(discountRequestLoading = false) }
             if (ok) {
-                _uiState.update { it.copy(discountRequestPending = true, message = "İndirim talebi gönderildi. Web onayından sonra Sync ile güncel tutarı alın.") }
+                _uiState.update { it.copy(discountRequestPending = true, message = "İndirim talebi gönderildi. Web onayından sonra Sync ile güncel tutarı alın.", navigateToFloorPlanAfterDiscount = true) }
             } else {
                 _uiState.update { it.copy(message = "İndirim talebi gönderilemedi. Bağlantıyı kontrol edin veya Sync yapıp tekrar deneyin.") }
             }
@@ -428,6 +430,10 @@ class PaymentViewModel @Inject constructor(
 
     fun clearMessage() {
         _uiState.update { it.copy(message = null) }
+    }
+
+    fun clearNavigateToFloorPlanAfterDiscount() {
+        _uiState.update { it.copy(navigateToFloorPlanAfterDiscount = false) }
     }
 
     fun fixNegativeBalance() {
