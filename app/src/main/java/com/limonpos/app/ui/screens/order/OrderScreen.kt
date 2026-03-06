@@ -837,10 +837,13 @@ private fun AddProductModifiersDialog(
 ) {
     var groups by remember { mutableStateOf<List<ModifierGroupWithOptions>>(emptyList()) }
     var selectedOptions by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var loading by remember { mutableStateOf(true) }
 
     LaunchedEffect(product) {
+        loading = true
         groups = getModifierGroups()
         selectedOptions = emptySet()
+        loading = false
     }
 
     AlertDialog(
@@ -848,6 +851,11 @@ private fun AddProductModifiersDialog(
         title = { Text("${product.name} - Select Modifier", fontWeight = FontWeight.Bold) },
         text = {
             Column {
+                if (loading) {
+                    Text("Yükleniyor...", color = LimonTextSecondary)
+                } else if (groups.isEmpty()) {
+                    Text("Modifier grubu bulunamadı. Sync yapıp tekrar deneyin.", color = LimonTextSecondary, fontSize = 14.sp)
+                }
                 groups.forEach { gwo ->
                     Text(gwo.group.name, fontWeight = FontWeight.Medium, color = LimonText)
                     gwo.options.forEach { opt ->
@@ -867,7 +875,14 @@ private fun AddProductModifiersDialog(
                         ) {
                             Checkbox(
                                 checked = opt.id in selectedOptions,
-                                onCheckedChange = { /* Row clickable handles toggle to avoid double-fire */ }
+                                onCheckedChange = { checked ->
+                                    val set = selectedOptions.toMutableSet()
+                                    if (checked) {
+                                        if (gwo.group.maxSelect == 1) set.removeAll(gwo.options.map { it.id })
+                                        set.add(opt.id)
+                                    } else set.remove(opt.id)
+                                    selectedOptions = set
+                                }
                             )
                             Text("${opt.name} (+${CurrencyUtils.format(opt.price)})", color = LimonText)
                         }
