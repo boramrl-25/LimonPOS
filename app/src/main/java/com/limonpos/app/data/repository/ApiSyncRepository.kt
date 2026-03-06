@@ -163,19 +163,31 @@ class ApiSyncRepository @Inject constructor(
             return false
         }
         restoreAuthTokenIfNeeded()
-        return try {
-            lastSyncError = null
+        lastSyncError = null
+        try {
             syncCategories()
+        } catch (e: Exception) {
+            lastSyncError = "Kategoriler: ${e.message}"
+            Log.e("ApiSync", "syncCategories error", e)
+            return false
+        }
+        try {
             syncModifierGroups()
-            if (!syncProducts()) return false
+        } catch (e: Exception) {
+            lastSyncError = "Modifier gruplar: ${e.message}"
+            Log.e("ApiSync", "syncModifierGroups error", e)
+            return false
+        }
+        if (!syncProducts()) return false
+        try {
             syncPrinters()
             syncUsers()
-            true
         } catch (e: Exception) {
-            lastSyncError = e.message ?: "Sync hatası"
-            Log.e("ApiSync", "syncCatalog error: ${e.message}", e)
-            false
+            lastSyncError = "Yazıcı/Kullanıcı: ${e.message}"
+            Log.e("ApiSync", "syncPrinters/Users error", e)
+            return false
         }
+        return true
     }
 
     /** Create discount request for order (web will approve with actual % or amount). */
@@ -782,9 +794,24 @@ class ApiSyncRepository @Inject constructor(
     }
 
     private suspend fun syncPrinters() {
-        val response = apiService.getPrinters()
-        if (response.isSuccessful) {
+        try {
+            val response = apiService.getPrinters()
+            if (!response.isSuccessful) return
             val dtos = response.body() ?: return
+            val isBackup = { v: Any? ->
+                when (v) {
+                    is Boolean -> v
+                    is Number -> (v as Number).toInt() != 0
+                    else -> false
+                }
+            }
+            val kdsOn = { v: Any? ->
+                when (v) {
+                    is Boolean -> v
+                    is Number -> (v as Number).toInt() != 0
+                    else -> true
+                }
+            }
             printerDao.deleteAll()
             val entities = dtos.map { dto ->
                 PrinterEntity(
@@ -795,19 +822,29 @@ class ApiSyncRepository @Inject constructor(
                     port = dto.port,
                     connectionType = dto.connectionType,
                     status = dto.status,
-                    isDefault = dto.isBackup,
-                    kdsEnabled = (dto.kdsEnabled ?: 1) != 0,
+                    isDefault = isBackup(dto.isBackup),
+                    kdsEnabled = kdsOn(dto.kdsEnabled),
                     syncStatus = "SYNCED"
                 )
             }
             printerDao.insertPrinters(entities)
+        } catch (e: Exception) {
+            Log.e("ApiSync", "syncPrinters error: ${e.message}", e)
+            lastSyncError = "Yazıcı/Kullanıcı: ${e.message ?: "parse hatası"}"
         }
     }
 
     private suspend fun syncUsers() {
-        val response = apiService.getUsers()
-        if (response.isSuccessful) {
+        try {
+            val response = apiService.getUsers()
+            if (!response.isSuccessful) return
             val dtos = response.body() ?: return
+            val permList = { v: Any? ->
+                when (v) {
+                    is List<*> -> v.mapNotNull { it?.toString() }.filter { it.isNotBlank() }
+                    else -> emptyList<String>()
+                }
+            }
             userDao.deleteAll()
             val entities = dtos.map { dto ->
                 val isActive = when (dto.active) {
@@ -821,12 +858,15 @@ class ApiSyncRepository @Inject constructor(
                     pin = dto.pin,
                     role = dto.role,
                     active = isActive,
-                    permissions = (dto.permissions ?: emptyList()).let { Gson().toJson(it) },
+                    permissions = Gson().toJson(permList(dto.permissions)),
                     cashDrawerPermission = dto.cashDrawerPermission ?: (dto.role == "cashier" || dto.role == "admin"),
                     syncStatus = "SYNCED"
                 )
             }
             userDao.insertUsers(entities)
+        } catch (e: Exception) {
+            Log.e("ApiSync", "syncUsers error: ${e.message}", e)
+            lastSyncError = "Yazıcı/Kullanıcı: ${e.message ?: "parse hatası"}"
         }
     }
 

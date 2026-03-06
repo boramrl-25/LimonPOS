@@ -8,6 +8,6 @@ data class UserDto(
     @SerializedName("pin") val pin: String,
     @SerializedName("role") val role: String,
     @SerializedName("active") val active: Any? = true, // Boolean or 0/1 from API
-    @SerializedName("permissions") val permissions: List<String>? = null,
+    @SerializedName("permissions") val permissions: Any? = null,  // List<String> or mixed from API
     @SerializedName("cash_drawer_permission") val cashDrawerPermission: Boolean? = false
 )
