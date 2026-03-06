@@ -416,7 +416,7 @@ export async function syncFromZoho(db, options = {}) {
       printers: (existing && existing.printers) || "[]",
       modifier_groups: (existing && existing.modifier_groups) || "[]",
       active: (existing && existing.active) != null ? existing.active : 1,
-      pos_enabled: (existing && existing.pos_enabled) != null ? existing.pos_enabled : (localCatId ? 1 : 0),
+      pos_enabled: (existing && existing.pos_enabled) != null ? existing.pos_enabled : 0,
       zoho_item_id: it.item_id,
       sellable: true,
       sellable_from_api: it.sellable_from_api,
