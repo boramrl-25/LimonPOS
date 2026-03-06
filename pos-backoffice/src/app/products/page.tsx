@@ -754,6 +754,7 @@ export default function ProductsPage() {
         <div>
           <h1 className="text-2xl font-bold text-sky-400">Products</h1>
           <p className="text-slate-400">Add, edit, delete products. Zoho sync ile ürünler güncellenir; Zoho'da kaldırılanlar &quot;silinecek önerisi&quot; olarak listelenir, onay verene kadar satışta kalır.</p>
+          <p className="text-slate-500 text-xs mt-1">Checkbox ile seç, toplu sil. Export/Import: Printers, Modifiers, OverdueMinutes dahil.</p>
           <p className="text-slate-500 text-sm mt-1">Excel veya CSV: Örnek dosyayı indir, doldur, yükle.</p>
           {lastSync && <p className="text-slate-500 text-sm mt-1">Last sync: {lastSync}</p>}
           {zohoCheckResult && (

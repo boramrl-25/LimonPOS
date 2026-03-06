@@ -1919,7 +1919,7 @@ async function startServer() {
   } catch (e) {
     console.error("[startup] ensureData failed (server will still start):", e?.message || e);
   }
-  app.listen(PORT, HOST, () => {
+  const server = app.listen(PORT, HOST, () => {
     console.log(`LimonPOS Backend running on http://${HOST}:${PORT}`);
     if (DATA_DIR) {
       console.log(`DATA_DIR=${DATA_DIR} – veriler kalıcı (restart'ta silinmez).`);
@@ -1929,6 +1929,14 @@ async function startServer() {
     if (HOST === "0.0.0.0") {
       console.log("Listening on all interfaces – Railway/dış erişim için hazır.");
     }
+  });
+  process.on("SIGTERM", () => {
+    console.log("[SIGTERM] Graceful shutdown...");
+    server.close(() => {
+      console.log("[SIGTERM] Server closed.");
+      process.exit(0);
+    });
+    setTimeout(() => process.exit(0), 5000);
   });
 }
 
