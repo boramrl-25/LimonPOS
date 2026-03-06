@@ -4,8 +4,10 @@ import com.limonpos.app.data.local.dao.UserDao
 import com.limonpos.app.data.local.entity.UserEntity
 import com.limonpos.app.data.remote.ApiService
 import com.limonpos.app.data.remote.AuthTokenProvider
+import com.google.gson.Gson
 import com.limonpos.app.data.remote.dto.CashDrawerVerifyRequest
 import com.limonpos.app.data.remote.dto.LoginRequest
+import com.limonpos.app.data.remote.dto.UserDto
 import com.limonpos.app.util.SessionManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -33,20 +35,52 @@ class AuthRepository @Inject constructor(
     fun isLoggedIn(): Flow<Boolean> = sessionManager.isLoggedIn
 
     suspend fun login(pin: String): Result<UserEntity> {
+        // Önce API ile dene — Web'de On olan kullanıcılar sync beklemeden giriş yapabilsin
+        try {
+            val response = apiService.login(LoginRequest(pin = pin))
+            if (response.isSuccessful) {
+                val body = response.body()
+                val dto = body?.user
+                if (dto != null) {
+                    val entity = userDtoToEntity(dto)
+                    userDao.insertUser(entity)
+                    val cashDrawerPermission = dto.role == "admin" || dto.role == "manager" || (dto.cashDrawerPermission == true)
+                    sessionManager.login(entity.id, entity.name, entity.role, entity.pin, cashDrawerPermission)
+                    authTokenProvider.setToken(body.token ?: entity.pin)
+                    return Result.success(entity)
+                }
+            }
+        } catch (_: Exception) { /* offline veya hata — local DB'ye düş */ }
+        // Fallback: local DB (sync ile güncellenmiş veya seed)
         val user = userDao.getUserByPin(pin) ?: return Result.failure(Exception("Invalid PIN"))
         val cashDrawerPermission = user.role == "admin" || user.role == "manager" || user.cashDrawerPermission
         sessionManager.login(user.id, user.name, user.role, user.pin, cashDrawerPermission)
-        // Backend accepts user.id or user.pin as token; use pin for compatibility (app/backend user IDs may differ)
         authTokenProvider.setToken(user.pin)
         scope.launch {
             try {
                 val response = apiService.login(LoginRequest(pin = pin))
-                if (response.isSuccessful) {
-                    response.body()?.token?.let { authTokenProvider.setToken(it) }
-                }
-            } catch (_: Exception) { /* offline – token already set above */ }
+                if (response.isSuccessful) response.body()?.token?.let { authTokenProvider.setToken(it) }
+            } catch (_: Exception) { }
         }
         return Result.success(user)
+    }
+
+    private fun userDtoToEntity(dto: UserDto): UserEntity {
+        val isActive = when (dto.active) {
+            is Boolean -> dto.active
+            is Number -> (dto.active as Number).toInt() != 0
+            else -> true
+        }
+        return UserEntity(
+            id = dto.id,
+            name = dto.name,
+            pin = dto.pin,
+            role = dto.role,
+            active = isActive,
+            permissions = Gson().toJson(dto.permissions ?: emptyList<String>()),
+            cashDrawerPermission = dto.cashDrawerPermission ?: (dto.role == "cashier" || dto.role == "admin"),
+            syncStatus = "SYNCED"
+        )
     }
 
     suspend fun verifyPin(pin: String): Result<Boolean> {
