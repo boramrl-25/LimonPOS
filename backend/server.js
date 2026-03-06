@@ -1275,7 +1275,7 @@ app.get("/api/orders/discount-requests", authMiddleware, async (req, res) => {
   let list = (db.data.discount_requests || []).filter((r) => r.status === status);
   list = list.map((r) => {
     const order = db.data.orders.find((o) => o.id === r.order_id);
-    return { ...r, order_subtotal: order?.subtotal, order_total_before_discount: order ? (order.subtotal || 0) + (order.tax_amount || 0) };
+    return { ...r, order_subtotal: order?.subtotal, order_total_before_discount: order ? (order.subtotal || 0) + (order.tax_amount || 0) : 0 };
   });
   list.sort((a, b) => (a.requested_at || 0) - (b.requested_at || 0));
   res.json({ requests: list });
