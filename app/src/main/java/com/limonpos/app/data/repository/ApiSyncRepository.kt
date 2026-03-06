@@ -655,10 +655,7 @@ class ApiSyncRepository @Inject constructor(
                     is Boolean -> dto.posEnabled
                     is Number -> (dto.posEnabled as Number).toInt() != 0
                     is String -> (dto.posEnabled as String).lowercase() in listOf("true", "1", "yes", "on")
-                    else -> {
-                        Log.w("ApiSync", "posEnabled unexpected type for ${dto.name}: ${dto.posEnabled}, defaulting to false")
-                        false
-                    }
+                    else -> false
                 }
                 val active = when (dto.active) {
                     is Boolean -> dto.active
