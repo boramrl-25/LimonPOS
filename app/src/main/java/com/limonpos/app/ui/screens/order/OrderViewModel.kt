@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import com.limonpos.app.data.local.dao.ModifierGroupDao
 import com.limonpos.app.data.local.dao.ModifierOptionDao
 import com.limonpos.app.data.local.entity.CategoryEntity
@@ -312,15 +313,25 @@ class OrderViewModel @Inject constructor(
     /** addToCart debounce: aynı ürün (id+fiyat+not) kısa sürede tekrar eklenirse sadece 1 kez işlenir (2x/4x tetiklenmeyi önler). */
     private var lastAddToCartKey: String? = null
     private var lastAddToCartTimeMs: Long = 0L
-    private val addToCartDebounceMs = 500L
+    private val addToCartDebounceMs = 1000L
+    private var isAddingProduct = false
 
     fun addProduct(product: ProductEntity) {
-        val groupIds = parseModifierGroupIds(product.modifierGroups)
-        if (groupIds.isNotEmpty()) {
-            _productToAddWithModifiers.value = product
-            return
+        if (isAddingProduct) return
+        isAddingProduct = true
+        viewModelScope.launch {
+            try {
+                val groupIds = parseModifierGroupIds(product.modifierGroups)
+                if (groupIds.isNotEmpty()) {
+                    _productToAddWithModifiers.value = product
+                } else {
+                    addToCart(product, emptyList(), "")
+                }
+            } finally {
+                delay(500L)
+                isAddingProduct = false
+            }
         }
-        addToCart(product, emptyList(), "")
     }
 
     fun dismissModifierDialog() {
@@ -422,20 +433,37 @@ class OrderViewModel @Inject constructor(
     }
 
     suspend fun getModifierGroupsForProduct(product: ProductEntity): List<ModifierGroupWithOptions> {
+        Log.d(TAG, "getModifierGroupsForProduct: product=${product.name}, modifierGroups=${product.modifierGroups}")
         val groupIds: List<String> = parseModifierGroupIds(product.modifierGroups)
-        if (groupIds.isEmpty()) return emptyList()
-        val groups = groupIds.mapNotNull { modifierGroupDao.getModifierGroupById(it) }
+        Log.d(TAG, "getModifierGroupsForProduct: parsed groupIds=$groupIds")
+        if (groupIds.isEmpty()) {
+            Log.w(TAG, "getModifierGroupsForProduct: No modifier groups found for ${product.name}")
+            return emptyList()
+        }
+        val groups = groupIds.mapNotNull { id ->
+            val group = modifierGroupDao.getModifierGroupById(id)
+            if (group == null) Log.w(TAG, "getModifierGroupsForProduct: Group not found in DB: $id")
+            group
+        }
+        Log.d(TAG, "getModifierGroupsForProduct: Found ${groups.size} groups in DB")
         return groups.map { group ->
             val options = modifierOptionDao.getOptionsByGroupId(group.id).first()
+            Log.d(TAG, "getModifierGroupsForProduct: Group ${group.name} has ${options.size} options")
             ModifierGroupWithOptions(group, options)
         }
     }
 
     private fun parseModifierGroupIds(json: String): List<String> {
+        if (json.isBlank() || json == "[]" || json == "null") return emptyList()
         return try {
             val arr = gson.fromJson(json, Array<String>::class.java)
-            arr?.toList()?.filter { it.isNotEmpty() } ?: emptyList()
-        } catch (_: Exception) {
+            if (arr != null && arr.isNotEmpty()) {
+                return arr.toList().filter { it.isNotEmpty() }
+            }
+            val list = gson.fromJson<List<String>>(json, object : TypeToken<List<String>>() {}.type)
+            list?.filter { it.isNotEmpty() } ?: emptyList()
+        } catch (e: Exception) {
+            Log.w(TAG, "parseModifierGroupIds failed for: $json, error: ${e.message}")
             emptyList()
         }
     }

@@ -36,6 +36,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -60,6 +61,7 @@ import com.limonpos.app.data.repository.OverdueUndelivered
 import android.media.AudioManager
 import android.media.ToneGenerator
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -1345,11 +1347,22 @@ private fun ProductCard(
     product: ProductEntity,
     onClick: () -> Unit
 ) {
+    var clickEnabled by remember { mutableStateOf(true) }
+    val scope = rememberCoroutineScope()
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(0.8f)
-            .clickable(onClick = onClick),
+            .clickable(enabled = clickEnabled) {
+                if (clickEnabled) {
+                    clickEnabled = false
+                    onClick()
+                    scope.launch {
+                        delay(800L)
+                        clickEnabled = true
+                    }
+                }
+            },
         colors = CardDefaults.cardColors(containerColor = LimonSurface),
         shape = RoundedCornerShape(12.dp)
     ) {

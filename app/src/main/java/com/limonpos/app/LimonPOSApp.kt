@@ -1,6 +1,7 @@
 package com.limonpos.app
 
 import android.app.Application
+import android.util.Log
 import com.limonpos.app.data.local.DatabaseSeeder
 import com.limonpos.app.data.repository.ApiSyncRepository
 import com.limonpos.app.data.repository.OrderRepository
@@ -35,7 +36,7 @@ class LimonPOSApp : Application() {
         startOverdueCheckLoop()
     }
 
-    /** Masaya gitmeyen ürün uyarısı: uygulama genelinde her 30 sn kontrol, OverdueWarningHolder güncellenir. */
+    /** Masaya gitmeyen ürün uyarısı: uygulama genelinde her 15 sn kontrol, OverdueWarningHolder güncellenir. */
     private fun startOverdueCheckLoop() {
         applicationScope.launch {
             apiSyncRepository.clearOverdueMinutesCache()
@@ -43,9 +44,15 @@ class LimonPOSApp : Application() {
                 try {
                     val minutes = apiSyncRepository.getOverdueUndeliveredMinutes()
                     val list = orderRepository.getOverdueUndelivered(minutes)
+                    Log.d("LimonPOSApp", "Overdue check: minutes=$minutes, found=${list.size} items")
+                    if (list.isNotEmpty()) {
+                        Log.d("LimonPOSApp", "Overdue items: ${list.map { "Table ${it.tableNumber}" }}")
+                    }
                     overdueWarningHolder.update(if (list.isNotEmpty()) list else null)
-                } catch (_: Exception) { /* ignore */ }
-                kotlinx.coroutines.delay(30 * 1000L)
+                } catch (e: Exception) {
+                    Log.e("LimonPOSApp", "Overdue check error: ${e.message}")
+                }
+                kotlinx.coroutines.delay(15 * 1000L)
             }
         }
     }
