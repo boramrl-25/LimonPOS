@@ -433,20 +433,27 @@ class ApiSyncRepository @Inject constructor(
         tableDao.deleteAll()
         val entities = dtos.map { dto ->
                 val local = localOccupied[dto.id]
-                val useLocal = local != null && (dto.currentOrderId.isNullOrBlank())
                 val res = dto.reservation
+                // Server says reserved → always use reserved (web and app must show same state).
+                // Only use local status when preserving local occupied order (server has no order yet).
+                val isReservedFromApi = dto.status == "reserved" || res != null
+                val useLocalOccupied = !isReservedFromApi && local != null && dto.currentOrderId.isNullOrBlank() && local.currentOrderId != null
                 TableEntity(
                     id = dto.id,
                     number = dto.number.toString(),
                     name = dto.name,
                     capacity = dto.capacity,
                     floor = dto.floor,
-                    status = if (useLocal) local!!.status else dto.status,
-                    currentOrderId = if (useLocal) local!!.currentOrderId else dto.currentOrderId,
-                    guestCount = if (useLocal) local!!.guestCount else dto.guestCount,
-                    waiterId = if (useLocal) local!!.waiterId else dto.waiterId,
-                    waiterName = if (useLocal) local!!.waiterName else dto.waiterName,
-                    openedAt = if (useLocal) local!!.openedAt else dto.openedAt?.let { parseIsoDate(it) },
+                    status = when {
+                        isReservedFromApi -> "reserved"
+                        useLocalOccupied -> local!!.status
+                        else -> dto.status
+                    },
+                    currentOrderId = if (useLocalOccupied) local!!.currentOrderId else dto.currentOrderId,
+                    guestCount = if (useLocalOccupied) local!!.guestCount else dto.guestCount,
+                    waiterId = if (useLocalOccupied) local!!.waiterId else dto.waiterId,
+                    waiterName = if (useLocalOccupied) local!!.waiterName else dto.waiterName,
+                    openedAt = if (useLocalOccupied) local!!.openedAt else dto.openedAt?.let { parseIsoDate(it) },
                     syncStatus = "SYNCED",
                     x = dto.x,
                     y = dto.y,
