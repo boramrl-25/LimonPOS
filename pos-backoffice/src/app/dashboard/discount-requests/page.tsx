@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { ArrowLeft, Percent, Check } from "lucide-react";
 import { getDiscountRequestsPending, approveDiscountRequest } from "@/lib/api";
@@ -15,6 +15,11 @@ export default function DiscountRequestsPage() {
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState<string | null>(null);
   const [approveForm, setApproveForm] = useState<{ requestId: string; orderId: string; percent: string; amount: string; note: string } | null>(null);
+  const formOpenRef = useRef(false);
+
+  useEffect(() => {
+    formOpenRef.current = !!approveForm;
+  }, [approveForm]);
 
   async function load() {
     setLoading(true);
@@ -30,7 +35,9 @@ export default function DiscountRequestsPage() {
 
   useEffect(() => {
     load();
-    const id = setInterval(load, 6000);
+    const id = setInterval(() => {
+      if (!formOpenRef.current) load();
+    }, 6000);
     return () => clearInterval(id);
   }, []);
 
