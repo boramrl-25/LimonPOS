@@ -388,21 +388,37 @@ export async function syncFromZoho(db, options = {}) {
   }
 
   // Upsert: önce silme yok. Zoho'da olmayan ürünler sadece zoho_suggest_remove ile işaretlenir; onay verilene kadar satışta kalır.
+  // SKU ile manuel eklenen ürünleri eşleştir – duplicate oluşmasın
   const zohoIdsInFetch = new Set(items.map((it) => String(it.item_id)));
   let productsAdded = 0;
   let productsUpdated = 0;
 
   const webOnlyProducts = existingProducts.filter((p) => !p.zoho_item_id);
   const byZohoId = new Map(existingProducts.filter((p) => p.zoho_item_id).map((p) => [String(p.zoho_item_id), p]));
-  const merged = [...webOnlyProducts];
+  const bySkuWebOnly = new Map();
+  for (const p of webOnlyProducts) {
+    const s = String(p.sku || "").trim().toLowerCase();
+    if (s && !bySkuWebOnly.has(s)) bySkuWebOnly.set(s, p);
+  }
+  const usedWebIds = new Set();
+
+  const merged = [];
 
   for (const it of items) {
     const zohoId = String(it.item_id);
-    const existing = byZohoId.get(zohoId);
+    let existing = byZohoId.get(zohoId);
     const sku = (it.sku || "").trim() || String(it.item_id);
+    const skuNorm = sku.toLowerCase();
+    if (!existing && sku && bySkuWebOnly.has(skuNorm)) {
+      existing = bySkuWebOnly.get(skuNorm);
+      if (existing && !usedWebIds.has(existing.id)) {
+        usedWebIds.add(existing.id);
+        bySkuWebOnly.delete(skuNorm);
+      }
+    }
     const catName = (it.item_group_name || "").toString().trim().toLowerCase();
     const localCatId = (catName && zohoCatNameToLocal[catName]) || (it.item_group_id && zohoCatIdToLocal[String(it.item_group_id)]) || null;
-    const id = `p_zoho_${it.item_id}`;
+    const id = existing ? existing.id : `p_zoho_${it.item_id}`;
     const row = {
       id,
       name: it.name || "Unnamed",
@@ -422,13 +438,13 @@ export async function syncFromZoho(db, options = {}) {
       sellable_from_api: it.sellable_from_api,
       zoho_suggest_remove: false,
     };
-    if (existing) {
-      merged.push({ ...existing, ...row });
-      productsUpdated++;
-    } else {
-      merged.push(row);
-      productsAdded++;
-    }
+    merged.push({ ...(existing || {}), ...row });
+    if (existing) productsUpdated++;
+    else productsAdded++;
+  }
+
+  for (const p of webOnlyProducts) {
+    if (!usedWebIds.has(p.id)) merged.push(p);
   }
 
   // Zoho'da artık olmayan ürünler: silinmez, sadece "silinecek önerisi" işareti; onay verilene kadar satışta kalır

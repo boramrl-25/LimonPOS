@@ -143,7 +143,7 @@ class OrderViewModel @Inject constructor(
         }
         viewModelScope.launch {
             while (true) {
-                delay(10000)
+                delay(20000)
                 try {
                     if (apiSyncRepository.isOnline()) {
                         if (_uiState.value.categoriesWithProducts.isEmpty()) {

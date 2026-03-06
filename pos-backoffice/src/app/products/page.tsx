@@ -70,7 +70,7 @@ export default function ProductsPage() {
   }, []);
 
   useEffect(() => {
-    const t = setInterval(() => load(), 30000);
+    const t = setInterval(() => load(), 60000);
     return () => clearInterval(t);
   }, []);
 
@@ -88,7 +88,7 @@ export default function ProductsPage() {
       }
     }
     runSync();
-    const t = setInterval(runSync, 60000);
+    const t = setInterval(runSync, 120000);
     return () => {
       mounted = false;
       clearInterval(t);

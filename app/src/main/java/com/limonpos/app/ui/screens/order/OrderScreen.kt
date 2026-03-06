@@ -214,7 +214,15 @@ fun OrderScreen(
                 )
             )
         },
-        snackbarHost = { SnackbarHost(snackbarHostState) }
+        snackbarHost = {
+            SnackbarHost(snackbarHostState) { data ->
+                Snackbar(
+                    snackbarData = data,
+                    containerColor = LimonSurface,
+                    contentColor = LimonText
+                )
+            }
+        }
     ) { padding ->
         Column(
             modifier = Modifier
