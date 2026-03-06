@@ -127,6 +127,13 @@ export default function ProductsPage() {
     }
   }
 
+  function toModifierIds(arr: unknown): string[] {
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .map((x) => (typeof x === "string" ? x : (x as { id?: string })?.id)?.trim())
+      .filter((id): id is string => !!id);
+  }
+
   function openEdit(p?: Product) {
     if (p) {
       setEditing(p);
@@ -140,8 +147,8 @@ export default function ProductsPage() {
         price: p.price,
         tax_rate: (p.tax_rate ?? 0) * 100,
         image_url: p.image_url || "",
-        printers: p.printers || [],
-        modifier_groups: p.modifier_groups || [],
+        printers: Array.isArray(p.printers) ? p.printers : [],
+        modifier_groups: toModifierIds(p.modifier_groups),
         pos_enabled: Boolean(p.pos_enabled),
         overdue_undelivered_minutes: od,
       });

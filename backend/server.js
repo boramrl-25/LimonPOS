@@ -255,6 +255,19 @@ async function ensureData() {
     });
     db.data.migrations.posEnabledRespectZero = true;
   }
+  // Migration: normalize product modifier_groups to JSON array of string IDs (fix Zoho/old format)
+  if (!db.data.migrations.productModifierGroupsNormalize) {
+    function toModIds(val) {
+      if (!val) return [];
+      const arr = typeof val === "string" ? (() => { try { return JSON.parse(val); } catch { return []; } })() : Array.isArray(val) ? val : [];
+      return arr.map((x) => (typeof x === "string" ? x : x?.id ?? x?.Id)?.toString?.()?.trim()).filter(Boolean);
+    }
+    db.data.products = (db.data.products || []).map((p) => {
+      const ids = toModIds(p.modifier_groups);
+      return { ...p, modifier_groups: JSON.stringify(ids) };
+    });
+    db.data.migrations.productModifierGroupsNormalize = true;
+  }
   // Migration: normalize table layout so tables are ordered by number (1–10 together, then 11–20, etc.)
   if (!db.data.migrations.tablesGridLayoutV1) {
     const tables = Array.isArray(db.data.tables) ? [...db.data.tables] : [];
