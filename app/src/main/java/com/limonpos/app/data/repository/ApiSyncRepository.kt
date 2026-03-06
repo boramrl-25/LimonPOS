@@ -135,13 +135,14 @@ class ApiSyncRepository @Inject constructor(
         }
     }
 
-    /** Fast catalog sync for manual refresh: only categories + products (+ printers/users if needed). */
+    /** Fast catalog sync for manual refresh: categories, products, modifier groups (+ printers/users). */
     suspend fun syncCatalog(): Boolean {
         if (!isOnline()) return false
         restoreAuthTokenIfNeeded()
         return try {
             syncCategories()
             syncProducts()
+            syncModifierGroups()
             syncPrinters()
             syncUsers()
             true

@@ -19,6 +19,7 @@ import com.limonpos.app.data.printer.PrinterWarningState
 import com.limonpos.app.data.repository.ApiSyncRepository
 import com.limonpos.app.data.repository.AuthRepository
 import com.limonpos.app.data.repository.OrderRepository
+import com.limonpos.app.data.repository.OverdueWarningHolder
 import com.limonpos.app.data.repository.VoidRequestRepository
 import com.limonpos.app.data.repository.OrderWithItems
 import com.limonpos.app.data.repository.OverdueUndelivered
@@ -92,7 +93,8 @@ class OrderViewModel @Inject constructor(
     private val authRepository: AuthRepository,
     private val voidRequestRepository: VoidRequestRepository,
     private val modifierGroupDao: ModifierGroupDao,
-    private val modifierOptionDao: ModifierOptionDao
+    private val modifierOptionDao: ModifierOptionDao,
+    private val overdueWarningHolder: OverdueWarningHolder
 ) : ViewModel() {
 
     private val tableId: String = checkNotNull(savedStateHandle["tableId"]) { "tableId required" }
@@ -105,8 +107,7 @@ class OrderViewModel @Inject constructor(
     private val _productToAddWithModifiers = MutableStateFlow<ProductEntity?>(null)
     val productToAddWithModifiers: StateFlow<ProductEntity?> = _productToAddWithModifiers.asStateFlow()
 
-    private val _overdueWarning = MutableStateFlow<List<OverdueUndelivered>?>(null)
-    val overdueWarning: StateFlow<List<OverdueUndelivered>?> = _overdueWarning.asStateFlow()
+    val overdueWarning: StateFlow<List<OverdueUndelivered>?> = overdueWarningHolder.overdue
 
     val hasPrinterWarningForTable: StateFlow<Boolean> = printerWarningHolder.state
         .map { it != null && it.tableId == tableId }
@@ -125,7 +126,6 @@ class OrderViewModel @Inject constructor(
         loadTable()
         refreshOrderId()
         loadCategoriesWithProducts()
-        startOverdueCheckLoop()
         viewModelScope.launch {
             if (apiSyncRepository.isOnline()) {
                 _uiState.update { it.copy(syncInProgress = true) }
@@ -505,13 +505,14 @@ class OrderViewModel @Inject constructor(
         }
     }
 
-    private fun startOverdueCheckLoop() {
+    @Suppress("REMOVED_OVERDUE_LOOP")
+    private fun _removedOverdueLoop() {
         viewModelScope.launch {
             apiSyncRepository.clearOverdueMinutesCache() // ilk döngüde web’deki 1 dk ayarı hemen kullanılsın
             while (true) {
                 val minutes = apiSyncRepository.getOverdueUndeliveredMinutes()
                 val list = orderRepository.getOverdueUndelivered(minutes)
-                if (list.isNotEmpty()) _overdueWarning.value = list
+                overdueWarningHolder.update(if (list.isNotEmpty()) list else null)
                 delay(30 * 1000L) // 30 sn: 1 dk uyarı çalışsın, API/DB yükü makul kalsın
             }
         }
@@ -538,7 +539,7 @@ class OrderViewModel @Inject constructor(
     }
 
     fun dismissOverdueWarning() {
-        _overdueWarning.value = null
+        overdueWarningHolder.update(null)
     }
 
     fun consumeNavigateToFloorPlanRequest() {

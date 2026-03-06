@@ -867,14 +867,7 @@ private fun AddProductModifiersDialog(
                         ) {
                             Checkbox(
                                 checked = opt.id in selectedOptions,
-                                onCheckedChange = { checked ->
-                                    val set = selectedOptions.toMutableSet()
-                                    if (checked) {
-                                        if (gwo.group.maxSelect == 1) set.removeAll(gwo.options.map { it.id })
-                                        set.add(opt.id)
-                                    } else set.remove(opt.id)
-                                    selectedOptions = set
-                                }
+                                onCheckedChange = { /* Row clickable handles toggle to avoid double-fire */ }
                             )
                             Text("${opt.name} (+${CurrencyUtils.format(opt.price)})", color = LimonText)
                         }

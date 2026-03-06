@@ -6,6 +6,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -23,6 +24,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.limonpos.app.data.repository.ApiSyncRepository
 import com.limonpos.app.data.repository.AuthRepository
+import com.limonpos.app.data.repository.OverdueWarningHolder
 import com.limonpos.app.ui.screens.closedbills.ClosedBillsScreen
 import com.limonpos.app.ui.screens.floorplan.FloorPlanScreen
 import com.limonpos.app.ui.screens.home.HomeScreen
@@ -40,6 +42,7 @@ import com.limonpos.app.ui.screens.products.ProductsScreen
 import com.limonpos.app.ui.screens.categories.CategoriesScreen
 import com.limonpos.app.ui.screens.modifiers.ModifiersScreen
 import com.limonpos.app.ui.screens.serversettings.ServerSettingsScreen
+import com.limonpos.app.util.showOverdueNotification
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.Duration
@@ -96,6 +99,7 @@ private fun computeNextSyncDelayMillis(): Long {
 fun NavGraph(
     authRepository: AuthRepository,
     apiSyncRepository: ApiSyncRepository,
+    overdueWarningHolder: OverdueWarningHolder,
     navController: NavHostController = rememberNavController()
 ) {
     val scope = rememberCoroutineScope()
@@ -111,6 +115,14 @@ fun NavGraph(
             )
         }
     } else {
+        val context = LocalContext.current
+        LaunchedEffect(Unit) {
+            overdueWarningHolder.overdue.collect { list ->
+                if (!list.isNullOrEmpty()) {
+                    showOverdueNotification(context, list)
+                }
+            }
+        }
         // Scheduled sync: only at fixed times when online (no continuous background polling)
         LaunchedEffect(Unit) {
             while (true) {

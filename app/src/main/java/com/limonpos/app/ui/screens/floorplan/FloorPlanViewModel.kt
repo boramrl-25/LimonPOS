@@ -10,6 +10,7 @@ import com.limonpos.app.data.printer.PrinterWarningState
 import com.limonpos.app.data.repository.ApiSyncRepository
 import com.limonpos.app.data.repository.AuthRepository
 import com.limonpos.app.data.repository.OrderRepository
+import com.limonpos.app.data.repository.OverdueWarningHolder
 import com.limonpos.app.data.repository.TableRepository
 import com.limonpos.app.data.repository.OverdueUndelivered
 import com.limonpos.app.data.repository.VoidRequestRepository
@@ -68,7 +69,8 @@ class FloorPlanViewModel @Inject constructor(
     private val printerWarningHolder: PrinterWarningHolder,
     private val kitchenPrintHelper: KitchenPrintHelper,
     private val voidRequestRepository: VoidRequestRepository,
-    private val closedBillAccessRequestDao: ClosedBillAccessRequestDao
+    private val closedBillAccessRequestDao: ClosedBillAccessRequestDao,
+    private val overdueWarningHolder: OverdueWarningHolder
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(FloorPlanUiState())
@@ -94,8 +96,7 @@ class FloorPlanViewModel @Inject constructor(
         .map { if (it.isEmpty()) DEFAULT_FLOOR_PLAN_SECTIONS else it }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DEFAULT_FLOOR_PLAN_SECTIONS)
 
-    private val _overdueWarning = MutableStateFlow<List<OverdueUndelivered>?>(null)
-    val overdueWarning: StateFlow<List<OverdueUndelivered>?> = _overdueWarning.asStateFlow()
+    val overdueWarning: StateFlow<List<OverdueUndelivered>?> = overdueWarningHolder.overdue
 
     companion object {
         private const val POLL_INTERVAL_MS = 25_000L
@@ -104,7 +105,6 @@ class FloorPlanViewModel @Inject constructor(
     init {
         loadTables()
         syncFromApi()
-        startOverdueCheckLoop()
         startPeriodicSync()
     }
 
@@ -119,20 +119,21 @@ class FloorPlanViewModel @Inject constructor(
         }
     }
 
-    private fun startOverdueCheckLoop() {
+    @Suppress("UNUSED")
+    private fun _removedOverdueLoop() {
         viewModelScope.launch {
             apiSyncRepository.clearOverdueMinutesCache() // ilk döngüde web’deki 1 dk ayarı hemen kullanılsın
             while (true) {
                 val minutes = apiSyncRepository.getOverdueUndeliveredMinutes()
                 val list = orderRepository.getOverdueUndelivered(minutes)
-                if (list.isNotEmpty()) _overdueWarning.value = list
+                overdueWarningHolder.update(if (list.isNotEmpty()) list else null)
                 delay(30 * 1000L) // 30 sn: 1 dk uyarı çalışsın, API/DB yükü makul kalsın
             }
         }
     }
 
     fun dismissOverdueWarning() {
-        _overdueWarning.value = null
+        overdueWarningHolder.update(null)
     }
 
     private fun syncFromApi() {

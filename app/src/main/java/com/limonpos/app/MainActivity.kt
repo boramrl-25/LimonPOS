@@ -13,6 +13,7 @@ import com.limonpos.app.ui.theme.LimonPOSTheme
 import com.limonpos.app.ui.theme.LimonBackground
 import com.limonpos.app.data.repository.AuthRepository
 import com.limonpos.app.data.repository.ApiSyncRepository
+import com.limonpos.app.data.repository.OverdueWarningHolder
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -20,9 +21,17 @@ import javax.inject.Inject
 class MainActivity : ComponentActivity() {
     @Inject lateinit var authRepository: AuthRepository
     @Inject lateinit var apiSyncRepository: ApiSyncRepository
+    @Inject lateinit var overdueWarningHolder: OverdueWarningHolder
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        } else {
+            @Suppress("DEPRECATION")
+            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
+        }
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             setTaskDescription(ActivityManager.TaskDescription("Limon POS"))
@@ -33,7 +42,7 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = LimonBackground
                 ) {
-                    NavGraph(authRepository = authRepository, apiSyncRepository = apiSyncRepository)
+                    NavGraph(authRepository = authRepository, apiSyncRepository = apiSyncRepository, overdueWarningHolder = overdueWarningHolder)
                 }
             }
         }
