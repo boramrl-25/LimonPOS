@@ -222,6 +222,7 @@ export default function ProductsPage() {
         image_url: p.image_url ?? "",
         printers: p.printers ?? [],
         modifier_groups: p.modifier_groups ?? [],
+        active: Boolean(p.active),
         pos_enabled: !isOn,
       });
       await load(true);

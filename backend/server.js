@@ -568,7 +568,10 @@ app.put("/api/products/:id", authMiddleware, async (req, res) => {
   const idx = db.data.products.findIndex((p) => p.id === req.params.id);
   if (idx < 0) return res.status(404).json({ error: "Not found" });
   const body = req.body;
-  db.data.products[idx] = { ...db.data.products[idx], name: body.name, name_arabic: body.name_arabic || "", name_turkish: body.name_turkish || "", sku: body.sku || "", category_id: body.category_id || null, price: body.price ?? 0, tax_rate: body.tax_rate ?? 0, image_url: body.image_url ?? db.data.products[idx].image_url ?? "", printers: JSON.stringify(body.printers || []), modifier_groups: JSON.stringify(body.modifier_groups || []), active: body.active !== false ? 1 : 0, pos_enabled: body.pos_enabled !== false ? 1 : 0, overdue_undelivered_minutes: body.overdue_undelivered_minutes != null && body.overdue_undelivered_minutes !== "" ? Math.min(1440, Math.max(1, Number(body.overdue_undelivered_minutes) || 10)) : (db.data.products[idx].overdue_undelivered_minutes ?? null) };
+  const existing = db.data.products[idx];
+  const active = body.active === undefined ? existing.active : (body.active !== false && body.active !== 0 ? 1 : 0);
+  const posEnabled = body.pos_enabled === undefined ? existing.pos_enabled : (body.pos_enabled !== false && body.pos_enabled !== 0 ? 1 : 0);
+  db.data.products[idx] = { ...existing, name: body.name, name_arabic: body.name_arabic || "", name_turkish: body.name_turkish || "", sku: body.sku || "", category_id: body.category_id || null, price: body.price ?? 0, tax_rate: body.tax_rate ?? 0, image_url: body.image_url ?? existing.image_url ?? "", printers: JSON.stringify(body.printers || []), modifier_groups: JSON.stringify(body.modifier_groups || []), active, pos_enabled: posEnabled, overdue_undelivered_minutes: body.overdue_undelivered_minutes != null && body.overdue_undelivered_minutes !== "" ? Math.min(1440, Math.max(1, Number(body.overdue_undelivered_minutes) || 10)) : (existing.overdue_undelivered_minutes ?? null) };
   await db.write();
   const cats = Object.fromEntries((db.data.categories || []).map((r) => [r.id, r.name]));
   res.json({ ...db.data.products[idx], category: cats[db.data.products[idx].category_id] || "", printers: JSON.parse(db.data.products[idx].printers || "[]"), modifier_groups: JSON.parse(db.data.products[idx].modifier_groups || "[]") });
