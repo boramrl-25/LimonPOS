@@ -11,6 +11,7 @@ Bu rehberde **backend (API)** ve **web (pos.the-limon.com)** deploy adımları v
 | **Vercel / Railway hiç kurmadım** | Aşağıdaki **1. Web** ve **2. Backend** bölümlerini sırayla yap (her biri bir kez). |
 | **İkisini de kurduk, sadece kodu güncellemek istiyorum** | Bilgisayarda `git push origin main` yap (veya Cursor’da “Push” de). Sonrası otomatik. |
 | **pos.the-limon.com / api.the-limon.com açılmıyor** | Domain’i Vercel ve Railway’e bağla; domain sağlayıcında CNAME kayıtlarını ekle (aşağıda anlatıldı). |
+| **pos.the-limon.com 404 veriyor** | Vercel’de **Root Directory** mutlaka `pos-backoffice` olmalı. Aşağıdaki “404 alıyorsan” adımlarını uygula. |
 | **Veriler yine silindi** | Railway’de **Volume** (mount: `/data`) ve **DATA_DIR=/data** tanımlı mı kontrol et. Yoksa ekle, redeploy et. |
 
 **Özet:** İlk seferde Vercel + Railway’i kurup domain’leri bağlarsan, sonra sadece `git push` yeter; deploy’u sen yapmıyorsun, otomatik olur.
@@ -56,6 +57,17 @@ Not: **Integrations** sayfasına girme; proje deploy’u **Projects** → **Add 
 
 - Vercel → Proje → **Settings** → **Domains** → `pos.the-limon.com` ekle.
 - Domain sağlayıcında (GoDaddy, Cloudflare vb.) **CNAME**: `pos.the-limon.com` → `cname.vercel-dns.com` (Vercel’in verdiği adres neyse onu kullan).
+
+### pos.the-limon.com 404 alıyorsan
+
+1. **Vercel** → [vercel.com](https://vercel.com) → Giriş yap → **LimonPOS** projesini aç.
+2. **Settings** → **General** → **Root Directory** kısmına bak.
+   - **Mutlaka `pos-backoffice` yazılı olmalı.** Boş veya farklı bir şeyse **Edit** deyip `pos-backoffice` yaz, **Save**.
+3. **Deployments** sekmesine geç → sağ üstten **Redeploy** (son deployment’ı “Redeploy” ile tekrar deploy et).
+4. Domain kontrolü: **Settings** → **Domains** → `pos.the-limon.com` listede mi? Yoksa **Add** ile ekle.
+5. Tarayıcıda **https://pos.the-limon.com/pos** dene (uygulama `/pos` altında çalışıyor). Ana sayfa yine de açılmıyorsa Root Directory’yi kaydettikten sonra 1–2 dakika bekleyip tekrar dene.
+
+**Neden 404 olur?** Root Directory `pos-backoffice` değilse Vercel repo kökünden build alır; orada Next.js uygulaması olmadığı için build hata verir veya boş sayfa/404 döner.
 
 ---
 

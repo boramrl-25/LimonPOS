@@ -77,7 +77,10 @@ export default function DiscountRequestsPage() {
         {loading ? (
           <p className="text-slate-500 py-8">Yükleniyor...</p>
         ) : requests.length === 0 ? (
-          <p className="text-slate-500 py-8">Bekleyen indirim talebi yok.</p>
+          <div className="text-slate-500 py-8 space-y-2">
+            <p>Bekleyen indirim talebi yok.</p>
+            <p className="text-sm">Talep gelmiyorsa: uygulamada önce Sync yapıp sonra indirim talebi gönderin. Bu sayfayı görmek için kullanıcıda &quot;Web: İndirim taleplerini onayla&quot; yetkisi olmalı.</p>
+          </div>
         ) : (
           <ul className="space-y-4">
             {requests.map((r) => (

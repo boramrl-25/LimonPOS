@@ -133,13 +133,14 @@ class PaymentViewModel @Inject constructor(
             if (requestedPercent == null && requestedAmount == null) return@launch
             _uiState.update { it.copy(discountRequestLoading = true, showDiscountRequestDialog = false) }
             val ok = withContext(Dispatchers.IO) {
+                apiSyncRepository.syncFromApi()
                 apiSyncRepository.createDiscountRequest(ow.order.id, requestedPercent, requestedAmount, note)
             }
             _uiState.update { it.copy(discountRequestLoading = false) }
             if (ok) {
                 _uiState.update { it.copy(discountRequestPending = true, message = "İndirim talebi gönderildi. Web onayından sonra Sync ile güncel tutarı alın.") }
             } else {
-                _uiState.update { it.copy(message = "İndirim talebi gönderilemedi. Bağlantıyı kontrol edin.") }
+                _uiState.update { it.copy(message = "İndirim talebi gönderilemedi. Bağlantıyı kontrol edin veya Sync yapıp tekrar deneyin.") }
             }
         }
     }
