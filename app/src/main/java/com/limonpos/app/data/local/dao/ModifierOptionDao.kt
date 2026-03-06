@@ -27,6 +27,9 @@ interface ModifierOptionDao {
     @Delete
     suspend fun deleteModifierOption(option: ModifierOptionEntity)
 
+    @Query("DELETE FROM modifier_options WHERE modifierGroupId = :groupId")
+    suspend fun deleteOptionsByGroupId(groupId: String)
+
     @Query("DELETE FROM modifier_options")
     suspend fun deleteAll()
 }

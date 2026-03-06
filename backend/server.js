@@ -542,17 +542,18 @@ app.get("/api/products", authMiddleware, async (req, res) => {
   res.json(
     products.map((r) => {
       let modGroups = JSON.parse(r.modifier_groups || "[]");
-      if (!Array.isArray(modGroups) || modGroups.length === 0) {
-        const cat = r.category_id ? catById[r.category_id] : null;
-        if (cat && cat.modifier_groups) {
-          const catMods = JSON.parse(cat.modifier_groups || "[]");
-          if (Array.isArray(catMods) && catMods.length > 0) modGroups = [...catMods];
+      if (!Array.isArray(modGroups)) modGroups = [];
+      const cat = r.category_id ? catById[r.category_id] : null;
+      if (cat && cat.modifier_groups) {
+        const catMods = JSON.parse(cat.modifier_groups || "[]");
+        if (Array.isArray(catMods) && catMods.length > 0) {
+          modGroups = [...new Set([...modGroups, ...catMods])];
         }
       }
       return {
         ...r,
         tax_rate: r.tax_rate ?? 0,
-        pos_enabled: r.pos_enabled ?? 0,
+        pos_enabled: r.pos_enabled === 1 ? 1 : 0,
         category: cats[r.category_id] || "",
         printers: JSON.parse(r.printers || "[]"),
         modifier_groups: modGroups,

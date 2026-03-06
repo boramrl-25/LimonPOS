@@ -742,8 +742,9 @@ class ApiSyncRepository @Inject constructor(
         val response = apiService.getModifierGroups()
         if (response.isSuccessful) {
             val dtos = response.body() ?: return
-            modifierGroupDao.deleteAll()
-            modifierOptionDao.deleteAll()
+            val apiIds = dtos.map { it.id }.toSet()
+            val existing = modifierGroupDao.getAllModifierGroups().first()
+            existing.filter { it.id !in apiIds }.forEach { modifierGroupDao.deleteModifierGroup(it) }
             dtos.forEach { dto ->
                 modifierGroupDao.insertModifierGroup(
                     ModifierGroupEntity(
@@ -754,6 +755,7 @@ class ApiSyncRepository @Inject constructor(
                         required = dto.required
                     )
                 )
+                modifierOptionDao.deleteOptionsByGroupId(dto.id)
                 dto.options?.forEach { opt ->
                     modifierOptionDao.insertModifierOption(
                         ModifierOptionEntity(
@@ -765,6 +767,7 @@ class ApiSyncRepository @Inject constructor(
                     )
                 }
             }
+            Log.d("ApiSync", "syncModifierGroups: upserted ${dtos.size} groups")
         }
     }
 
