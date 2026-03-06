@@ -418,7 +418,8 @@ class ApiSyncRepository @Inject constructor(
                     val toAdd = localGroup.size - apiCount
                     if (toAdd <= 0) continue
                     val template = localGroup.first()
-                    val itemsToUpdate = localGroup.filter { it.apiId == null }.take(toAdd)
+                    val itemsToUpdate = localGroup.filter { it.apiId == null }
+                    var updateIdx = 0
                     for (i in 0 until toAdd) {
                         val itemReq = AddOrderItemRequest(
                             productId = template.productId,
@@ -430,8 +431,10 @@ class ApiSyncRepository @Inject constructor(
                         val addRes = apiService.addOrderItem(localOrderId, itemReq)
                         if (addRes.isSuccessful) {
                             val dto = addRes.body()
-                            if (dto != null && i < itemsToUpdate.size) {
-                                orderItemDao.updateOrderItem(itemsToUpdate[i].copy(apiId = dto.id, syncStatus = "SYNCED"))
+                            val item = itemsToUpdate.getOrNull(updateIdx)
+                            if (dto != null && item != null) {
+                                orderItemDao.updateOrderItem(item.copy(apiId = dto.id, syncStatus = "SYNCED"))
+                                updateIdx++
                             }
                         } else {
                             Log.e("ApiSync", "addOrderItem failed for ${template.productName}")
