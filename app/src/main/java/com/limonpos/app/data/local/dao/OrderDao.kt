@@ -57,11 +57,4 @@ interface OrderDao {
 
     @Query("DELETE FROM orders")
     suspend fun deleteAll()
-
-    /** Orders created in [fromMs, toMs] inclusive (for date-range clear). */
-    @Query("SELECT * FROM orders WHERE createdAt >= :fromMs AND createdAt <= :toMs")
-    suspend fun getOrdersByCreatedAtRange(fromMs: Long, toMs: Long): List<OrderEntity>
-
-    @Query("DELETE FROM orders WHERE id IN (:ids)")
-    suspend fun deleteByIds(ids: List<String>)
 }

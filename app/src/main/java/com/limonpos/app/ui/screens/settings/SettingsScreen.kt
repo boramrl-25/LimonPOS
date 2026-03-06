@@ -58,13 +58,17 @@ fun SettingsScreen(
             TopAppBar(
                 title = { Text(if (isKdsOnly) "KDS" else "Settings", fontWeight = FontWeight.Bold, color = LimonText) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = LimonText)
+                    if (!isKdsOnly) {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = LimonText)
+                        }
                     }
                 },
                 actions = {
-                    IconButton(onClick = onNavigateToFloorPlan) {
-                        Icon(Icons.Default.Home, contentDescription = "Floor Plan", tint = LimonPrimary)
+                    if (!isKdsOnly) {
+                        IconButton(onClick = onNavigateToFloorPlan) {
+                            Icon(Icons.Default.Home, contentDescription = "Floor Plan", tint = LimonPrimary)
+                        }
                     }
                     Box {
                         IconButton(

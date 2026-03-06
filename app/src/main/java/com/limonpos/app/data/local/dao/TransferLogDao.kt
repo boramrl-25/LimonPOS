@@ -17,8 +17,5 @@ interface TransferLogDao {
 
     @Query("DELETE FROM transfer_logs")
     suspend fun deleteAll()
-
-    @Query("DELETE FROM transfer_logs WHERE orderId IN (:orderIds)")
-    suspend fun deleteByOrderIds(orderIds: List<String>)
 }
 

@@ -305,14 +305,18 @@ class OrderViewModel @Inject constructor(
     private val _showRefundFullConfirm = MutableStateFlow(false)
     val showRefundFullConfirm: StateFlow<Boolean> = _showRefundFullConfirm.asStateFlow()
 
+    /** addToCart debounce: aynı ürün (id+fiyat+not) kısa sürede tekrar eklenirse sadece 1 kez işlenir (2x/4x tetiklenmeyi önler). */
+    private var lastAddToCartKey: String? = null
+    private var lastAddToCartTimeMs: Long = 0L
+    private val addToCartDebounceMs = 500L
+
     fun addProduct(product: ProductEntity) {
         val groupIds = parseModifierGroupIds(product.modifierGroups)
         if (groupIds.isNotEmpty()) {
             _productToAddWithModifiers.value = product
-        } else {
-            // Not modifier product: her tıklamada 1 adet ekle (çoklu adet için çoklu tık)
-            addToCart(product, emptyList(), "")
+            return
         }
+        addToCart(product, emptyList(), "")
     }
 
     fun dismissModifierDialog() {
@@ -332,6 +336,14 @@ class OrderViewModel @Inject constructor(
         quantity: Int = 1
     ) {
         viewModelScope.launch {
+            val modifierPrice = selectedOptions.sumOf { it.price }
+            val totalPrice = product.price + modifierPrice
+            val key = "${product.id}|$totalPrice|$notes|$quantity"
+            val now = System.currentTimeMillis()
+            if (key == lastAddToCartKey && (now - lastAddToCartTimeMs) < addToCartDebounceMs) return@launch
+            lastAddToCartKey = key
+            lastAddToCartTimeMs = now
+
             dismissModifierDialog()
             dismissNotesDialog()
             _uiState.update { it.copy(addToCartError = null) }
@@ -360,8 +372,6 @@ class OrderViewModel @Inject constructor(
                 }
                 val finalOrderId = orderId ?: return@launch
                 val safeQuantity = quantity.coerceAtLeast(1)
-                val modifierPrice = selectedOptions.sumOf { it.price }
-                val totalPrice = product.price + modifierPrice
                 val modifierNames = selectedOptions.joinToString(", ") { it.name }
                 val productName = if (modifierNames.isNotEmpty()) "${product.name} ($modifierNames)" else product.name
                 withContext(Dispatchers.IO) {

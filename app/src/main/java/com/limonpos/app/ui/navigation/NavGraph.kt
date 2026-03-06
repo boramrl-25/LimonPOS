@@ -139,31 +139,72 @@ fun NavGraph(
                 }
             }
             composable(Routes.FLOOR_PLAN) {
-                val scope = rememberCoroutineScope()
-                val canAccessKds by authRepository.canAccessKds().collectAsState(initial = false)
-                var canAccessClosedBillApprovals by remember { mutableStateOf(false) }
+                var isKdsUser by remember { mutableStateOf<Boolean?>(null) }
                 LaunchedEffect(Unit) {
-                    canAccessClosedBillApprovals = authRepository.hasClosedBillAccess()
+                    isKdsUser = (authRepository.getCurrentUser()?.role == "kds")
                 }
-                FloorPlanScreen(
-                    onNavigateToOrder = { tableId -> navController.navigate(Routes.order(tableId)) },
-                    onNavigateToSettings = { navController.navigate(Routes.SETTINGS) },
-                    onNavigateToClosedBills = { navController.navigate(Routes.CLOSED_BILLS) },
-                    onNavigateToVoidApprovals = { navController.navigate(Routes.VOID_APPROVALS) },
-                    canAccessVoidApprovals = canAccessKds,
-                    onNavigateToClosedBillAccessApprovals = { navController.navigate(Routes.CLOSED_BILL_ACCESS_APPROVALS) },
-                    canAccessClosedBillAccessApprovals = canAccessClosedBillApprovals,
-                    onSync = onSync,
-                    onLogout = { scope.launch { authRepository.logout() } }
-                )
+                LaunchedEffect(isKdsUser) {
+                    if (isKdsUser == true) {
+                        navController.navigate(Routes.SETTINGS) {
+                            popUpTo(Routes.FLOOR_PLAN) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    }
+                }
+                when (isKdsUser) {
+                    true -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = LimonPrimary)
+                    }
+                    false -> {
+                        val scope = rememberCoroutineScope()
+                        val canAccessKds by authRepository.canAccessKds().collectAsState(initial = false)
+                        var canAccessClosedBillApprovals by remember { mutableStateOf(false) }
+                        LaunchedEffect(Unit) {
+                            canAccessClosedBillApprovals = authRepository.hasClosedBillAccess()
+                        }
+                        FloorPlanScreen(
+                            onNavigateToOrder = { tableId -> navController.navigate(Routes.order(tableId)) },
+                            onNavigateToSettings = { navController.navigate(Routes.SETTINGS) },
+                            onNavigateToClosedBills = { navController.navigate(Routes.CLOSED_BILLS) },
+                            onNavigateToVoidApprovals = { navController.navigate(Routes.VOID_APPROVALS) },
+                            canAccessVoidApprovals = canAccessKds,
+                            onNavigateToClosedBillAccessApprovals = { navController.navigate(Routes.CLOSED_BILL_ACCESS_APPROVALS) },
+                            canAccessClosedBillAccessApprovals = canAccessClosedBillApprovals,
+                            onSync = onSync,
+                            onLogout = { scope.launch { authRepository.logout() } }
+                        )
+                    }
+                    null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = LimonPrimary)
+                    }
+                }
             }
             composable(
                 route = Routes.ORDER,
                 arguments = listOf(navArgument("tableId") { type = NavType.StringType })
             ) { backStackEntry ->
                 val tableId = backStackEntry.arguments?.getString("tableId") ?: ""
-                if (tableId.isNotEmpty()) {
-                    OrderScreen(
+                var isKdsUser by remember { mutableStateOf<Boolean?>(null) }
+                LaunchedEffect(Unit) {
+                    isKdsUser = (authRepository.getCurrentUser()?.role == "kds")
+                }
+                LaunchedEffect(isKdsUser) {
+                    if (isKdsUser == true) {
+                        navController.navigate(Routes.SETTINGS) {
+                            popUpTo(Routes.FLOOR_PLAN) { inclusive = true }
+                            popUpTo(Routes.ORDER) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    }
+                }
+                when {
+                    isKdsUser == true || isKdsUser == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = LimonPrimary)
+                    }
+                    tableId.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        LaunchedEffect(Unit) { navController.popBackStack() }
+                    }
+                    else -> OrderScreen(
                         onBack = { navController.popBackStack() },
                         onNavigateToFloorPlan = { navController.navigate(Routes.FLOOR_PLAN) { popUpTo(Routes.FLOOR_PLAN) { inclusive = true }; launchSingleTop = true } },
                         onNavigateToTable = { targetTableId ->
@@ -174,10 +215,6 @@ fun NavGraph(
                         onNavigateToSettings = { navController.navigate(Routes.SETTINGS) },
                         onSync = onSync
                     )
-                } else {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        LaunchedEffect(Unit) { navController.popBackStack() }
-                    }
                 }
             }
             composable(
