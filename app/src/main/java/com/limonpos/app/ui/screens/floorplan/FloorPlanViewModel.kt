@@ -217,10 +217,10 @@ class FloorPlanViewModel @Inject constructor(
         _uiState.update { it.copy(showReservationInfoDialog = null, showOpenTableDialog = table) }
     }
 
-    fun reserveTable(tableId: String, guestName: String, fromTimeMs: Long, toTimeMs: Long) {
+    fun reserveTable(tableId: String, guestName: String, guestPhone: String, fromTimeMs: Long, toTimeMs: Long) {
         viewModelScope.launch {
             _uiState.update { it.copy(reserveTableLoading = true, reserveTableError = null) }
-            val ok = apiSyncRepository.reserveTable(tableId, guestName.trim(), fromTimeMs, toTimeMs)
+            val ok = apiSyncRepository.reserveTable(tableId, guestName.trim(), guestPhone.trim(), fromTimeMs, toTimeMs)
             _uiState.update {
                 it.copy(
                     reserveTableLoading = false,

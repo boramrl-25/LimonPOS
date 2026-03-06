@@ -1078,6 +1078,7 @@ app.get("/api/tables", authMiddleware, async (req, res) => {
         out.reservation = {
           id: activeRes.id,
           guest_name: activeRes.guest_name || "",
+          guest_phone: activeRes.guest_phone || "",
           from_time: activeRes.from_time,
           to_time: activeRes.to_time,
         };
@@ -1159,6 +1160,7 @@ app.post("/api/tables/:id/reserve", authMiddleware, async (req, res) => {
   if (tbl.current_order_id) return res.status(409).json({ error: "Table is occupied" });
   const guestName = (req.body.guest_name || req.body.guestName || "").toString().trim();
   if (!guestName) return res.status(400).json({ error: "guest_name is required" });
+  const guestPhone = (req.body.guest_phone || req.body.guestPhone || "").toString().trim();
   const fromTime = parseReservationTime(req.body.from_time ?? req.body.fromTime);
   const toTime = parseReservationTime(req.body.to_time ?? req.body.toTime);
   if (isNaN(fromTime) || isNaN(toTime) || toTime <= fromTime)
@@ -1179,6 +1181,7 @@ app.post("/api/tables/:id/reserve", authMiddleware, async (req, res) => {
     id: reservationId,
     table_id: tableId,
     guest_name: guestName,
+    guest_phone: guestPhone,
     from_time: fromTime,
     to_time: toTime,
     created_at: now,

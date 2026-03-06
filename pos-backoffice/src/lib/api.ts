@@ -546,7 +546,7 @@ export async function clearSalesByDateRange(dateFrom: string, dateTo: string): P
   return data;
 }
 
-export type TableReservation = { id: string; guest_name: string; from_time: number; to_time: number };
+export type TableReservation = { id: string; guest_name: string; guest_phone?: string; from_time: number; to_time: number };
 
 export async function getTables(): Promise<Array<{
   id: string;
@@ -563,7 +563,7 @@ export async function getTables(): Promise<Array<{
   return res.json();
 }
 
-export async function reserveTable(tableId: string, body: { guest_name: string; from_time: number; to_time: number }) {
+export async function reserveTable(tableId: string, body: { guest_name: string; guest_phone?: string; from_time: number; to_time: number }) {
   const res = await fetch(`${API_URL}/tables/${tableId}/reserve`, {
     method: "POST",
     headers: headers(),

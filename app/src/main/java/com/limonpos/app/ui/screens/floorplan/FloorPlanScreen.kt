@@ -492,7 +492,7 @@ fun FloorPlanScreen(
             loading = uiState.reserveTableLoading,
             error = uiState.reserveTableError,
             onDismiss = { viewModel.dismissReserveTableDialog() },
-            onSubmit = { name, fromMs, toMs -> viewModel.reserveTable(table.id, name, fromMs, toMs) }
+            onSubmit = { name, phone, fromMs, toMs -> viewModel.reserveTable(table.id, name, phone, fromMs, toMs) }
         )
     }
 
@@ -589,7 +589,7 @@ private fun OpenTableDialog(
     )
 }
 
-private val RESERVE_DATE_FORMAT = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US)
+private val RESERVE_TIME_SLOTS = (8..22).flatMap { h -> listOf("${h.toString().padStart(2, '0')}:00", "${h.toString().padStart(2, '0')}:30") }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -598,11 +598,52 @@ private fun ReserveTableDialog(
     loading: Boolean,
     error: String?,
     onDismiss: () -> Unit,
-    onSubmit: (guestName: String, fromTimeMs: Long, toTimeMs: Long) -> Unit
+    onSubmit: (guestName: String, guestPhone: String, fromTimeMs: Long, toTimeMs: Long) -> Unit
 ) {
     var guestName by remember { mutableStateOf("") }
-    var fromText by remember { mutableStateOf("") }
-    var toText by remember { mutableStateOf("") }
+    var guestPhone by remember { mutableStateOf("") }
+    val calendar = remember { java.util.Calendar.getInstance() }
+    val dateOptions = remember {
+        calendar.apply {
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        (0..13).map { i ->
+            val c = java.util.Calendar.getInstance().apply {
+                set(java.util.Calendar.HOUR_OF_DAY, 0)
+                set(java.util.Calendar.MINUTE, 0)
+                set(java.util.Calendar.SECOND, 0)
+                set(java.util.Calendar.MILLISECOND, 0)
+                add(java.util.Calendar.DAY_OF_YEAR, i)
+            }
+            val label = when (i) {
+                0 -> "Today"
+                1 -> "Tomorrow"
+                else -> java.text.SimpleDateFormat("EEE, d MMM", java.util.Locale.US).format(c.time)
+            }
+            label to c.timeInMillis
+        }
+    }
+    var selectedDateIndex by remember { mutableStateOf(0) }
+    var selectedFromIndex by remember { mutableStateOf(20) } // 18:00
+    var selectedToIndex by remember { mutableStateOf(24) }   // 20:00
+    var dateExpanded by remember { mutableStateOf(false) }
+    var fromExpanded by remember { mutableStateOf(false) }
+    var toExpanded by remember { mutableStateOf(false) }
+
+    fun computeFromMs(): Long {
+        val dayStart = dateOptions.getOrNull(selectedDateIndex)?.second ?: return 0L
+        val minutesFromMidnight = 8 * 60 + selectedFromIndex * 30
+        return dayStart + minutesFromMidnight * 60 * 1000L
+    }
+    fun computeToMs(): Long {
+        val dayStart = dateOptions.getOrNull(selectedDateIndex)?.second ?: return 0L
+        val minutesFromMidnight = 8 * 60 + selectedToIndex * 30
+        return dayStart + minutesFromMidnight * 60 * 1000L
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Reserve Table ${table.number}", color = LimonText) },
@@ -623,12 +664,12 @@ private fun ReserveTableDialog(
                     )
                 )
                 OutlinedTextField(
-                    value = fromText,
-                    onValueChange = { fromText = it },
-                    label = { Text("From (e.g. 2025-03-05 18:00)") },
-                    placeholder = { Text("yyyy-MM-dd HH:mm", color = LimonTextSecondary) },
+                    value = guestPhone,
+                    onValueChange = { guestPhone = it },
+                    label = { Text("Phone") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = LimonText,
                         unfocusedTextColor = LimonText,
@@ -637,21 +678,109 @@ private fun ReserveTableDialog(
                         cursorColor = LimonPrimary
                     )
                 )
-                OutlinedTextField(
-                    value = toText,
-                    onValueChange = { toText = it },
-                    label = { Text("To (e.g. 2025-03-05 20:00)") },
-                    placeholder = { Text("yyyy-MM-dd HH:mm", color = LimonTextSecondary) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = LimonText,
-                        unfocusedTextColor = LimonText,
-                        focusedBorderColor = LimonPrimary,
-                        unfocusedBorderColor = LimonTextSecondary,
-                        cursorColor = LimonPrimary
+                ExposedDropdownMenuBox(
+                    expanded = dateExpanded,
+                    onExpandedChange = { dateExpanded = it }
+                ) {
+                    OutlinedTextField(
+                        value = dateOptions.getOrNull(selectedDateIndex)?.first ?: "",
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Date") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = LimonText,
+                            unfocusedTextColor = LimonText,
+                            focusedBorderColor = LimonPrimary,
+                            unfocusedBorderColor = LimonTextSecondary,
+                            cursorColor = LimonPrimary
+                        )
                     )
-                )
+                    DropdownMenu(
+                        expanded = dateExpanded,
+                        onDismissRequest = { dateExpanded = false },
+                        modifier = Modifier.exposedDropdownSize()
+                    ) {
+                        dateOptions.forEachIndexed { index, (label, _) ->
+                            DropdownMenuItem(
+                                text = { Text(label, color = LimonText) },
+                                onClick = { selectedDateIndex = index; dateExpanded = false }
+                            )
+                        }
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ExposedDropdownMenuBox(
+                        expanded = fromExpanded,
+                        onExpandedChange = { fromExpanded = it }
+                    ) {
+                        OutlinedTextField(
+                            value = RESERVE_TIME_SLOTS.getOrNull(selectedFromIndex) ?: "",
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("From") },
+                            modifier = Modifier
+                                .weight(1f)
+                                .menuAnchor(),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = LimonText,
+                                unfocusedTextColor = LimonText,
+                                focusedBorderColor = LimonPrimary,
+                                unfocusedBorderColor = LimonTextSecondary,
+                                cursorColor = LimonPrimary
+                            )
+                        )
+                        DropdownMenu(
+                            expanded = fromExpanded,
+                            onDismissRequest = { fromExpanded = false },
+                            modifier = Modifier.exposedDropdownSize()
+                        ) {
+                            RESERVE_TIME_SLOTS.forEachIndexed { index, slot ->
+                                DropdownMenuItem(
+                                    text = { Text(slot, color = LimonText) },
+                                    onClick = { selectedFromIndex = index; fromExpanded = false; if (selectedToIndex <= index) selectedToIndex = index + 1 }
+                                )
+                            }
+                        }
+                    }
+                    ExposedDropdownMenuBox(
+                        expanded = toExpanded,
+                        onExpandedChange = { toExpanded = it }
+                    ) {
+                        OutlinedTextField(
+                            value = RESERVE_TIME_SLOTS.getOrNull(selectedToIndex) ?: "",
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("To") },
+                            modifier = Modifier
+                                .weight(1f)
+                                .menuAnchor(),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = LimonText,
+                                unfocusedTextColor = LimonText,
+                                focusedBorderColor = LimonPrimary,
+                                unfocusedBorderColor = LimonTextSecondary,
+                                cursorColor = LimonPrimary
+                            )
+                        )
+                        DropdownMenu(
+                            expanded = toExpanded,
+                            onDismissRequest = { toExpanded = false },
+                            modifier = Modifier.exposedDropdownSize()
+                        ) {
+                            RESERVE_TIME_SLOTS.forEachIndexed { index, slot ->
+                                if (index > selectedFromIndex) {
+                                    DropdownMenuItem(
+                                        text = { Text(slot, color = LimonText) },
+                                        onClick = { selectedToIndex = index; toExpanded = false }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
                 if (loading) {
                     Spacer(Modifier.height(8.dp))
                     LinearProgressIndicator(color = LimonPrimary, modifier = Modifier.fillMaxWidth())
@@ -664,10 +793,10 @@ private fun ReserveTableDialog(
                 onClick = {
                     val name = guestName.trim()
                     if (name.isEmpty()) return@Button
-                    val fromMs = try { RESERVE_DATE_FORMAT.parse(fromText.trim())?.time } catch (_: Exception) { null }
-                    val toMs = try { RESERVE_DATE_FORMAT.parse(toText.trim())?.time } catch (_: Exception) { null }
-                    if (fromMs == null || toMs == null || toMs <= fromMs) return@Button
-                    onSubmit(name, fromMs, toMs)
+                    val fromMs = computeFromMs()
+                    val toMs = computeToMs()
+                    if (toMs <= fromMs) return@Button
+                    onSubmit(name, guestPhone.trim(), fromMs, toMs)
                 },
                 enabled = !loading
             ) { Text("Reserve") }
@@ -698,6 +827,9 @@ private fun ReservationInfoDialog(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 table.reservationGuestName?.takeIf { it.isNotBlank() }?.let { name ->
                     Text("Guest: $name", color = LimonTextSecondary, fontSize = 14.sp)
+                }
+                table.reservationGuestPhone?.takeIf { it.isNotBlank() }?.let { phone ->
+                    Text("Phone: $phone", color = LimonTextSecondary, fontSize = 14.sp)
                 }
                 if (fromStr.isNotEmpty() && toStr.isNotEmpty()) {
                     Text("From: $fromStr", color = LimonTextSecondary, fontSize = 14.sp)
@@ -873,6 +1005,7 @@ private fun TableCard(
             containerColor = when {
                 isOccupied -> LimonSurface
                 isBill -> LimonSurface.copy(alpha = 0.9f)
+                isReserved -> LimonInfo.copy(alpha = 0.25f)
                 else -> LimonSurface
             }
         )
@@ -938,8 +1071,16 @@ private fun TableCard(
                     table.reservationGuestName?.takeIf { it.isNotBlank() }?.let { name ->
                         Text(
                             text = name,
-                            color = LimonTextSecondary,
+                            color = LimonText,
                             fontSize = 10.sp,
+                            maxLines = 1
+                        )
+                    }
+                    table.reservationGuestPhone?.takeIf { it.isNotBlank() }?.let { phone ->
+                        Text(
+                            text = phone,
+                            color = LimonTextSecondary,
+                            fontSize = 9.sp,
                             maxLines = 1
                         )
                     }

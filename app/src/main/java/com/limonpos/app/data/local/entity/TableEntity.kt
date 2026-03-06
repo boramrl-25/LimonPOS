@@ -28,6 +28,7 @@ data class TableEntity(
     val height: Double = 100.0,
     val shape: String = "square",
     val reservationGuestName: String? = null,
+    val reservationGuestPhone: String? = null,
     val reservationFrom: Long? = null,
     val reservationTo: Long? = null
 )

@@ -454,6 +454,7 @@ class ApiSyncRepository @Inject constructor(
                     height = dto.height,
                     shape = dto.shape,
                     reservationGuestName = res?.guestName,
+                    reservationGuestPhone = res?.guestPhone,
                     reservationFrom = res?.fromTime,
                     reservationTo = res?.toTime
                 )
@@ -1143,12 +1144,13 @@ class ApiSyncRepository @Inject constructor(
     }
 
     /** Reserve a table (guest name + from/to time in ms). Returns true if successful. */
-    suspend fun reserveTable(tableId: String, guestName: String, fromTimeMs: Long, toTimeMs: Long): Boolean {
+    suspend fun reserveTable(tableId: String, guestName: String, guestPhone: String, fromTimeMs: Long, toTimeMs: Long): Boolean {
         if (!isOnline()) return false
         restoreAuthTokenIfNeeded()
         return try {
             val body = mapOf(
                 "guest_name" to guestName,
+                "guest_phone" to guestPhone,
                 "from_time" to fromTimeMs,
                 "to_time" to toTimeMs
             )

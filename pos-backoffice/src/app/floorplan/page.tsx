@@ -107,8 +107,8 @@ export default function FloorPlanPage() {
   const statusColors: Record<string, string> = {
     free: "bg-emerald-900/60 border-emerald-500",
     occupied: "bg-amber-900/40 border-amber-500",
-    bill: "bg-blue-900/40 border-blue-500",
-    reserved: "bg-slate-700/60 border-slate-500",
+    bill: "bg-sky-900/40 border-sky-500",
+    reserved: "bg-blue-600/50 border-blue-400",
   };
 
   async function openTableOrder(t: Table) {
@@ -136,12 +136,12 @@ export default function FloorPlanPage() {
     }
   }
 
-  async function submitReserve(guestName: string, fromTime: number, toTime: number) {
+  async function submitReserve(guestName: string, guestPhone: string, fromTime: number, toTime: number) {
     if (!reserveTableModal) return;
     setReserveLoading(true);
     setReserveError(null);
     try {
-      await reserveTable(reserveTableModal.id, { guest_name: guestName, from_time: fromTime, to_time: toTime });
+      await reserveTable(reserveTableModal.id, { guest_name: guestName, guest_phone: guestPhone || undefined, from_time: fromTime, to_time: toTime });
       setReserveTableModal(null);
       load();
     } catch (e) {
@@ -250,6 +250,9 @@ export default function FloorPlanPage() {
                 {t.status === "reserved" && (t.reservation?.guest_name ? `Reserved — ${t.reservation.guest_name}` : "Reserved")}
                 {t.waiter_name && t.status !== "reserved" && ` — ${t.waiter_name}`}
               </span>
+              {t.status === "reserved" && t.reservation?.guest_phone && (
+                <span className="text-xs text-slate-400 block mt-0.5">{t.reservation.guest_phone}</span>
+              )}
             </button>
           ))}
         </div>
@@ -402,9 +405,10 @@ function ReserveTableModal({
   loading: boolean;
   error: string | null;
   onClose: () => void;
-  onSubmit: (guestName: string, fromTime: number, toTime: number) => void;
+  onSubmit: (guestName: string, guestPhone: string, fromTime: number, toTime: number) => void;
 }) {
   const [guestName, setGuestName] = useState("");
+  const [guestPhone, setGuestPhone] = useState("");
   const now = new Date();
   const defaultFrom = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 0, 0);
   const defaultTo = new Date(defaultFrom.getTime() + 2 * 60 * 60 * 1000);
@@ -415,7 +419,7 @@ function ReserveTableModal({
     const from = new Date(fromStr).getTime();
     const to = new Date(toStr).getTime();
     if (!guestName.trim() || isNaN(from) || isNaN(to) || to <= from) return;
-    onSubmit(guestName.trim(), from, to);
+    onSubmit(guestName.trim(), guestPhone.trim(), from, to);
   };
   return (
     <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={onClose}>
@@ -440,6 +444,16 @@ function ReserveTableModal({
               placeholder="Guest name"
               className="w-full px-4 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white placeholder-slate-500 focus:border-sky-500"
               required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-1">Phone</label>
+            <input
+              type="tel"
+              value={guestPhone}
+              onChange={(e) => setGuestPhone(e.target.value)}
+              placeholder="Phone"
+              className="w-full px-4 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white placeholder-slate-500 focus:border-sky-500"
             />
           </div>
           <div>
@@ -503,6 +517,7 @@ function ReservationInfoModal({
         </div>
         <div className="space-y-2 text-slate-300 text-sm mb-4">
           {res?.guest_name && <p><span className="text-slate-400">Guest:</span> {res.guest_name}</p>}
+          {res?.guest_phone && <p><span className="text-slate-400">Phone:</span> {res.guest_phone}</p>}
           {fromStr && <p><span className="text-slate-400">From:</span> {fromStr}</p>}
           {toStr && <p><span className="text-slate-400">To:</span> {toStr}</p>}
           <p className="text-slate-500 text-xs mt-2">Reservation is cancelled automatically 10 min after end time.</p>

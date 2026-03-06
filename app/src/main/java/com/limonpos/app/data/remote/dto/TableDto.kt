@@ -5,6 +5,7 @@ import com.google.gson.annotations.SerializedName
 data class TableReservationDto(
     @SerializedName("id") val id: String? = null,
     @SerializedName("guest_name") val guestName: String? = null,
+    @SerializedName("guest_phone") val guestPhone: String? = null,
     @SerializedName("from_time") val fromTime: Long? = null,
     @SerializedName("to_time") val toTime: Long? = null
 )
