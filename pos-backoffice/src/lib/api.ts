@@ -209,6 +209,17 @@ export async function updateProduct(id: string, prod: Record<string, unknown>) {
   return res.json();
 }
 
+/** Show in Till: Ürünün POS ekranında görünüp görünmeyeceğini günceller. */
+export async function setProductShowInTill(id: string, show: boolean) {
+  const res = await fetchWithTimeout(`${API_URL}/products/${id}/show-in-till`, {
+    method: "PATCH",
+    headers: headers(),
+    body: JSON.stringify({ show }),
+  });
+  if (!res.ok) throw new Error("Failed to update show in till");
+  return res.json();
+}
+
 export async function deleteProduct(id: string) {
   const res = await fetchWithTimeout(`${API_URL}/products/${id}`, { method: "DELETE", headers: headers() });
   if (!res.ok) throw new Error("Failed to delete product");

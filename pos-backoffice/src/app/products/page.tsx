@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import { ArrowLeft, Plus, Trash2, BookOpen, RefreshCw, Search, FileSpreadsheet, FileDown } from "lucide-react";
 import * as XLSX from "xlsx";
-import { getProducts, getCategories, getPrinters, getModifierGroups, createProduct, updateProduct, deleteProduct, getZohoItems, syncZohoBooks, checkZohoConnection, clearAndSyncProducts, getPendingZohoRemovalProducts, confirmProductRemoval } from "@/lib/api";
+import { getProducts, getCategories, getPrinters, getModifierGroups, createProduct, updateProduct, deleteProduct, setProductShowInTill, getZohoItems, syncZohoBooks, checkZohoConnection, clearAndSyncProducts, getPendingZohoRemovalProducts, confirmProductRemoval } from "@/lib/api";
 
 type Product = {
   id: string;
@@ -208,24 +208,12 @@ export default function ProductsPage() {
     }
   }
 
-  async function toggleTill(p: Product) {
-    const isOn = Boolean(p.pos_enabled);
+  /** Show in Till: Ürünün POS ekranında görünüp görünmeyeceğini değiştirir. */
+  async function toggleShowInTill(p: Product) {
+    const nextShow = !Boolean(p.pos_enabled);
     try {
-      await updateProduct(p.id, {
-        name: p.name,
-        name_arabic: p.name_arabic ?? "",
-        name_turkish: p.name_turkish ?? "",
-        sku: p.sku ?? "",
-        category_id: p.category_id ?? undefined,
-        price: p.price ?? 0,
-        tax_rate: p.tax_rate ?? 0,
-        image_url: p.image_url ?? "",
-        printers: p.printers ?? [],
-        modifier_groups: p.modifier_groups ?? [],
-        active: Boolean(p.active),
-        pos_enabled: !isOn,
-      });
-      await load(true);
+      await setProductShowInTill(p.id, nextShow);
+      setProducts((prev) => prev.map((x) => (x.id === p.id ? { ...x, pos_enabled: nextShow } : x)));
     } catch (e) {
       alert((e as Error).message);
     }
@@ -761,9 +749,9 @@ export default function ProductsPage() {
                 <td className="p-3" onClick={(e) => e.stopPropagation()}>
                   <button
                     type="button"
-                    onClick={() => toggleTill(p)}
+                    onClick={() => toggleShowInTill(p)}
                     className={`relative inline-flex h-6 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-slate-900 ${Boolean(p.pos_enabled) ? "bg-emerald-600" : "bg-slate-600"}`}
-                    title={Boolean(p.pos_enabled) ? "Till'de gösteriliyor (Off yap)" : "Till'de gizli (On yap)"}
+                    title={Boolean(p.pos_enabled) ? "Till'de göster (Off yap)" : "Till'de gizle (On yap)"}
                   >
                     <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition ${Boolean(p.pos_enabled) ? "translate-x-4" : "translate-x-0.5"}`} />
                   </button>

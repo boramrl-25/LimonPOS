@@ -563,6 +563,28 @@ app.post("/api/products", authMiddleware, async (req, res) => {
   res.json({ ...prod, category: cats[prod.category_id] || "", printers: JSON.parse(prod.printers || "[]"), modifier_groups: JSON.parse(prod.modifier_groups || "[]") });
 });
 
+/** Show in Till: Ürünün POS/Till ekranında görünüp görünmeyeceği. Sadece pos_enabled günceller. */
+function parseShowInTill(value) {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === "boolean") return value ? 1 : 0;
+  if (typeof value === "number") return value ? 1 : 0;
+  if (typeof value === "string") return ["1", "true", "on", "yes"].includes(String(value).toLowerCase()) ? 1 : 0;
+  return undefined;
+}
+
+app.patch("/api/products/:id/show-in-till", authMiddleware, async (req, res) => {
+  await ensureData();
+  const idx = db.data.products.findIndex((p) => p.id === req.params.id);
+  if (idx < 0) return res.status(404).json({ error: "Not found" });
+  const show = parseShowInTill(req.body?.show);
+  if (show === undefined) return res.status(400).json({ error: "show (boolean) required" });
+  db.data.products[idx].pos_enabled = show;
+  await db.write();
+  const r = db.data.products[idx];
+  const cats = Object.fromEntries((db.data.categories || []).map((c) => [c.id, c.name]));
+  res.json({ ...r, category: cats[r.category_id] || "", printers: JSON.parse(r.printers || "[]"), modifier_groups: JSON.parse(r.modifier_groups || "[]"), pos_enabled: r.pos_enabled });
+});
+
 app.put("/api/products/:id", authMiddleware, async (req, res) => {
   await ensureData();
   const idx = db.data.products.findIndex((p) => p.id === req.params.id);
