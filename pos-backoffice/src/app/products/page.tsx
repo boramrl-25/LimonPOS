@@ -57,6 +57,13 @@ export default function ProductsPage() {
   const [pendingRemoval, setPendingRemoval] = useState<Product[]>([]);
   const [selectedRemovalIds, setSelectedRemovalIds] = useState<Set<string>>(new Set());
   const [removalLoading, setRemovalLoading] = useState(false);
+  const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(new Set());
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [importConflictModal, setImportConflictModal] = useState<{
+    conflicts: { name: string; existing: Product; row: Record<string, unknown> }[];
+    rows: Record<string, unknown>[];
+    resolve: (applyUpdates: boolean) => void;
+  } | null>(null);
 
   useEffect(() => {
     load();
@@ -206,12 +213,55 @@ export default function ProductsPage() {
   }
 
   async function remove(id: string) {
-    if (!confirm("Are you sure you want to delete?")) return;
+    if (!confirm("Bu ürünü silmek istediğinize emin misiniz?")) return;
     try {
       await deleteProduct(id);
+      setSelectedProductIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
       await load(true);
     } catch (e) {
       alert((e as Error).message);
+    }
+  }
+
+  function toggleProductSelection(id: string) {
+    setSelectedProductIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function selectAllProducts() {
+    if (selectedProductIds.size === sortedProducts.length) {
+      setSelectedProductIds(new Set());
+    } else {
+      setSelectedProductIds(new Set(sortedProducts.map((p) => p.id)));
+    }
+  }
+
+  async function bulkDeleteProducts() {
+    const ids = Array.from(selectedProductIds);
+    if (ids.length === 0) {
+      alert("Lütfen silmek istediğiniz ürünleri işaretleyin.");
+      return;
+    }
+    if (!confirm(`${ids.length} ürünü kalıcı olarak silmek istediğinize emin misiniz?`)) return;
+    setDeleteLoading(true);
+    try {
+      for (const id of ids) {
+        await deleteProduct(id);
+      }
+      setSelectedProductIds(new Set());
+      await load(true);
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setDeleteLoading(false);
     }
   }
 
@@ -391,6 +441,99 @@ export default function ProductsPage() {
     XLSX.writeFile(wb, "products.xlsx");
   }
 
+  function parseRowToPayload(row: Record<string, unknown>, existing?: Product) {
+    const name = String(row.Name ?? row.name ?? "").trim();
+    const nameArabic = String(row.NameArabic ?? row.name_arabic ?? "").trim();
+    const nameTurkish = String(row.NameTurkish ?? row.name_turkish ?? "").trim();
+    const sku = String(row.SKU ?? row.sku ?? "").trim();
+    const priceRaw = row.Price ?? row.price ?? 0;
+    const taxRaw = row.VATPercent ?? row.tax_rate ?? 0;
+    const categoryName = String(row.Category ?? row.category ?? "").trim();
+    const tillRaw = String(row.Till ?? row.pos_enabled ?? "").toLowerCase();
+    const printerStr = String(row.Printers ?? row.printers ?? "").trim();
+    const modifierStr = String(row.Modifiers ?? row.Modifierler ?? row.modifiers ?? row.modifier_groups ?? "").trim();
+    const overdueRaw = row.OverdueMinutes ?? row.overdue_undelivered_minutes ?? row.dk ?? "";
+    const imageUrl = String(row.ImageURL ?? row.image_url ?? "").trim();
+
+    const price = Number(priceRaw) || 0;
+    const tax_rate = (Number(taxRaw) || 0) / 100;
+    const pos_enabled = tillRaw === "on" || tillRaw === "1" || tillRaw === "true" || tillRaw === "yes";
+    const overdue_undelivered_minutes =
+      overdueRaw === "" || overdueRaw === null || overdueRaw === undefined
+        ? undefined
+        : Math.min(1440, Math.max(1, Number(overdueRaw) || 0)) || undefined;
+
+    let category_id: string | undefined = undefined;
+    if (categoryName) {
+      const cat = categories.find((c) => c.name.toLowerCase() === categoryName.toLowerCase());
+      if (cat) category_id = cat.id;
+    }
+
+    const printerNames = printerStr ? printerStr.split(/[,;]/).map((s) => s.trim()).filter(Boolean) : [];
+    const modifierNames = modifierStr ? modifierStr.split(/[,;]/).map((s) => s.trim()).filter(Boolean) : [];
+    const printerIds = printerNames
+      .map((n) => printers.find((pr) => (pr.name || "").trim().toLowerCase() === n.toLowerCase())?.id)
+      .filter((id): id is string => Boolean(id));
+    const modifierIds = modifierNames
+      .map((n) => modifierGroups.find((mg) => (mg.name || "").trim().toLowerCase() === n.toLowerCase())?.id)
+      .filter((id): id is string => Boolean(id));
+
+    return {
+      name,
+      name_arabic: nameArabic || undefined,
+      name_turkish: nameTurkish || undefined,
+      sku,
+      price,
+      tax_rate,
+      category_id: (category_id ?? existing?.category_id) ?? undefined,
+      image_url: imageUrl || (existing?.image_url ?? ""),
+      printers: printerIds.length > 0 ? printerIds : (existing?.printers ?? []),
+      modifier_groups: modifierIds.length > 0 ? modifierIds : (existing?.modifier_groups ?? []),
+      pos_enabled,
+      overdue_undelivered_minutes,
+    };
+  }
+
+  function payloadDiffersFromProduct(payload: ReturnType<typeof parseRowToPayload>, p: Product): boolean {
+    const same = (a: unknown, b: unknown) =>
+      String(a ?? "") === String(b ?? "") ||
+      (Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => x === b[i]));
+    return (
+      payload.price !== (p.price ?? 0) ||
+      Math.abs((payload.tax_rate ?? 0) - (p.tax_rate ?? 0)) > 0.001 ||
+      payload.category_id !== (p.category_id ?? undefined) ||
+      payload.pos_enabled !== Boolean(p.pos_enabled) ||
+      payload.image_url !== (p.image_url ?? "") ||
+      !same(payload.printers, p.printers ?? []) ||
+      !same(payload.modifier_groups, toModifierIds(p.modifier_groups)) ||
+      (payload.overdue_undelivered_minutes ?? null) !== (p.overdue_undelivered_minutes ?? null)
+    );
+  }
+
+  async function processProductImport(rows: Record<string, unknown>[], applyUpdates: boolean) {
+    setImportConflictModal(null);
+    for (const row of rows) {
+      const name = String(row.Name ?? row.name ?? "").trim();
+      if (!name) continue;
+      const existing =
+        products.find((p) => p.name.trim().toLowerCase() === name.toLowerCase()) ||
+        (() => {
+          const sku = String(row.SKU ?? row.sku ?? "").trim();
+          return sku ? products.find((p) => (p.sku || "").toLowerCase() === sku.toLowerCase()) : undefined;
+        })();
+      const fullPayload = parseRowToPayload(row, existing);
+      if (existing && payloadDiffersFromProduct(fullPayload, existing) && !applyUpdates) continue;
+      if (existing) {
+        await updateProduct(existing.id, fullPayload);
+      } else {
+        await createProduct(fullPayload);
+      }
+    }
+    await load(true);
+    setImporting(false);
+    alert(`Import tamamlandı.`);
+  }
+
   async function handleProductImport(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -408,76 +551,38 @@ export default function ProductsPage() {
       const sheet = wb.Sheets[sheetName];
       const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet);
 
+      const conflicts: { name: string; existing: Product; row: Record<string, unknown> }[] = [];
       for (const row of rows) {
         const name = String(row.Name ?? row.name ?? "").trim();
         if (!name) continue;
-        const nameArabic = String(row.NameArabic ?? row.name_arabic ?? "").trim();
-        const nameTurkish = String(row.NameTurkish ?? row.name_turkish ?? "").trim();
-        const sku = String(row.SKU ?? row.sku ?? "").trim();
-        const priceRaw = row.Price ?? row.price ?? 0;
-        const taxRaw = row.VATPercent ?? row.tax_rate ?? 0;
-        const categoryName = String(row.Category ?? row.category ?? "").trim();
-        const tillRaw = String(row.Till ?? row.pos_enabled ?? "").toLowerCase();
-        const printerStr = String(row.Printers ?? row.printers ?? "").trim();
-        const modifierStr = String(row.Modifiers ?? row.Modifierler ?? row.modifiers ?? row.modifier_groups ?? "").trim();
-        const overdueRaw = row.OverdueMinutes ?? row.overdue_undelivered_minutes ?? row.dk ?? "";
-        const imageUrl = String(row.ImageURL ?? row.image_url ?? "").trim();
-
-        const price = Number(priceRaw) || 0;
-        const tax_rate = (Number(taxRaw) || 0) / 100;
-        const pos_enabled = tillRaw === "on" || tillRaw === "1" || tillRaw === "true" || tillRaw === "yes";
-        const overdue_undelivered_minutes =
-          overdueRaw === "" || overdueRaw === null || overdueRaw === undefined
-            ? undefined
-            : Math.min(1440, Math.max(1, Number(overdueRaw) || 0)) || undefined;
-
-        let category_id: string | undefined = undefined;
-        if (categoryName) {
-          const cat = categories.find((c) => c.name.toLowerCase() === categoryName.toLowerCase());
-          if (cat) category_id = cat.id;
-        }
-
-        const printerNames = printerStr ? printerStr.split(/[,;]/).map((s) => s.trim()).filter(Boolean) : [];
-        const modifierNames = modifierStr ? modifierStr.split(/[,;]/).map((s) => s.trim()).filter(Boolean) : [];
-        const printerIds = printerNames
-          .map((n) => printers.find((pr) => (pr.name || "").trim().toLowerCase() === n.toLowerCase())?.id)
-          .filter((id): id is string => Boolean(id));
-        const modifierIds = modifierNames
-          .map((n) => modifierGroups.find((mg) => (mg.name || "").trim().toLowerCase() === n.toLowerCase())?.id)
-          .filter((id): id is string => Boolean(id));
-
         const existing =
-          (sku && products.find((p) => (p.sku || "").toLowerCase() === sku.toLowerCase())) ||
-          products.find((p) => p.name.trim().toLowerCase() === name.toLowerCase());
-
-        const payload = {
-          name,
-          name_arabic: nameArabic || undefined,
-          name_turkish: nameTurkish || undefined,
-          sku,
-          price,
-          tax_rate,
-          category_id: (category_id ?? existing?.category_id) ?? undefined,
-          image_url: imageUrl || (existing?.image_url ?? ""),
-          printers: printerIds.length > 0 ? printerIds : (existing?.printers ?? []),
-          modifier_groups: modifierIds.length > 0 ? modifierIds : (existing?.modifier_groups ?? []),
-          pos_enabled,
-          overdue_undelivered_minutes,
-        };
-
+          products.find((p) => p.name.trim().toLowerCase() === name.toLowerCase()) ||
+          (() => {
+            const sku = String(row.SKU ?? row.sku ?? "").trim();
+            return sku ? products.find((p) => (p.sku || "").toLowerCase() === sku.toLowerCase()) : undefined;
+          })();
         if (existing) {
-          await updateProduct(existing.id, payload);
-        } else {
-          await createProduct(payload);
+          const fullPayload = parseRowToPayload(row, existing);
+          if (payloadDiffersFromProduct(fullPayload, existing)) {
+            conflicts.push({ name, existing, row });
+          }
         }
       }
 
-      await load(true);
-      alert(`Imported ${rows.length} product row(s).`);
+      if (conflicts.length > 0) {
+        setImportConflictModal({
+          conflicts,
+          rows,
+          resolve: (applyUpdates) => processProductImport(rows, applyUpdates),
+        });
+        return;
+      }
+
+      await processProductImport(rows, true);
     } catch (err) {
       alert((err as Error).message);
-    } finally {
       setImporting(false);
+    } finally {
       e.target.value = "";
     }
   }
@@ -768,6 +873,27 @@ export default function ProductsPage() {
         </div>
       </div>
 
+      {selectedProductIds.size > 0 && (
+        <div className="mb-4 flex items-center gap-3 p-3 rounded-lg bg-slate-800/50 border border-slate-700">
+          <span className="text-slate-300 text-sm">{selectedProductIds.size} ürün seçili</span>
+          <button
+            type="button"
+            onClick={bulkDeleteProducts}
+            disabled={deleteLoading}
+            className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white font-medium text-sm"
+          >
+            {deleteLoading ? "..." : "Seçilenleri sil"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedProductIds(new Set())}
+            className="px-4 py-2 rounded-lg bg-slate-600 hover:bg-slate-500 text-white text-sm"
+          >
+            Seçimi kaldır
+          </button>
+        </div>
+      )}
+
       <div className="overflow-x-auto rounded-lg border border-slate-700 mb-8 relative min-h-[120px]">
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center bg-slate-950/60 z-10 rounded-lg">
@@ -777,6 +903,15 @@ export default function ProductsPage() {
         <table className="w-full min-w-[900px] table-fixed">
           <thead>
             <tr className="border-b border-slate-700 bg-slate-800/50">
+              <th className="text-left p-3 font-medium w-10" onClick={(e) => e.stopPropagation()}>
+                <input
+                  type="checkbox"
+                  checked={sortedProducts.length > 0 && selectedProductIds.size === sortedProducts.length}
+                  onChange={selectAllProducts}
+                  className="rounded border-slate-500"
+                  title="Tümünü seç / kaldır"
+                />
+              </th>
               <th className="text-left p-3 font-medium w-14">Görsel</th>
               <th className="text-left p-3 font-medium min-w-[140px]">Product</th>
               <th className="text-left p-3 font-medium min-w-[90px]">SKU</th>
@@ -794,6 +929,14 @@ export default function ProductsPage() {
                 className="border-b border-slate-700/50 cursor-pointer hover:bg-slate-800/50 transition-colors"
                 onClick={() => openEdit(p)}
               >
+                <td className="p-2" onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    checked={selectedProductIds.has(p.id)}
+                    onChange={() => toggleProductSelection(p.id)}
+                    className="rounded border-slate-500"
+                  />
+                </td>
                 <td className="p-2">
                   <div className="relative w-12 h-12 rounded-lg bg-slate-700 overflow-hidden flex items-center justify-center">
                     <span className="text-slate-500 text-xs">—</span>
@@ -889,6 +1032,63 @@ export default function ProductsPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {importConflictModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-900 rounded-xl border border-slate-700 p-6 max-w-xl w-full max-h-[85vh] overflow-hidden flex flex-col">
+            <h2 className="text-xl font-bold text-amber-400 mb-2">Upload çakışması</h2>
+            <p className="text-slate-400 text-sm mb-4">
+              {importConflictModal.conflicts.length} ürün zaten mevcut ve upload dosyasındaki bilgiler farklı. Upload verisiyle güncellemek istiyor musunuz?
+            </p>
+            <div className="flex-1 overflow-y-auto mb-4 max-h-[300px] rounded border border-slate-700">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-800/50 sticky top-0">
+                  <tr>
+                    <th className="text-left p-2 font-medium">Ürün</th>
+                    <th className="text-left p-2 font-medium text-slate-500">Mevcut ↔ Upload</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {importConflictModal.conflicts.map((c, i) => (
+                    <tr key={i} className="border-b border-slate-700/50">
+                      <td className="p-2 font-medium">{c.name}</td>
+                      <td className="p-2 text-slate-400 text-xs">
+                        Fiyat: {(c.existing.price ?? 0).toFixed(2)} ↔ {Number(c.row.Price ?? c.row.price ?? 0).toFixed(2)} · vb.
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => importConflictModal.resolve(true)}
+                className="flex-1 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium"
+              >
+                Evet, upload ile güncelle
+              </button>
+              <button
+                type="button"
+                onClick={() => importConflictModal.resolve(false)}
+                className="flex-1 py-2 rounded-lg bg-slate-600 hover:bg-slate-500 text-white font-medium"
+              >
+                Hayır, çakışanları atla
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setImportConflictModal(null);
+                  setImporting(false);
+                }}
+                className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white"
+              >
+                İptal
+              </button>
+            </div>
           </div>
         </div>
       )}
