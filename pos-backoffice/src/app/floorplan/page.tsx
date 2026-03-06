@@ -7,7 +7,7 @@ import { getTables, getFloorPlanSections, updateFloorPlanSections, getOrder, res
 
 type Table = {
   id: string;
-  number: string;
+  number: string | number;
   name: string;
   floor: string;
   status: string;
