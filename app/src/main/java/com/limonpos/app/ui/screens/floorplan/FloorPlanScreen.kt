@@ -711,7 +711,7 @@ private fun ReserveTableDialog(
                         }
                     }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     ExposedDropdownMenuBox(
                         expanded = fromExpanded,
                         onExpandedChange = { fromExpanded = it }
@@ -722,7 +722,7 @@ private fun ReserveTableDialog(
                             readOnly = true,
                             label = { Text("From") },
                             modifier = Modifier
-                                .weight(1f)
+                                .fillMaxWidth()
                                 .menuAnchor(),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = LimonText,
@@ -755,7 +755,7 @@ private fun ReserveTableDialog(
                             readOnly = true,
                             label = { Text("To") },
                             modifier = Modifier
-                                .weight(1f)
+                                .fillMaxWidth()
                                 .menuAnchor(),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = LimonText,
@@ -1066,14 +1066,16 @@ private fun TableCard(
                     Text(
                         text = "Reserved",
                         color = LimonInfo,
-                        fontSize = 11.sp
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
                     )
                     table.reservationGuestName?.takeIf { it.isNotBlank() }?.let { name ->
                         Text(
                             text = name,
                             color = LimonText,
-                            fontSize = 10.sp,
-                            maxLines = 1
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            modifier = Modifier.padding(top = 2.dp)
                         )
                     }
                     table.reservationGuestPhone?.takeIf { it.isNotBlank() }?.let { phone ->

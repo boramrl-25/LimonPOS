@@ -243,15 +243,25 @@ export default function FloorPlanPage() {
               className={`aspect-[0.9] rounded-xl border-2 flex flex-col items-center justify-center p-3 text-left ${statusColors[t.status] || "bg-slate-800 border-slate-600"} hover:ring-2 hover:ring-sky-400 transition-all`}
             >
               <span className="font-bold text-white text-lg">{t.number}</span>
-              <span className="text-xs mt-1 font-medium">
-                {t.status === "free" && "Free"}
-                {t.status === "occupied" && "Occupied"}
-                {t.status === "bill" && "Bill"}
-                {t.status === "reserved" && (t.reservation?.guest_name ? `Reserved — ${t.reservation.guest_name}` : "Reserved")}
-                {t.waiter_name && t.status !== "reserved" && ` — ${t.waiter_name}`}
-              </span>
-              {t.status === "reserved" && t.reservation?.guest_phone && (
-                <span className="text-xs text-slate-400 block mt-0.5">{t.reservation.guest_phone}</span>
+              {t.status === "reserved" ? (
+                <>
+                  <span className="text-xs mt-1 font-medium text-blue-200">Reserved</span>
+                  {t.reservation?.guest_name && (
+                    <span className="text-xs mt-0.5 text-white font-medium truncate max-w-full px-1">{t.reservation.guest_name}</span>
+                  )}
+                  {t.reservation?.guest_phone && (
+                    <span className="text-xs text-slate-300 block mt-0.5">{t.reservation.guest_phone}</span>
+                  )}
+                </>
+              ) : (
+                <>
+                  <span className="text-xs mt-1 font-medium">
+                    {t.status === "free" && "Free"}
+                    {t.status === "occupied" && "Occupied"}
+                    {t.status === "bill" && "Bill"}
+                    {t.waiter_name && ` — ${t.waiter_name}`}
+                  </span>
+                </>
               )}
             </button>
           ))}

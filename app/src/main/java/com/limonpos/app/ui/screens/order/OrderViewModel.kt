@@ -46,6 +46,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import android.util.Log
+import androidx.compose.runtime.State
+import androidx.compose.runtime.mutableStateOf
 import javax.inject.Inject
 
 private const val TAG = "OrderViewModel"
@@ -152,6 +154,7 @@ class OrderViewModel @Inject constructor(
                     if (id != null) orderRepository.getOrderWithItems(id) else flowOf(null)
                 }.collect { ow ->
                     _uiState.update { it.copy(orderWithItems = ow) }
+                    clearOptimisticDeliveredIfInOrder(ow)
                     val recalled = try {
                         ow?.let { orderRepository.isOrderRecalled(it.order.id) } ?: false
                     } catch (_: Exception) {
@@ -201,6 +204,7 @@ class OrderViewModel @Inject constructor(
                         orderRepository.getOrderWithItems(order.id).first()
                     }
                     _uiState.update { it.copy(orderWithItems = ow) }
+                    clearOptimisticDeliveredIfInOrder(ow)
                     val recalled = withContext(Dispatchers.IO) {
                         orderRepository.isOrderRecalled(order.id)
                     }
@@ -513,10 +517,24 @@ class OrderViewModel @Inject constructor(
         }
     }
 
+    private val _optimisticallyDeliveredIds = mutableStateOf(emptySet<String>())
+    val optimisticallyDeliveredIds: State<Set<String>> get() = _optimisticallyDeliveredIds
+
     fun markItemDelivered(itemId: String) {
+        _optimisticallyDeliveredIds.value = _optimisticallyDeliveredIds.value + itemId
         viewModelScope.launch {
             orderRepository.markItemDelivered(itemId)
+            // Do not remove from optimistic set here – Room flow may not have emitted yet.
+            // Cleanup happens when orderWithItems flow emits (see collect block).
         }
+    }
+
+    /** Call when orderWithItems is updated from DB so we can clear optimistic ids that are now delivered. */
+    private fun clearOptimisticDeliveredIfInOrder(ow: OrderWithItems?) {
+        if (ow == null) return
+        val deliveredIds = ow.items.filter { it.deliveredAt != null }.map { it.id }.toSet()
+        if (deliveredIds.isEmpty()) return
+        _optimisticallyDeliveredIds.value = _optimisticallyDeliveredIds.value - deliveredIds
     }
 
     fun dismissOverdueWarning() {

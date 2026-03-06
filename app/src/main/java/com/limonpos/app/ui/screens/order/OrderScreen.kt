@@ -5,6 +5,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -318,9 +319,11 @@ fun OrderScreen(
             tg.release()
         }
     }
+    val optimisticallyDeliveredIds by viewModel.optimisticallyDeliveredIds
     if (uiState.showCart) {
         CartBottomSheet(
             orderWithItems = uiState.orderWithItems,
+            optimisticallyDeliveredIds = optimisticallyDeliveredIds,
             onDismiss = { viewModel.dismissCart() },
             onItemClick = { item ->
                 if (item.status != "pending" && item.deliveredAt == null) {
@@ -587,6 +590,7 @@ private fun OrderTransferTableDialog(
 @Composable
 private fun CartBottomSheet(
     orderWithItems: com.limonpos.app.data.repository.OrderWithItems?,
+    optimisticallyDeliveredIds: Set<String> = emptySet(),
     onDismiss: () -> Unit,
     onItemClick: (OrderItemEntity) -> Unit,
     onEditNote: (OrderItemEntity) -> Unit,
@@ -671,7 +675,7 @@ private fun CartBottomSheet(
                                 OrderItemRow(
                                     item = item,
                                     isSent = true,
-                                    isDelivered = item.deliveredAt != null,
+                                    isDelivered = item.deliveredAt != null || item.id in optimisticallyDeliveredIds,
                                     onClick = { onItemClick(item) },
                                     onRemove = null,
                                     onVoid = if (isRecalledOrder) null else { { onVoidItem(item) } },
@@ -1070,7 +1074,7 @@ private fun OrderItemRow(
             .fillMaxWidth()
             .then(if (isSent || isDelivered) Modifier.background(backgroundColor, RoundedCornerShape(8.dp)) else Modifier)
             .padding(if (isSent || isDelivered) 8.dp else 0.dp)
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
+            .then(if (onClick != null) Modifier.clickable(indication = null, interactionSource = remember { MutableInteractionSource() }, onClick = onClick) else Modifier),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
