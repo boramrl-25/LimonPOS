@@ -109,12 +109,13 @@ function getTodaySalesSummary() {
 
 async function ensureData() {
   await db.read();
-  if (!db.data) db.data = { users: [], categories: [], products: [], printers: [], payment_methods: [], orders: [], order_items: [], payments: [], tables: [], void_logs: [], void_requests: [], closed_bill_access_requests: [], zoho_config: {}, migrations: {}, devices: [], floor_plan_sections: null };
+  if (!db.data) db.data = { users: [], categories: [], products: [], printers: [], payment_methods: [], orders: [], order_items: [], payments: [], tables: [], void_logs: [], void_requests: [], closed_bill_access_requests: [], zoho_config: {}, migrations: {}, devices: [], floor_plan_sections: null, discount_requests: [] };
   if (!db.data.migrations) db.data.migrations = {};
   if (!Array.isArray(db.data.devices)) db.data.devices = [];
   if (!Array.isArray(db.data.products)) db.data.products = [];
   if (!Array.isArray(db.data.orders)) db.data.orders = [];
   if (!Array.isArray(db.data.order_items)) db.data.order_items = [];
+  if (!Array.isArray(db.data.discount_requests)) db.data.discount_requests = [];
   let needWrite = false;
   if (!db.data.floor_plan_sections) {
     db.data.floor_plan_sections = { A: [29, 30, 31, 32, 33, 34, 35, 40], B: [24, 25, 26, 27, 28, 29, 36, 37, 38, 39], C: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], D: [11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21], E: [41, 42, 43] };
@@ -390,6 +391,7 @@ const PERMISSIONS = [
   { id: "web_clear_test_data", scope: "web", label: "Web: Clear test data", labelTr: "Web: Test verisi sil" },
   { id: "web_void_approvals", scope: "web", label: "Web: Void approvals", labelTr: "Web: İptal onayları" },
   { id: "web_closed_bill_approvals", scope: "web", label: "Web: Closed bill approvals", labelTr: "Web: Kapalı fatura onayları" },
+  { id: "web_approve_discount", scope: "web", label: "Web: Approve discount requests", labelTr: "Web: İndirim taleplerini onayla" },
 ];
 
 app.get("/api/permissions", authMiddleware, async (req, res) => {
@@ -1168,9 +1170,14 @@ function recalcOrderTotal(orderId) {
   let subtotal = 0;
   for (const i of items) subtotal += (i.quantity || 0) * (i.price || 0);
   const taxAmount = subtotal * 0.05;
-  const total = subtotal + taxAmount;
   const oidx = db.data.orders.findIndex((o) => o.id === orderId);
-  if (oidx >= 0) db.data.orders[oidx] = { ...db.data.orders[oidx], subtotal, tax_amount: taxAmount, total };
+  if (oidx < 0) return;
+  const order = db.data.orders[oidx];
+  const discountPercent = Number(order.discount_percent) || 0;
+  const discountAmount = Number(order.discount_amount) || 0;
+  const discount = (subtotal + taxAmount) * (discountPercent / 100) + discountAmount;
+  const total = Math.max(0, subtotal + taxAmount - discount);
+  db.data.orders[oidx] = { ...order, subtotal, tax_amount: taxAmount, discount_percent: discountPercent, discount_amount: discountAmount, total };
 }
 
 app.post("/api/orders/:id/items", authMiddleware, async (req, res) => {
@@ -1215,6 +1222,126 @@ app.post("/api/orders/:id/send", authMiddleware, async (req, res) => {
   const order = db.data.orders.find((o) => o.id === req.params.id);
   const items = (db.data.order_items || []).filter((i) => i.order_id === req.params.id);
   res.json({ ...order, items });
+});
+
+// Discount request (app): waiter requests discount; web approves
+app.post("/api/orders/:id/discount-request", authMiddleware, async (req, res) => {
+  await ensureData();
+  const orderId = req.params.id;
+  const order = db.data.orders.find((o) => o.id === orderId);
+  if (!order) return res.status(404).json({ error: "Order not found" });
+  const body = req.body || {};
+  const existing = (db.data.discount_requests || []).find((r) => r.order_id === orderId && r.status === "pending");
+  if (existing) return res.status(409).json({ error: "Already requested", request: existing });
+  const id = `dr_${uuid().slice(0, 8)}`;
+  const request = {
+    id,
+    order_id: orderId,
+    table_number: order.table_number || "",
+    requested_by_user_id: req.user?.id || "",
+    requested_by_user_name: req.user?.name || "",
+    requested_at: Date.now(),
+    requested_percent: body.requested_percent != null ? Number(body.requested_percent) : null,
+    requested_amount: body.requested_amount != null ? Number(body.requested_amount) : null,
+    note: body.note || "",
+    status: "pending",
+    approved_by_user_id: null,
+    approved_by_user_name: null,
+    approved_at: null,
+    discount_percent: null,
+    discount_amount: null,
+    approved_note: null,
+  };
+  db.data.discount_requests = db.data.discount_requests || [];
+  db.data.discount_requests.push(request);
+  await db.write();
+  res.status(201).json(request);
+});
+
+app.get("/api/orders/:id/discount-request", authMiddleware, async (req, res) => {
+  await ensureData();
+  const orderId = req.params.id;
+  const pending = (db.data.discount_requests || []).find((r) => r.order_id === orderId && r.status === "pending");
+  res.json({ request: pending || null });
+});
+
+app.get("/api/orders/discount-requests", authMiddleware, async (req, res) => {
+  await ensureData();
+  const perms = JSON.parse(req.user?.permissions || "[]");
+  if (!perms.includes("web_approve_discount") && req.user?.role !== "admin" && req.user?.role !== "manager") {
+    return res.status(403).json({ error: "Permission denied" });
+  }
+  const status = req.query.status || "pending";
+  let list = (db.data.discount_requests || []).filter((r) => r.status === status);
+  list = list.map((r) => {
+    const order = db.data.orders.find((o) => o.id === r.order_id);
+    return { ...r, order_subtotal: order?.subtotal, order_total_before_discount: order ? (order.subtotal || 0) + (order.tax_amount || 0) };
+  });
+  list.sort((a, b) => (a.requested_at || 0) - (b.requested_at || 0));
+  res.json({ requests: list });
+});
+
+app.post("/api/orders/:orderId/discount-request/:requestId/approve", authMiddleware, async (req, res) => {
+  await ensureData();
+  const perms = JSON.parse(req.user?.permissions || "[]");
+  if (!perms.includes("web_approve_discount") && req.user?.role !== "admin" && req.user?.role !== "manager") {
+    return res.status(403).json({ error: "Permission denied" });
+  }
+  const { orderId, requestId } = req.params;
+  const body = req.body || {};
+  const reqIdx = (db.data.discount_requests || []).findIndex((r) => r.id === requestId && r.order_id === orderId && r.status === "pending");
+  if (reqIdx < 0) return res.status(404).json({ error: "Request not found or already processed" });
+  const oidx = db.data.orders.findIndex((o) => o.id === orderId);
+  if (oidx < 0) return res.status(404).json({ error: "Order not found" });
+  const discountPercent = body.discount_percent != null ? Number(body.discount_percent) : 0;
+  const discountAmount = body.discount_amount != null ? Number(body.discount_amount) : 0;
+  db.data.orders[oidx] = { ...db.data.orders[oidx], discount_percent: discountPercent, discount_amount: discountAmount };
+  recalcOrderTotal(orderId);
+  db.data.discount_requests[reqIdx] = {
+    ...db.data.discount_requests[reqIdx],
+    status: "approved",
+    approved_by_user_id: req.user?.id || "",
+    approved_by_user_name: req.user?.name || "",
+    approved_at: Date.now(),
+    discount_percent: discountPercent,
+    discount_amount: discountAmount,
+    approved_note: body.note || "",
+  };
+  await db.write();
+  const order = db.data.orders.find((o) => o.id === orderId);
+  const items = (db.data.order_items || []).filter((i) => i.order_id === orderId);
+  res.json({ request: db.data.discount_requests[reqIdx], order: { ...order, items } });
+});
+
+app.get("/api/dashboard/discounts-today", authMiddleware, async (req, res) => {
+  await ensureData();
+  const date = req.query.date ? String(req.query.date) : new Date().toISOString().slice(0, 10);
+  const dayStart = new Date(date + "T00:00:00.000Z").getTime();
+  const dayEnd = dayStart + 24 * 60 * 60 * 1000;
+  const list = (db.data.discount_requests || [])
+    .filter((r) => r.status === "approved" && r.approved_at >= dayStart && r.approved_at < dayEnd)
+    .map((r) => {
+      const order = db.data.orders.find((o) => o.id === r.order_id);
+      const subtotal = Number(order?.subtotal) || 0;
+      const taxAmount = Number(order?.tax_amount) || 0;
+      const total = Number(order?.total) || 0;
+      const discountApplied = Math.max(0, subtotal + taxAmount - total);
+      return {
+        id: r.id,
+        order_id: r.order_id,
+        table_number: r.table_number,
+        discount_percent: r.discount_percent,
+        discount_amount: r.discount_amount,
+        approved_note: r.approved_note,
+        approved_by_user_name: r.approved_by_user_name,
+        approved_at: r.approved_at,
+        order_total: total,
+        discount_applied: discountApplied,
+      };
+    })
+    .sort((a, b) => (b.approved_at || 0) - (a.approved_at || 0));
+  const totalDiscountAmount = list.reduce((s, r) => s + (r.discount_applied || 0), 0);
+  res.json({ count: list.length, list, totalDiscountAmount });
 });
 
 // KDS: update order item status (preparing / ready) for local-first sync

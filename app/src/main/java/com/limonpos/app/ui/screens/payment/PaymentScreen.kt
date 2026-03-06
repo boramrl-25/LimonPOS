@@ -5,6 +5,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
@@ -150,6 +151,7 @@ fun PaymentScreen(
                 Text(msg, color = msgColor, modifier = Modifier.padding(bottom = 16.dp))
             }
             uiState.orderWithItems?.let { ow ->
+                val hasDiscount = (ow.order.discountPercent > 0.0) || (ow.order.discountAmount > 0.0)
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = LimonSurface),
@@ -168,6 +170,13 @@ fun PaymentScreen(
                             }
                         }
                         Spacer(Modifier.height(12.dp))
+                        if (hasDiscount) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Discount:", color = LimonTextSecondary, fontSize = 14.sp)
+                                Text("-${CurrencyUtils.format(ow.order.discountAmount + (ow.order.subtotal + ow.order.taxAmount) * (ow.order.discountPercent / 100.0))}", color = LimonPrimary, fontSize = 14.sp)
+                            }
+                            Spacer(Modifier.height(4.dp))
+                        }
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
@@ -176,6 +185,40 @@ fun PaymentScreen(
                             Text(CurrencyUtils.format(ow.order.total), fontWeight = FontWeight.Bold, color = LimonPrimary, fontSize = 18.sp)
                         }
                     }
+                }
+                Spacer(Modifier.height(12.dp))
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = LimonSurface),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Discount / İndirim", fontWeight = FontWeight.Bold, color = LimonText, fontSize = 14.sp)
+                        Spacer(Modifier.height(8.dp))
+                        if (uiState.discountRequestPending) {
+                            Text("İndirim onayı bekleniyor. Web'den onaylandıktan sonra Sync ile güncel tutarı alın.", color = LimonTextSecondary, fontSize = 12.sp)
+                            Spacer(Modifier.height(8.dp))
+                            OutlinedButton(onClick = { viewModel.refreshOrderFromApi() }, modifier = Modifier.fillMaxWidth()) {
+                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Sync / Güncelle")
+                            }
+                        } else if (!hasDiscount) {
+                            Button(
+                                onClick = { viewModel.showDiscountRequestDialog() },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.buttonColors(containerColor = LimonPrimary)
+                            ) {
+                                Text("İndirim talebi gönder", color = Color.Black)
+                            }
+                        } else {
+                            Text("İndirim uygulandı.", color = LimonSuccess, fontSize = 12.sp)
+                        }
+                    }
+                }
+                if (uiState.discountRequestLoading) {
+                    Spacer(Modifier.height(8.dp))
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = LimonPrimary)
                 }
                 Spacer(Modifier.height(24.dp))
                 Row(
@@ -323,7 +366,67 @@ fun PaymentScreen(
                 }
             }
         }
+        if (uiState.showDiscountRequestDialog) {
+            DiscountRequestDialog(
+                onDismiss = { viewModel.dismissDiscountRequestDialog() },
+                onSubmit = { pct, amt, note -> viewModel.requestDiscount(pct, amt, note) }
+            )
+        }
     }
+}
+
+@Composable
+private fun DiscountRequestDialog(
+    onDismiss: () -> Unit,
+    onSubmit: (percent: Double?, amount: Double?, note: String) -> Unit
+) {
+    var percentText by remember { mutableStateOf("") }
+    var amountText by remember { mutableStateOf("") }
+    var noteText by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("İndirim talebi", fontWeight = FontWeight.Bold, color = LimonText) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Web'den yetkili biri yüzde veya tutar girecek. Talep gönderin.", color = LimonTextSecondary, fontSize = 12.sp)
+                OutlinedTextField(
+                    value = percentText,
+                    onValueChange = { if (it.isEmpty() || it.all { c -> c.isDigit() || c == '.' }) percentText = it },
+                    label = { Text("İstenen indirim % (opsiyonel)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                )
+                OutlinedTextField(
+                    value = amountText,
+                    onValueChange = { if (it.isEmpty() || it.all { c -> c.isDigit() || c == '.' }) amountText = it },
+                    label = { Text("İstenen indirim tutarı AED (opsiyonel)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                )
+                OutlinedTextField(
+                    value = noteText,
+                    onValueChange = { noteText = it },
+                    label = { Text("Açıklama (opsiyonel)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = false
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val pct = percentText.toDoubleOrNull()?.coerceIn(0.0, 100.0)
+                    val amt = amountText.toDoubleOrNull()?.coerceAtLeast(0.0)
+                    if (pct != null || amt != null) onSubmit(pct, amt, noteText.trim())
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = LimonPrimary)
+            ) { Text("Gönder", color = Color.Black) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("İptal", color = LimonTextSecondary) } },
+        containerColor = LimonSurface
+    )
 }
 
 @Composable

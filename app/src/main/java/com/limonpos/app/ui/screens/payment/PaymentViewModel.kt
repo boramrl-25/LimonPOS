@@ -49,7 +49,11 @@ data class PaymentUiState(
     val redirectToOrder: Boolean = false,
     val isRecalledOrder: Boolean = false,
     /** True when last payment is done but final receipt failed; dismiss will set paymentComplete so user can leave. */
-    val receiptFailedBeforeNavigate: Boolean = false
+    val receiptFailedBeforeNavigate: Boolean = false,
+    /** Discount: pending request for this order (web approval needed). */
+    val discountRequestPending: Boolean = false,
+    val discountRequestLoading: Boolean = false,
+    val showDiscountRequestDialog: Boolean = false
 )
 
 @HiltViewModel
@@ -101,7 +105,54 @@ class PaymentViewModel @Inject constructor(
                         val total = payments.sumOf { it.amount }
                         _uiState.update { it.copy(completedPaymentsTotal = total, completedPayments = payments) }
                     }
+                    loadDiscountRequestStatus(ow.order.id)
                 }
+            }
+        }
+    }
+
+    private fun loadDiscountRequestStatus(orderId: String) {
+        viewModelScope.launch {
+            if (!apiSyncRepository.isOnline()) return@launch
+            val pending = apiSyncRepository.getDiscountRequestForOrder(orderId)
+            _uiState.update { it.copy(discountRequestPending = pending != null && pending.status == "pending") }
+        }
+    }
+
+    fun showDiscountRequestDialog() {
+        _uiState.update { it.copy(showDiscountRequestDialog = true) }
+    }
+
+    fun dismissDiscountRequestDialog() {
+        _uiState.update { it.copy(showDiscountRequestDialog = false) }
+    }
+
+    fun requestDiscount(requestedPercent: Double?, requestedAmount: Double?, note: String) {
+        viewModelScope.launch {
+            val ow = _uiState.value.orderWithItems ?: return@launch
+            if (requestedPercent == null && requestedAmount == null) return@launch
+            _uiState.update { it.copy(discountRequestLoading = true, showDiscountRequestDialog = false) }
+            val ok = withContext(Dispatchers.IO) {
+                apiSyncRepository.createDiscountRequest(ow.order.id, requestedPercent, requestedAmount, note)
+            }
+            _uiState.update { it.copy(discountRequestLoading = false) }
+            if (ok) {
+                _uiState.update { it.copy(discountRequestPending = true, message = "İndirim talebi gönderildi. Web onayından sonra Sync ile güncel tutarı alın.") }
+            } else {
+                _uiState.update { it.copy(message = "İndirim talebi gönderilemedi. Bağlantıyı kontrol edin.") }
+            }
+        }
+    }
+
+    fun refreshOrderFromApi() {
+        viewModelScope.launch {
+            val ow = _uiState.value.orderWithItems ?: return@launch
+            _uiState.update { it.copy(discountRequestLoading = true) }
+            val ok = withContext(Dispatchers.IO) { apiSyncRepository.syncFromApi() }
+            _uiState.update { it.copy(discountRequestLoading = false) }
+            if (ok) {
+                loadOrder()
+                _uiState.update { it.copy(message = "Sipariş güncellendi.") }
             }
         }
     }

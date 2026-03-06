@@ -14,8 +14,10 @@ import {
   Bell,
   FileEdit,
   Banknote,
+  Percent,
 } from "lucide-react";
-import { getDashboardStats, getDailySales, getOpenOrders, getClosedBillChanges, getCashDrawerOpens, runEod } from "@/lib/api";
+import { getDashboardStats, getDailySales, getOpenOrders, getClosedBillChanges, getCashDrawerOpens, getDiscountsToday, getDiscountRequestsPending, runEod } from "@/lib/api";
+import type { DiscountTodayRow } from "@/lib/api";
 
 type PaidTicket = { order_id: string; receipt_no?: string; table_number: string; total: number; paid_at: number; waiter_name?: string; cash_amount: number; card_amount: number; discount_amount?: number };
 type OpenOrderRow = { order_id: string; receipt_no: string; table_number: string; total: number; waiter_name: string; created_at: number; status: string };
@@ -74,6 +76,9 @@ export default function DashboardPage() {
   const [closedBillChangesModal, setClosedBillChangesModal] = useState(false);
   const [cashDrawerOpens, setCashDrawerOpens] = useState<{ count: number; opens: Array<{ id: string; user_name: string; opened_at: number }> } | null>(null);
   const [cashDrawerModalOpen, setCashDrawerModalOpen] = useState(false);
+  const [discountsToday, setDiscountsToday] = useState<{ count: number; list: DiscountTodayRow[]; totalDiscountAmount: number } | null>(null);
+  const [discountsModalOpen, setDiscountsModalOpen] = useState(false);
+  const [pendingDiscountRequestsCount, setPendingDiscountRequestsCount] = useState(0);
   const [approvalRequestsCountPrev, setApprovalRequestsCountPrev] = useState(0);
   const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(null);
   const router = useRouter();
@@ -84,14 +89,18 @@ export default function DashboardPage() {
       const to = selectedDateTo || undefined;
       const useRange = from && to;
       const singleDate = from || to;
-      const [statsRes, dailyRes, closedChangesRes, cashDrawerRes] = await Promise.all([
+      const dateForDiscounts = singleDate || toYYYYMMDD(new Date());
+      const [statsRes, dailyRes, closedChangesRes, cashDrawerRes, discountsRes] = await Promise.all([
         getDashboardStats(),
         useRange ? getDailySales(undefined, from, to) : getDailySales(singleDate),
         useRange ? getClosedBillChanges(undefined, from, to) : getClosedBillChanges(singleDate).catch(() => ({ count: 0, summary: { fullRefunds: 0, itemRefunds: 0, paymentMethodChanges: 0 }, changes: [] })),
         useRange ? getCashDrawerOpens(undefined, from, to) : getCashDrawerOpens(singleDate).catch(() => ({ count: 0, opens: [] })),
+        getDiscountsToday(dateForDiscounts).catch(() => ({ count: 0, list: [], totalDiscountAmount: 0 })),
       ]);
       setClosedBillChanges(closedChangesRes);
       setCashDrawerOpens(cashDrawerRes);
+      setDiscountsToday(discountsRes);
+      getDiscountRequestsPending().then((r) => setPendingDiscountRequestsCount(r.requests?.length ?? 0)).catch(() => setPendingDiscountRequestsCount(0));
       setStats({
         todaySales: statsRes.todaySales ?? 0,
         orderCount: statsRes.orderCount ?? 0,
@@ -108,6 +117,7 @@ export default function DashboardPage() {
       setStats({ todaySales: 0, orderCount: 0, openTables: 0, openChecks: 0, lastEod: null, openTablesCount: 0, pendingVoidRequestsCount: 0, pendingClosedBillAccessRequestsCount: 0 });
       setDailySales(null);
       setCashDrawerOpens({ count: 0, opens: [] });
+      setDiscountsToday({ count: 0, list: [], totalDiscountAmount: 0 });
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -259,6 +269,22 @@ export default function DashboardPage() {
                 <p className="text-slate-400 text-xs uppercase tracking-wide">Cash Drawer Opens</p>
                 <p className="text-lg font-bold text-white">{loading ? "..." : (cashDrawerOpens?.count ?? 0)}</p>
                 <p className="text-xs text-slate-500">No sale</p>
+              </div>
+            </button>
+            <button type="button" className={blockButtonClass} onClick={() => setDiscountsModalOpen(true)}>
+              <Percent className="w-8 h-8 text-violet-400 shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="text-slate-400 text-xs uppercase tracking-wide">Today&apos;s Discounts</p>
+                <p className="text-lg font-bold text-white">{loading ? "..." : (discountsToday?.count ?? 0)}</p>
+                <p className="text-xs text-slate-500">{loading ? "" : `${fmt(discountsToday?.totalDiscountAmount ?? 0)} AED`}</p>
+              </div>
+            </button>
+            <button type="button" className={blockButtonClass} onClick={() => router.push("/dashboard/discount-requests")}>
+              <Percent className="w-8 h-8 text-amber-400 shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="text-slate-400 text-xs uppercase tracking-wide">Discount Requests</p>
+                <p className="text-lg font-bold text-white">{pendingDiscountRequestsCount}</p>
+                <p className="text-xs text-slate-500">Onay bekleyen</p>
               </div>
             </button>
           </div>
@@ -483,6 +509,49 @@ export default function DashboardPage() {
                 </ul>
               ) : (
                 <p className="text-slate-500 py-4">No cash drawer opens (no sale) for this period.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Today's Discounts modal — tap row to open order (receipt) */}
+      {discountsModalOpen && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={() => setDiscountsModalOpen(false)}>
+          <div className="bg-slate-900 rounded-xl border border-slate-700 max-w-lg w-full max-h-[80vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="p-4 border-b border-slate-700 flex justify-between items-center">
+              <h3 className="text-lg font-semibold text-slate-200">Today&apos;s Discounts</h3>
+              <button type="button" onClick={() => setDiscountsModalOpen(false)} className="text-slate-400 hover:text-white">Close</button>
+            </div>
+            <div className="overflow-y-auto flex-1 p-4">
+              {discountsToday && discountsToday.list.length > 0 ? (
+                <ul className="space-y-2">
+                  {discountsToday.list.map((d) => (
+                    <li key={d.id}>
+                      <Link
+                        href={`/orders/${d.order_id}`}
+                        onClick={() => setDiscountsModalOpen(false)}
+                        className="block p-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-left transition-colors"
+                      >
+                        <div className="flex justify-between items-start">
+                          <span className="font-medium text-slate-200">Table {d.table_number}</span>
+                          <span className="text-violet-400">−{fmt(d.discount_applied ?? 0)} AED</span>
+                        </div>
+                        <p className="text-slate-500 text-sm mt-1">
+                          {(d.discount_percent ?? 0) > 0 && <span>{d.discount_percent}%</span>}
+                          {(d.discount_amount ?? 0) > 0 && <span>{(d.discount_percent ?? 0) > 0 ? " + " : ""}{fmt(d.discount_amount!)} AED</span>}
+                          {d.approved_note && <span> · {d.approved_note}</span>}
+                        </p>
+                        <p className="text-slate-500 text-xs mt-0.5">
+                          Onaylayan: {d.approved_by_user_name || "—"} · {new Date(d.approved_at).toLocaleString("tr-TR", { dateStyle: "short", timeStyle: "medium" })}
+                        </p>
+                        <p className="text-sky-400 text-xs mt-1">Fise git →</p>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-slate-500 py-4">Bu dönemde onaylanan indirim yok.</p>
               )}
             </div>
           </div>

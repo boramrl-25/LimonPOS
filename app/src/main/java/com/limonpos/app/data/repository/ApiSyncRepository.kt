@@ -151,6 +151,78 @@ class ApiSyncRepository @Inject constructor(
         }
     }
 
+    /** Create discount request for order (web will approve with actual % or amount). */
+    suspend fun createDiscountRequest(orderId: String, requestedPercent: Double?, requestedAmount: Double?, note: String): Boolean {
+        if (!isOnline()) return false
+        restoreAuthTokenIfNeeded()
+        val res = apiService.createDiscountRequest(orderId, DiscountRequestRequest(requestedPercent, requestedAmount, note))
+        return res.isSuccessful
+    }
+
+    /** Get pending discount request for order, if any. */
+    suspend fun getDiscountRequestForOrder(orderId: String): DiscountRequestResponse? {
+        if (!isOnline()) return null
+        restoreAuthTokenIfNeeded()
+        val res = apiService.getDiscountRequestForOrder(orderId)
+        if (!res.isSuccessful) return null
+        return res.body()?.request
+    }
+
+    /** Refresh single order from API (e.g. after web approves discount). */
+    suspend fun refreshOrderFromApi(orderId: String): Boolean {
+        if (!isOnline()) return false
+        restoreAuthTokenIfNeeded()
+        val res = apiService.getOrder(orderId)
+        if (!res.isSuccessful) return false
+        val dto = res.body() ?: return false
+        val items = dto.items ?: emptyList()
+        val voidedIds = voidLogDao.getVoidedItemIdsForOrder(dto.id).toSet()
+        val filteredItems = items.filter { it.id !in voidedIds }
+        val localItems = orderItemDao.getOrderItems(dto.id).first()
+        val mergedItems = filteredItems
+            .groupBy { listOf(it.productId, it.productName, it.price, it.notes, it.status, it.sentAt) }
+            .values
+            .map { group -> group.first().copy(quantity = group.sumOf { it.quantity }) }
+        val orderEntity = OrderEntity(
+            id = dto.id,
+            tableId = dto.tableId,
+            tableNumber = dto.tableNumber,
+            waiterId = dto.waiterId,
+            waiterName = dto.waiterName,
+            status = dto.status,
+            subtotal = dto.subtotal,
+            taxAmount = dto.taxAmount,
+            discountPercent = dto.discountPercent,
+            discountAmount = dto.discountAmount,
+            total = dto.total,
+            createdAt = dto.createdAt,
+            paidAt = dto.paidAt,
+            syncStatus = "SYNCED"
+        )
+        orderDao.insertOrder(orderEntity)
+        val localItemsById = localItems.associateBy { it.id }
+        orderItemDao.deleteOrderItems(dto.id)
+        val itemEntities = mergedItems.map { item ->
+            val local = localItemsById[item.id]
+            OrderItemEntity(
+                id = item.id,
+                orderId = dto.id,
+                productId = item.productId,
+                productName = item.productName,
+                quantity = item.quantity,
+                price = item.price,
+                notes = item.notes,
+                status = item.status,
+                sentAt = item.sentAt,
+                deliveredAt = local?.deliveredAt,
+                apiId = item.id,
+                syncStatus = "SYNCED"
+            )
+        }
+        if (itemEntities.isNotEmpty()) orderItemDao.insertOrderItems(itemEntities)
+        return true
+    }
+
     /** Pushes current occupied/bill table states to API immediately. Call after opening or updating tables so web sees changes without waiting for full sync. */
     suspend fun pushTableStatesNow() {
         if (!isOnline()) return

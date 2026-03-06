@@ -64,6 +64,7 @@ const defaultData = {
   eod_logs: [],
   cash_drawer_opens: [],
   custom_roles: [],
+  discount_requests: [],
 };
 
 let db;

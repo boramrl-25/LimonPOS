@@ -110,6 +110,15 @@ interface ApiService {
     @POST("orders/{id}/send")
     suspend fun sendOrderToKitchen(@Path("id") id: String): Response<OrderDto>
 
+    @POST("orders/{id}/discount-request")
+    suspend fun createDiscountRequest(
+        @Path("id") orderId: String,
+        @Body body: DiscountRequestRequest
+    ): Response<DiscountRequestResponse>
+
+    @GET("orders/{id}/discount-request")
+    suspend fun getDiscountRequestForOrder(@Path("id") orderId: String): Response<DiscountRequestWrapper>
+
     @POST("payments")
     suspend fun createPayment(
         @Query("user_id") userId: String,

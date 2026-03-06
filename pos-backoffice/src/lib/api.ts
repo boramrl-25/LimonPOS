@@ -431,6 +431,61 @@ export async function getCashDrawerOpens(date?: string, dateFrom?: string, dateT
   return res.json();
 }
 
+export type DiscountRequestRow = {
+  id: string;
+  order_id: string;
+  table_number: string;
+  requested_by_user_name: string;
+  requested_at: number;
+  requested_percent?: number | null;
+  requested_amount?: number | null;
+  note?: string;
+  order_subtotal?: number;
+  order_total_before_discount?: number;
+};
+
+export async function getDiscountRequestsPending(): Promise<{ requests: DiscountRequestRow[] }> {
+  const res = await fetchWithTimeout(`${API_URL}/orders/discount-requests?status=pending`, { headers: headers() });
+  if (!res.ok) throw new Error("Failed to fetch discount requests");
+  return res.json();
+}
+
+export async function approveDiscountRequest(
+  orderId: string,
+  requestId: string,
+  body: { discount_percent?: number; discount_amount?: number; note?: string }
+) {
+  const res = await fetchWithTimeout(
+    `${API_URL}/orders/${encodeURIComponent(orderId)}/discount-request/${encodeURIComponent(requestId)}/approve`,
+    { method: "POST", headers: headers(), body: JSON.stringify(body) }
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(err?.error || "Failed to approve discount");
+  }
+  return res.json();
+}
+
+export type DiscountTodayRow = {
+  id: string;
+  order_id: string;
+  table_number: string;
+  discount_percent: number | null;
+  discount_amount: number | null;
+  approved_note: string | null;
+  approved_by_user_name: string | null;
+  approved_at: number;
+  order_total: number;
+  discount_applied: number;
+};
+
+export async function getDiscountsToday(date?: string): Promise<{ count: number; list: DiscountTodayRow[]; totalDiscountAmount: number }> {
+  const params = date ? `?date=${encodeURIComponent(date)}` : "";
+  const res = await fetchWithTimeout(`${API_URL}/dashboard/discounts-today${params}`, { headers: headers() });
+  if (!res.ok) throw new Error("Failed to fetch today discounts");
+  return res.json();
+}
+
 export async function getOrder(orderId: string) {
   const res = await fetchWithTimeout(`${API_URL}/orders/${encodeURIComponent(orderId)}`, { headers: headers() });
   if (res.status === 404) throw new Error("Order not found (may have been deleted).");
