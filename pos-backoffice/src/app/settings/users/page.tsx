@@ -6,7 +6,12 @@ import { ArrowLeft, Plus, Trash2, FileSpreadsheet, FileDown, Search } from "luci
 import { getUsers, createUser, updateUser, deleteUser, importUsers, getPermissions, type RoleOption, type PermissionOption } from "@/lib/api";
 import * as XLSX from "xlsx";
 
-type User = { id: string; name: string; pin: string; role: string; active: number; permissions?: string[]; cash_drawer_permission?: boolean };
+type User = { id: string; name: string; pin: string; role: string; active?: number | boolean; permissions?: string[]; cash_drawer_permission?: boolean };
+
+function isUserActive(u: User): boolean {
+  const a = u.active;
+  return a === true || a === 1;
+}
 
 export default function UsersSettingsPage() {
   const [users, setUsers] = useState<User[]>([]);
@@ -52,7 +57,7 @@ export default function UsersSettingsPage() {
         name: u.name,
         pin: u.pin,
         role: u.role,
-        active: (u.active ?? 1) === 1,
+        active: isUserActive(u),
         permissions: Array.isArray(u.permissions) ? u.permissions : [],
         cashDrawerPermission: !!u.cash_drawer_permission,
       });
@@ -94,7 +99,7 @@ export default function UsersSettingsPage() {
   async function toggleActive(u: User, e: React.MouseEvent) {
     e.stopPropagation();
     try {
-      const next = (u.active ?? 1) === 1 ? 0 : 1;
+      const next = isUserActive(u) ? 0 : 1;
       await updateUser(u.id, {
         name: u.name,
         pin: u.pin,
@@ -117,7 +122,7 @@ export default function UsersSettingsPage() {
         name: u.name,
         pin: u.pin,
         role: newRole,
-        active: (u.active ?? 1) === 1,
+        active: isUserActive(u),
         permissions: u.permissions ?? [],
         cash_drawer_permission: !!u.cash_drawer_permission,
       });
@@ -190,7 +195,7 @@ export default function UsersSettingsPage() {
       Name: u.name,
       Role: u.role,
       PIN: u.pin,
-      Active: (u.active ?? 1) === 1 ? "On" : "Off",
+      Active: isUserActive(u) ? "On" : "Off",
     }));
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
@@ -305,12 +310,12 @@ export default function UsersSettingsPage() {
                 <td className="p-4" onClick={(e) => e.stopPropagation()}>
                   <button
                     onClick={(ev) => toggleActive(u, ev)}
-                    className={`relative inline-flex h-6 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-slate-900 ${(u.active ?? 1) === 1 ? "bg-emerald-600" : "bg-slate-600"}`}
-                    title={(u.active ?? 1) === 1 ? "User active (Off to disable)" : "User inactive (On to enable)"}
+                    className={`relative inline-flex h-6 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-slate-900 ${isUserActive(u) ? "bg-emerald-600" : "bg-slate-600"}`}
+                    title={isUserActive(u) ? "User active (Off to disable)" : "User inactive (On to enable)"}
                   >
-                    <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition ${(u.active ?? 1) === 1 ? "translate-x-4" : "translate-x-0.5"}`} />
+                    <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition ${isUserActive(u) ? "translate-x-4" : "translate-x-0.5"}`} />
                   </button>
-                  <span className="ml-2 text-xs text-slate-500">{(u.active ?? 1) === 1 ? "On" : "Off"}</span>
+                  <span className="ml-2 text-xs text-slate-500">{isUserActive(u) ? "On" : "Off"}</span>
                 </td>
                 <td className="p-4" onClick={(e) => e.stopPropagation()}>
                   <button onClick={(ev) => remove(u.id, ev)} className="p-1.5 rounded bg-slate-700 hover:bg-red-600/30 text-red-400">
