@@ -536,18 +536,29 @@ app.delete("/api/categories/:id", authMiddleware, async (req, res) => {
 app.get("/api/products", authMiddleware, async (req, res) => {
   await ensureData();
   const cats = Object.fromEntries((db.data.categories || []).map((r) => [r.id, r.name]));
+  const catById = Object.fromEntries((db.data.categories || []).map((c) => [c.id, c]));
   const products = (db.data.products || []).filter((p) => p.sellable !== false);
   console.log("GET /api/products - count:", products.length, "from", req.ip);
   res.json(
-    products.map((r) => ({
-      ...r,
-      tax_rate: r.tax_rate ?? 0,
-      pos_enabled: r.pos_enabled ?? 0,
-      category: cats[r.category_id] || "",
-      printers: JSON.parse(r.printers || "[]"),
-      modifier_groups: JSON.parse(r.modifier_groups || "[]"),
-      zoho_suggest_remove: !!r.zoho_suggest_remove,
-    })),
+    products.map((r) => {
+      let modGroups = JSON.parse(r.modifier_groups || "[]");
+      if (!Array.isArray(modGroups) || modGroups.length === 0) {
+        const cat = r.category_id ? catById[r.category_id] : null;
+        if (cat && cat.modifier_groups) {
+          const catMods = JSON.parse(cat.modifier_groups || "[]");
+          if (Array.isArray(catMods) && catMods.length > 0) modGroups = [...catMods];
+        }
+      }
+      return {
+        ...r,
+        tax_rate: r.tax_rate ?? 0,
+        pos_enabled: r.pos_enabled ?? 0,
+        category: cats[r.category_id] || "",
+        printers: JSON.parse(r.printers || "[]"),
+        modifier_groups: modGroups,
+        zoho_suggest_remove: !!r.zoho_suggest_remove,
+      };
+    }),
   );
 });
 
