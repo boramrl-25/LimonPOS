@@ -109,6 +109,24 @@ export default function UsersSettingsPage() {
     }
   }
 
+  async function changeRole(u: User, newRole: string, e: React.ChangeEvent<HTMLSelectElement>) {
+    e.stopPropagation();
+    if (newRole === u.role) return;
+    try {
+      await updateUser(u.id, {
+        name: u.name,
+        pin: u.pin,
+        role: newRole,
+        active: (u.active ?? 1) === 1,
+        permissions: u.permissions ?? [],
+        cash_drawer_permission: !!u.cash_drawer_permission,
+      });
+      await load();
+    } catch (err) {
+      alert((err as Error).message);
+    }
+  }
+
   async function remove(id: string, e: React.MouseEvent) {
     e.stopPropagation();
     if (!confirm("Are you sure you want to delete?")) return;
@@ -271,7 +289,18 @@ export default function UsersSettingsPage() {
                 className="border-b border-slate-700/50 hover:bg-slate-800/50 cursor-pointer transition-colors"
               >
                 <td className="p-4">{u.name}</td>
-                <td className="p-4 capitalize">{u.role}</td>
+                <td className="p-4" onClick={(e) => e.stopPropagation()}>
+                  <select
+                    value={u.role}
+                    onChange={(e) => changeRole(u, e.target.value, e)}
+                    onClick={(e) => e.stopPropagation()}
+                    className="px-2 py-1 rounded bg-slate-800 border border-slate-600 text-white text-sm capitalize focus:border-sky-500 focus:ring-1 focus:ring-sky-500"
+                  >
+                    {roles.map((r) => (
+                      <option key={r.id} value={r.id}>{r.label}</option>
+                    ))}
+                  </select>
+                </td>
                 <td className="p-4">{u.pin}</td>
                 <td className="p-4" onClick={(e) => e.stopPropagation()}>
                   <button
