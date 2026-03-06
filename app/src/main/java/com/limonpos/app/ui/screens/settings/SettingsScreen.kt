@@ -6,7 +6,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Print
@@ -35,7 +34,6 @@ fun SettingsScreen(
     onNavigateToBackOfficeSettings: () -> Unit = {},
     onNavigateToServerSettings: () -> Unit = {},
     onNavigateToPrinters: () -> Unit = {},
-    onNavigateToVoidReport: () -> Unit = {},
     onSync: () -> Unit = {},
     onLogout: () -> Unit
 ) {
@@ -145,15 +143,6 @@ fun SettingsScreen(
                     Icon(Icons.Default.Print, contentDescription = null, modifier = Modifier.size(20.dp))
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("Printer Setup", color = LimonText)
-                }
-                Spacer(modifier = Modifier.height(12.dp))
-                OutlinedButton(
-                    onClick = onNavigateToVoidReport,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Default.Cancel, contentDescription = null, modifier = Modifier.size(20.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Void Report", color = LimonText)
                 }
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedButton(

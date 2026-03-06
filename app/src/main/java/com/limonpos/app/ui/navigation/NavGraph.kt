@@ -333,7 +333,6 @@ fun NavGraph(
                     onNavigateToBackOfficeSettings = { navController.navigate(Routes.BACK_OFFICE_SETTINGS) },
                     onNavigateToServerSettings = { navController.navigate(Routes.SERVER_SETTINGS) },
                     onNavigateToPrinters = { navController.navigate(Routes.PRINTERS) },
-                    onNavigateToVoidReport = { navController.navigate(Routes.VOID_REPORT) },
                     onSync = onSync,
                     onLogout = { /* handled by SettingsViewModel.logout() */ }
                 )

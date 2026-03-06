@@ -162,12 +162,8 @@ fun FloorPlanScreen(
             list = list,
             onDismiss = { viewModel.dismissOverdueWarning() },
             onGoToTable = { tableId ->
-                val tablesOnFloor = uiState.tablesByFloor[uiState.selectedFloor].orEmpty()
-                val target = tablesOnFloor.firstOrNull { it.id == tableId }
-                if (target != null) {
-                    viewModel.dismissOverdueWarning()
-                    viewModel.onTableClick(target, onNavigateToOrder)
-                }
+                viewModel.dismissOverdueWarning()
+                onNavigateToOrder(tableId)
             }
         )
     }
@@ -1113,7 +1109,14 @@ private fun OverdueUndeliveredDialogFloor(
                         modifier = Modifier.clickable { onGoToTable(block.tableId) }
                     ) {
                         Column(modifier = Modifier.padding(12.dp)) {
-                            Text("Masa ${block.tableNumber}", fontWeight = FontWeight.Bold, color = LimonPrimary, fontSize = 15.sp)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Masa ${block.tableNumber}", fontWeight = FontWeight.Bold, color = LimonPrimary, fontSize = 15.sp)
+                                Text("Tap to go", color = LimonTextSecondary, fontSize = 12.sp)
+                            }
                             Spacer(modifier = Modifier.height(6.dp))
                             block.items.forEach { item ->
                                 Text("• ${item.quantity}x ${item.productName}", color = LimonText, fontSize = 14.sp)
