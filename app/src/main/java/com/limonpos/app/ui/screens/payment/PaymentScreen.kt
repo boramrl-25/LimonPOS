@@ -83,9 +83,9 @@ fun PaymentScreen(
 
     LaunchedEffect(uiState.navigateToFloorPlanAfterDiscount) {
         if (uiState.navigateToFloorPlanAfterDiscount) {
-            viewModel.clearNavigateToFloorPlanAfterDiscount()
-            delay(400)
+            delay(500)
             onNavigateToFloorPlan()
+            viewModel.clearNavigateToFloorPlanAfterDiscount()
         }
     }
 

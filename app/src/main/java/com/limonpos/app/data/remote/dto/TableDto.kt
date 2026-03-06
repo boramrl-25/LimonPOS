@@ -2,6 +2,13 @@ package com.limonpos.app.data.remote.dto
 
 import com.google.gson.annotations.SerializedName
 
+data class TableReservationDto(
+    @SerializedName("id") val id: String? = null,
+    @SerializedName("guest_name") val guestName: String? = null,
+    @SerializedName("from_time") val fromTime: Long? = null,
+    @SerializedName("to_time") val toTime: Long? = null
+)
+
 data class TableDto(
     @SerializedName("id") val id: String,
     @SerializedName("number") val number: Int,
@@ -18,5 +25,6 @@ data class TableDto(
     @SerializedName("y") val y: Double = 0.0,
     @SerializedName("width") val width: Double = 120.0,
     @SerializedName("height") val height: Double = 100.0,
-    @SerializedName("shape") val shape: String = "square"
+    @SerializedName("shape") val shape: String = "square",
+    @SerializedName("reservation") val reservation: TableReservationDto? = null
 )

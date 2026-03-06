@@ -546,9 +546,46 @@ export async function clearSalesByDateRange(dateFrom: string, dateTo: string): P
   return data;
 }
 
-export async function getTables() {
+export type TableReservation = { id: string; guest_name: string; from_time: number; to_time: number };
+
+export async function getTables(): Promise<Array<{
+  id: string;
+  number: string | number;
+  name: string;
+  floor: string;
+  status: string;
+  waiter_name?: string;
+  current_order_id?: string | null;
+  reservation?: TableReservation;
+}>> {
   const res = await fetchWithTimeout(`${API_URL}/tables`, { headers: headers() });
   if (!res.ok) throw new Error("Failed to fetch tables");
+  return res.json();
+}
+
+export async function reserveTable(tableId: string, body: { guest_name: string; from_time: number; to_time: number }) {
+  const res = await fetch(`${API_URL}/tables/${tableId}/reserve`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to reserve table");
+  }
+  return res.json();
+}
+
+export async function cancelTableReservation(tableId: string) {
+  const res = await fetch(`${API_URL}/tables/${tableId}/reservation/cancel`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({}),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to cancel reservation");
+  }
   return res.json();
 }
 

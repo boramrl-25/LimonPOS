@@ -434,6 +434,7 @@ class ApiSyncRepository @Inject constructor(
         val entities = dtos.map { dto ->
                 val local = localOccupied[dto.id]
                 val useLocal = local != null && (dto.currentOrderId.isNullOrBlank())
+                val res = dto.reservation
                 TableEntity(
                     id = dto.id,
                     number = dto.number.toString(),
@@ -451,7 +452,10 @@ class ApiSyncRepository @Inject constructor(
                     y = dto.y,
                     width = dto.width,
                     height = dto.height,
-                    shape = dto.shape
+                    shape = dto.shape,
+                    reservationGuestName = res?.guestName,
+                    reservationFrom = res?.fromTime,
+                    reservationTo = res?.toTime
                 )
             }
         tableDao.insertTables(entities)
@@ -1135,6 +1139,37 @@ class ApiSyncRepository @Inject constructor(
         return try {
             val response = apiService.closeTable(tableId)
             response.isSuccessful
+        } catch (_: Exception) { false }
+    }
+
+    /** Reserve a table (guest name + from/to time in ms). Returns true if successful. */
+    suspend fun reserveTable(tableId: String, guestName: String, fromTimeMs: Long, toTimeMs: Long): Boolean {
+        if (!isOnline()) return false
+        restoreAuthTokenIfNeeded()
+        return try {
+            val body = mapOf(
+                "guest_name" to guestName,
+                "from_time" to fromTimeMs,
+                "to_time" to toTimeMs
+            )
+            val response = apiService.reserveTable(tableId, body)
+            if (response.isSuccessful) {
+                syncTables()
+                true
+            } else false
+        } catch (_: Exception) { false }
+    }
+
+    /** Cancel active reservation for table. */
+    suspend fun cancelTableReservation(tableId: String): Boolean {
+        if (!isOnline()) return false
+        restoreAuthTokenIfNeeded()
+        return try {
+            val response = apiService.cancelTableReservation(tableId, emptyMap())
+            if (response.isSuccessful) {
+                syncTables()
+                true
+            } else false
         } catch (_: Exception) { false }
     }
 

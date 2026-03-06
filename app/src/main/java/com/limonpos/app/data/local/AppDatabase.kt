@@ -37,6 +37,14 @@ val MIGRATION_10_11 = object : Migration(10, 11) {
     }
 }
 
+val MIGRATION_11_12 = object : Migration(11, 12) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE tables ADD COLUMN reservationGuestName TEXT NULL")
+        db.execSQL("ALTER TABLE tables ADD COLUMN reservationFrom INTEGER NULL")
+        db.execSQL("ALTER TABLE tables ADD COLUMN reservationTo INTEGER NULL")
+    }
+}
+
 @Database(
     entities = [
         TableEntity::class,
@@ -55,7 +63,7 @@ val MIGRATION_10_11 = object : Migration(10, 11) {
         VoidRequestEntity::class,
         ClosedBillAccessRequestEntity::class
     ],
-    version = 11,
+    version = 12,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

@@ -481,7 +481,28 @@ fun FloorPlanScreen(
         OpenTableDialog(
             table = table,
             onDismiss = { viewModel.dismissOpenTableDialog() },
-            onConfirm = { guestCount -> viewModel.openTable(table.id, guestCount, onNavigateToOrder) }
+            onConfirm = { guestCount -> viewModel.openTable(table.id, guestCount, onNavigateToOrder) },
+            onReserve = { viewModel.showReserveTableDialog(table) }
+        )
+    }
+
+    uiState.showReserveTableDialog?.let { table ->
+        ReserveTableDialog(
+            table = table,
+            loading = uiState.reserveTableLoading,
+            error = uiState.reserveTableError,
+            onDismiss = { viewModel.dismissReserveTableDialog() },
+            onSubmit = { name, fromMs, toMs -> viewModel.reserveTable(table.id, name, fromMs, toMs) }
+        )
+    }
+
+    uiState.showReservationInfoDialog?.let { table ->
+        ReservationInfoDialog(
+            table = table,
+            loading = uiState.reserveTableLoading,
+            onDismiss = { viewModel.dismissReservationInfoDialog() },
+            onCancelReservation = { viewModel.cancelReservation(table.id) },
+            onOpenTable = { viewModel.openTableFromReservation(table) }
         )
     }
 
@@ -532,7 +553,8 @@ fun FloorPlanScreen(
 private fun OpenTableDialog(
     table: TableEntity,
     onDismiss: () -> Unit,
-    onConfirm: (Int) -> Unit
+    onConfirm: (Int) -> Unit,
+    onReserve: (() -> Unit)? = null
 ) {
     var guestCount by remember { mutableStateOf(2) }
     AlertDialog(
@@ -553,10 +575,150 @@ private fun OpenTableDialog(
                     Spacer(Modifier.width(16.dp))
                     Button(onClick = { if (guestCount < 20) guestCount++ }) { Text("+") }
                 }
+                if (onReserve != null) {
+                    Spacer(Modifier.height(12.dp))
+                    TextButton(onClick = onReserve) {
+                        Text("Reserve table", color = LimonPrimary)
+                    }
+                }
             }
         },
         confirmButton = { Button(onClick = { onConfirm(guestCount) }) { Text("Open") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = LimonTextSecondary) } },
+        containerColor = LimonSurface
+    )
+}
+
+private val RESERVE_DATE_FORMAT = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ReserveTableDialog(
+    table: TableEntity,
+    loading: Boolean,
+    error: String?,
+    onDismiss: () -> Unit,
+    onSubmit: (guestName: String, fromTimeMs: Long, toTimeMs: Long) -> Unit
+) {
+    var guestName by remember { mutableStateOf("") }
+    var fromText by remember { mutableStateOf("") }
+    var toText by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Reserve Table ${table.number}", color = LimonText) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = guestName,
+                    onValueChange = { guestName = it },
+                    label = { Text("Guest name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = LimonText,
+                        unfocusedTextColor = LimonText,
+                        focusedBorderColor = LimonPrimary,
+                        unfocusedBorderColor = LimonTextSecondary,
+                        cursorColor = LimonPrimary
+                    )
+                )
+                OutlinedTextField(
+                    value = fromText,
+                    onValueChange = { fromText = it },
+                    label = { Text("From (e.g. 2025-03-05 18:00)") },
+                    placeholder = { Text("yyyy-MM-dd HH:mm", color = LimonTextSecondary) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = LimonText,
+                        unfocusedTextColor = LimonText,
+                        focusedBorderColor = LimonPrimary,
+                        unfocusedBorderColor = LimonTextSecondary,
+                        cursorColor = LimonPrimary
+                    )
+                )
+                OutlinedTextField(
+                    value = toText,
+                    onValueChange = { toText = it },
+                    label = { Text("To (e.g. 2025-03-05 20:00)") },
+                    placeholder = { Text("yyyy-MM-dd HH:mm", color = LimonTextSecondary) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = LimonText,
+                        unfocusedTextColor = LimonText,
+                        focusedBorderColor = LimonPrimary,
+                        unfocusedBorderColor = LimonTextSecondary,
+                        cursorColor = LimonPrimary
+                    )
+                )
+                if (loading) {
+                    Spacer(Modifier.height(8.dp))
+                    LinearProgressIndicator(color = LimonPrimary, modifier = Modifier.fillMaxWidth())
+                }
+                error?.let { Text(it, color = LimonError, fontSize = 12.sp) }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val name = guestName.trim()
+                    if (name.isEmpty()) return@Button
+                    val fromMs = try { RESERVE_DATE_FORMAT.parse(fromText.trim())?.time } catch (_: Exception) { null }
+                    val toMs = try { RESERVE_DATE_FORMAT.parse(toText.trim())?.time } catch (_: Exception) { null }
+                    if (fromMs == null || toMs == null || toMs <= fromMs) return@Button
+                    onSubmit(name, fromMs, toMs)
+                },
+                enabled = !loading
+            ) { Text("Reserve") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = LimonTextSecondary) } },
+        containerColor = LimonSurface
+    )
+}
+
+@Composable
+private fun ReservationInfoDialog(
+    table: TableEntity,
+    loading: Boolean,
+    onDismiss: () -> Unit,
+    onCancelReservation: () -> Unit,
+    onOpenTable: () -> Unit
+) {
+    val fromStr = table.reservationFrom?.let { ts ->
+        java.text.SimpleDateFormat("dd/MM/yyyy HH:mm", java.util.Locale.US).format(java.util.Date(ts))
+    } ?: ""
+    val toStr = table.reservationTo?.let { ts ->
+        java.text.SimpleDateFormat("dd/MM/yyyy HH:mm", java.util.Locale.US).format(java.util.Date(ts))
+    } ?: ""
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Table ${table.number} – Reserved", color = LimonText) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                table.reservationGuestName?.takeIf { it.isNotBlank() }?.let { name ->
+                    Text("Guest: $name", color = LimonTextSecondary, fontSize = 14.sp)
+                }
+                if (fromStr.isNotEmpty() && toStr.isNotEmpty()) {
+                    Text("From: $fromStr", color = LimonTextSecondary, fontSize = 14.sp)
+                    Text("To: $toStr", color = LimonTextSecondary, fontSize = 14.sp)
+                }
+                Text("Reservation is cancelled automatically 10 min after end time.", color = LimonTextSecondary, fontSize = 12.sp)
+                if (loading) {
+                    Spacer(Modifier.height(8.dp))
+                    LinearProgressIndicator(color = LimonPrimary, modifier = Modifier.fillMaxWidth())
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onOpenTable) { Text("Open table") }
+        },
+        dismissButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = onDismiss) { Text("Close", color = LimonTextSecondary) }
+                TextButton(onClick = onCancelReservation) { Text("Cancel reservation", color = LimonError) }
+            }
+        },
         containerColor = LimonSurface
     )
 }
@@ -773,6 +935,14 @@ private fun TableCard(
                         color = LimonInfo,
                         fontSize = 11.sp
                     )
+                    table.reservationGuestName?.takeIf { it.isNotBlank() }?.let { name ->
+                        Text(
+                            text = name,
+                            color = LimonTextSecondary,
+                            fontSize = 10.sp,
+                            maxLines = 1
+                        )
+                    }
                 }
             }
         }

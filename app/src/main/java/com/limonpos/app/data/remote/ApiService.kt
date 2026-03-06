@@ -48,6 +48,18 @@ interface ApiService {
         @Body body: Map<String, Any?>
     ): Response<TableDto>
 
+    @POST("tables/{id}/reserve")
+    suspend fun reserveTable(
+        @Path("id") id: String,
+        @Body body: Map<String, Any?>
+    ): Response<TableReservationDto>
+
+    @POST("tables/{id}/reservation/cancel")
+    suspend fun cancelTableReservation(
+        @Path("id") id: String,
+        @Body body: Map<String, Any?>
+    ): Response<Unit>
+
     @GET("categories")
     suspend fun getCategories(): Response<List<CategoryDto>>
 

@@ -65,6 +65,7 @@ const defaultData = {
   cash_drawer_opens: [],
   custom_roles: [],
   discount_requests: [],
+  table_reservations: [],
 };
 
 let db;

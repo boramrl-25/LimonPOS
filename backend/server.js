@@ -109,13 +109,14 @@ function getTodaySalesSummary() {
 
 async function ensureData() {
   await db.read();
-  if (!db.data) db.data = { users: [], categories: [], products: [], printers: [], payment_methods: [], orders: [], order_items: [], payments: [], tables: [], void_logs: [], void_requests: [], closed_bill_access_requests: [], zoho_config: {}, migrations: {}, devices: [], floor_plan_sections: null, discount_requests: [] };
+  if (!db.data) db.data = { users: [], categories: [], products: [], printers: [], payment_methods: [], orders: [], order_items: [], payments: [], tables: [], void_logs: [], void_requests: [], closed_bill_access_requests: [], zoho_config: {}, migrations: {}, devices: [], floor_plan_sections: null, discount_requests: [], table_reservations: [] };
   if (!db.data.migrations) db.data.migrations = {};
   if (!Array.isArray(db.data.devices)) db.data.devices = [];
   if (!Array.isArray(db.data.products)) db.data.products = [];
   if (!Array.isArray(db.data.orders)) db.data.orders = [];
   if (!Array.isArray(db.data.order_items)) db.data.order_items = [];
   if (!Array.isArray(db.data.discount_requests)) db.data.discount_requests = [];
+  if (!Array.isArray(db.data.table_reservations)) db.data.table_reservations = [];
   let needWrite = false;
   if (!db.data.floor_plan_sections) {
     db.data.floor_plan_sections = { A: [29, 30, 31, 32, 33, 34, 35, 40], B: [24, 25, 26, 27, 28, 29, 36, 37, 38, 39], C: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], D: [11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21], E: [41, 42, 43] };
@@ -1025,16 +1026,65 @@ app.get("/api/dashboard/daily-sales", authMiddleware, async (req, res) => {
   });
 });
 
+// Table reservations: expire 10 min after end time
+const RESERVATION_GRACE_MS = 10 * 60 * 1000;
+
+function parseReservationTime(v) {
+  if (v == null) return NaN;
+  if (typeof v === "number" && !isNaN(v)) return v;
+  const t = new Date(v).getTime();
+  return isNaN(t) ? NaN : t;
+}
+
+function expireTableReservations() {
+  const now = Date.now();
+  const list = db.data.table_reservations || [];
+  let changed = false;
+  for (let i = 0; i < list.length; i++) {
+    if (list[i].status === "active" && list[i].to_time != null && now > list[i].to_time + RESERVATION_GRACE_MS) {
+      list[i] = { ...list[i], status: "expired" };
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+function getActiveReservationForTable(tableId) {
+  const now = Date.now();
+  return (db.data.table_reservations || []).find(
+    (r) => r.table_id === tableId && r.status === "active" && r.to_time != null && now <= r.to_time + RESERVATION_GRACE_MS
+  );
+}
+
 // Tables
 app.get("/api/tables", authMiddleware, async (req, res) => {
   await ensureData();
-  res.json((db.data.tables || []).map((r) => ({
-    ...r,
-    number: typeof r.number === "string" ? parseInt(r.number, 10) || 0 : (r.number ?? 0),
-    current_order_id: r.current_order_id || null,
-    waiter_id: r.waiter_id || null,
-    waiter_name: r.waiter_name || null,
-  })));
+  if (expireTableReservations()) await db.write();
+  const tables = db.data.tables || [];
+  res.json(
+    tables.map((r) => {
+      const num = typeof r.number === "string" ? parseInt(r.number, 10) || 0 : r.number ?? 0;
+      const out = {
+        ...r,
+        number: num,
+        current_order_id: r.current_order_id || null,
+        waiter_id: r.waiter_id || null,
+        waiter_name: r.waiter_name || null,
+      };
+      const isFree = !r.current_order_id;
+      const activeRes = isFree ? getActiveReservationForTable(r.id) : null;
+      if (activeRes) {
+        out.status = "reserved";
+        out.reservation = {
+          id: activeRes.id,
+          guest_name: activeRes.guest_name || "",
+          from_time: activeRes.from_time,
+          to_time: activeRes.to_time,
+        };
+      }
+      return out;
+    })
+  );
 });
 
 app.post("/api/tables", authMiddleware, async (req, res) => {
@@ -1098,6 +1148,60 @@ app.put("/api/tables/:id", authMiddleware, async (req, res) => {
   if (body.opened_at != null) t.opened_at = body.opened_at;
   await db.write();
   res.json({ ...t, number: typeof t.number === "string" ? parseInt(t.number, 10) || 0 : (t.number ?? 0), current_order_id: t.current_order_id || null, waiter_id: t.waiter_id || null, waiter_name: t.waiter_name || null });
+});
+
+// Reserve table: guest name + time range. Reservation auto-expires 10 min after end time.
+app.post("/api/tables/:id/reserve", authMiddleware, async (req, res) => {
+  await ensureData();
+  const { id: tableId } = req.params;
+  const tbl = db.data.tables.find((t) => t.id === tableId);
+  if (!tbl) return res.status(404).json({ error: "Table not found" });
+  if (tbl.current_order_id) return res.status(409).json({ error: "Table is occupied" });
+  const guestName = (req.body.guest_name || req.body.guestName || "").toString().trim();
+  if (!guestName) return res.status(400).json({ error: "guest_name is required" });
+  const fromTime = parseReservationTime(req.body.from_time ?? req.body.fromTime);
+  const toTime = parseReservationTime(req.body.to_time ?? req.body.toTime);
+  if (isNaN(fromTime) || isNaN(toTime) || toTime <= fromTime)
+    return res.status(400).json({ error: "Valid from_time and to_time (ISO or ms) required; to_time must be after from_time" });
+  const now = Date.now();
+  const list = db.data.table_reservations || [];
+  const overlapping = list.some(
+    (r) =>
+      r.table_id === tableId &&
+      r.status === "active" &&
+      r.to_time != null &&
+      now <= r.to_time + RESERVATION_GRACE_MS &&
+      !(toTime < r.from_time || fromTime > r.to_time + RESERVATION_GRACE_MS)
+  );
+  if (overlapping) return res.status(409).json({ error: "Table already has an active reservation in this time range" });
+  const reservationId = `res_${uuid().slice(0, 12)}`;
+  const reservation = {
+    id: reservationId,
+    table_id: tableId,
+    guest_name: guestName,
+    from_time: fromTime,
+    to_time: toTime,
+    created_at: now,
+    status: "active",
+  };
+  db.data.table_reservations.push(reservation);
+  await db.write();
+  res.status(201).json(reservation);
+});
+
+// Cancel reservation for table (by reservation id or any active for table)
+app.post("/api/tables/:id/reservation/cancel", authMiddleware, async (req, res) => {
+  await ensureData();
+  const { id: tableId } = req.params;
+  const reservationId = req.body.reservation_id ?? req.body.reservationId ?? req.query.reservation_id;
+  const list = db.data.table_reservations || [];
+  const idx = reservationId
+    ? list.findIndex((r) => r.id === reservationId && r.table_id === tableId)
+    : list.findIndex((r) => r.table_id === tableId && r.status === "active");
+  if (idx < 0) return res.status(404).json({ error: "Reservation not found" });
+  db.data.table_reservations[idx] = { ...db.data.table_reservations[idx], status: "cancelled" };
+  await db.write();
+  res.json({ ok: true, reservation: db.data.table_reservations[idx] });
 });
 
 // Floor plan sections (A,B,C,D,E filters)

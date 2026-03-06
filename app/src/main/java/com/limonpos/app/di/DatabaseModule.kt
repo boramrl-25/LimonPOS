@@ -6,6 +6,7 @@ import com.limonpos.app.data.local.AppDatabase
 import com.limonpos.app.data.local.MIGRATION_8_9
 import com.limonpos.app.data.local.MIGRATION_9_10
 import com.limonpos.app.data.local.MIGRATION_10_11
+import com.limonpos.app.data.local.MIGRATION_11_12
 import com.limonpos.app.data.local.dao.*
 import dagger.Module
 import dagger.Provides
@@ -21,7 +22,7 @@ object DatabaseModule {
     @Singleton
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, "limonpos.db")
-            .addMigrations(MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
+            .addMigrations(MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
             .fallbackToDestructiveMigration()
             .build()
 

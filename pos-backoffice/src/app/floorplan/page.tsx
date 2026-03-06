@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { ArrowLeft, Search, RefreshCw, Settings2, X } from "lucide-react";
-import { getTables, getFloorPlanSections, updateFloorPlanSections, getOrder, type FloorPlanSections, type Order } from "@/lib/api";
+import { ArrowLeft, Search, RefreshCw, Settings2, X, Calendar } from "lucide-react";
+import { getTables, getFloorPlanSections, updateFloorPlanSections, getOrder, reserveTable, cancelTableReservation, type FloorPlanSections, type Order, type TableReservation } from "@/lib/api";
 
 type Table = {
   id: string;
@@ -13,6 +13,7 @@ type Table = {
   status: string;
   waiter_name?: string;
   current_order_id?: string | null;
+  reservation?: TableReservation;
 };
 
 const SECTIONS = ["A", "B", "C", "D", "E"] as const;
@@ -29,6 +30,10 @@ export default function FloorPlanPage() {
   const [saving, setSaving] = useState(false);
   const [selectedTableOrder, setSelectedTableOrder] = useState<{ table: Table; order: Order } | null>(null);
   const [orderLoading, setOrderLoading] = useState(false);
+  const [reserveTableModal, setReserveTableModal] = useState<Table | null>(null);
+  const [reservationInfoModal, setReservationInfoModal] = useState<Table | null>(null);
+  const [reserveLoading, setReserveLoading] = useState(false);
+  const [reserveError, setReserveError] = useState<string | null>(null);
 
   useEffect(() => {
     load();
@@ -119,6 +124,48 @@ export default function FloorPlanPage() {
     }
   }
 
+  function onTableClick(t: Table) {
+    if (t.status === "free") {
+      setReserveTableModal(t);
+      setReserveError(null);
+    } else if (t.status === "reserved") {
+      setReservationInfoModal(t);
+      setReserveError(null);
+    } else if (t.current_order_id) {
+      openTableOrder(t);
+    }
+  }
+
+  async function submitReserve(guestName: string, fromTime: number, toTime: number) {
+    if (!reserveTableModal) return;
+    setReserveLoading(true);
+    setReserveError(null);
+    try {
+      await reserveTable(reserveTableModal.id, { guest_name: guestName, from_time: fromTime, to_time: toTime });
+      setReserveTableModal(null);
+      load();
+    } catch (e) {
+      setReserveError(e instanceof Error ? e.message : "Failed to reserve");
+    } finally {
+      setReserveLoading(false);
+    }
+  }
+
+  async function onCancelReservation() {
+    if (!reservationInfoModal) return;
+    setReserveLoading(true);
+    setReserveError(null);
+    try {
+      await cancelTableReservation(reservationInfoModal.id);
+      setReservationInfoModal(null);
+      load();
+    } catch (e) {
+      setReserveError(e instanceof Error ? e.message : "Failed to cancel");
+    } finally {
+      setReserveLoading(false);
+    }
+  }
+
   function minsAgo(sentAt: number | null): string {
     if (sentAt == null) return "";
     const mins = Math.floor((Date.now() - sentAt) / 60000);
@@ -180,6 +227,7 @@ export default function FloorPlanPage() {
       <div className="flex gap-4 mb-4 text-sm text-slate-400">
         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500" /> Free</span>
         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500" /> Occupied</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-slate-500" /> Reserved</span>
         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500" /> Bill</span>
       </div>
 
@@ -191,7 +239,7 @@ export default function FloorPlanPage() {
             <button
               key={t.id}
               type="button"
-              onClick={() => openTableOrder(t)}
+              onClick={() => onTableClick(t)}
               className={`aspect-[0.9] rounded-xl border-2 flex flex-col items-center justify-center p-3 text-left ${statusColors[t.status] || "bg-slate-800 border-slate-600"} hover:ring-2 hover:ring-sky-400 transition-all`}
             >
               <span className="font-bold text-white text-lg">{t.number}</span>
@@ -199,8 +247,8 @@ export default function FloorPlanPage() {
                 {t.status === "free" && "Free"}
                 {t.status === "occupied" && "Occupied"}
                 {t.status === "bill" && "Bill"}
-                {t.status === "reserved" && "Reserved"}
-                {t.waiter_name && ` — ${t.waiter_name}`}
+                {t.status === "reserved" && (t.reservation?.guest_name ? `Reserved — ${t.reservation.guest_name}` : "Reserved")}
+                {t.waiter_name && t.status !== "reserved" && ` — ${t.waiter_name}`}
               </span>
             </button>
           ))}
@@ -319,6 +367,153 @@ export default function FloorPlanPage() {
           </div>
         </div>
       )}
+
+      {reserveTableModal && (
+        <ReserveTableModal
+          table={reserveTableModal}
+          loading={reserveLoading}
+          error={reserveError}
+          onClose={() => { setReserveTableModal(null); setReserveError(null); }}
+          onSubmit={submitReserve}
+        />
+      )}
+
+      {reservationInfoModal && (
+        <ReservationInfoModal
+          table={reservationInfoModal}
+          loading={reserveLoading}
+          error={reserveError}
+          onClose={() => { setReservationInfoModal(null); setReserveError(null); }}
+          onCancelReservation={onCancelReservation}
+        />
+      )}
+    </div>
+  );
+}
+
+function ReserveTableModal({
+  table,
+  loading,
+  error,
+  onClose,
+  onSubmit,
+}: {
+  table: Table;
+  loading: boolean;
+  error: string | null;
+  onClose: () => void;
+  onSubmit: (guestName: string, fromTime: number, toTime: number) => void;
+}) {
+  const [guestName, setGuestName] = useState("");
+  const now = new Date();
+  const defaultFrom = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 0, 0);
+  const defaultTo = new Date(defaultFrom.getTime() + 2 * 60 * 60 * 1000);
+  const [fromStr, setFromStr] = useState(() => defaultFrom.toISOString().slice(0, 16));
+  const [toStr, setToStr] = useState(() => defaultTo.toISOString().slice(0, 16));
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const from = new Date(fromStr).getTime();
+    const to = new Date(toStr).getTime();
+    if (!guestName.trim() || isNaN(from) || isNaN(to) || to <= from) return;
+    onSubmit(guestName.trim(), from, to);
+  };
+  return (
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 max-w-md w-full" onClick={(e) => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-bold text-white flex items-center gap-2">
+            <Calendar className="w-5 h-5 text-sky-400" />
+            Reserve Table {table.number}
+          </h2>
+          <button type="button" onClick={onClose} className="p-2 rounded-lg hover:bg-slate-700 text-slate-400">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <p className="text-slate-400 text-sm mb-4">Reservation is automatically cancelled 10 minutes after the end time.</p>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-1">Guest name</label>
+            <input
+              type="text"
+              value={guestName}
+              onChange={(e) => setGuestName(e.target.value)}
+              placeholder="Guest name"
+              className="w-full px-4 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white placeholder-slate-500 focus:border-sky-500"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-1">From (date & time)</label>
+            <input
+              type="datetime-local"
+              value={fromStr}
+              onChange={(e) => setFromStr(e.target.value)}
+              min={defaultFrom.toISOString().slice(0, 16)}
+              className="w-full px-4 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white focus:border-sky-500"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-1">To (date & time)</label>
+            <input
+              type="datetime-local"
+              value={toStr}
+              onChange={(e) => setToStr(e.target.value)}
+              min={fromStr}
+              className="w-full px-4 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white focus:border-sky-500"
+              required
+            />
+          </div>
+          {error && <p className="text-red-400 text-sm">{error}</p>}
+          {loading && <p className="text-slate-400 text-sm">Saving...</p>}
+          <div className="flex gap-2 pt-2">
+            <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg bg-slate-700 text-slate-200">Cancel</button>
+            <button type="submit" disabled={loading} className="px-4 py-2 rounded-lg bg-sky-600 text-white font-medium">Reserve</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function ReservationInfoModal({
+  table,
+  loading,
+  error,
+  onClose,
+  onCancelReservation,
+}: {
+  table: Table;
+  loading: boolean;
+  error: string | null;
+  onClose: () => void;
+  onCancelReservation: () => void;
+}) {
+  const res = table.reservation;
+  const fromStr = res?.from_time ? new Date(res.from_time).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" }) : "";
+  const toStr = res?.to_time ? new Date(res.to_time).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" }) : "";
+  return (
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 max-w-md w-full" onClick={(e) => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-bold text-white">Table {table.number} — Reserved</h2>
+          <button type="button" onClick={onClose} className="p-2 rounded-lg hover:bg-slate-700 text-slate-400">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="space-y-2 text-slate-300 text-sm mb-4">
+          {res?.guest_name && <p><span className="text-slate-400">Guest:</span> {res.guest_name}</p>}
+          {fromStr && <p><span className="text-slate-400">From:</span> {fromStr}</p>}
+          {toStr && <p><span className="text-slate-400">To:</span> {toStr}</p>}
+          <p className="text-slate-500 text-xs mt-2">Reservation is cancelled automatically 10 min after end time.</p>
+        </div>
+        {error && <p className="text-red-400 text-sm mb-2">{error}</p>}
+        {loading && <p className="text-slate-400 text-sm mb-2">Processing...</p>}
+        <div className="flex gap-2">
+          <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg bg-slate-700 text-slate-200">Close</button>
+          <button type="button" onClick={onCancelReservation} disabled={loading} className="px-4 py-2 rounded-lg bg-red-600/80 text-white hover:bg-red-600">Cancel reservation</button>
+        </div>
+      </div>
     </div>
   );
 }

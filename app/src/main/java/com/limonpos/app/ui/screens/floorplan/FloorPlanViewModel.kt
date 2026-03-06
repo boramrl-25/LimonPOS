@@ -46,6 +46,10 @@ data class FloorPlanUiState(
     val freeCount: Int = 0,
     val occupiedCount: Int = 0,
     val showOpenTableDialog: TableEntity? = null,
+    val showReserveTableDialog: TableEntity? = null,
+    val showReservationInfoDialog: TableEntity? = null,
+    val reserveTableLoading: Boolean = false,
+    val reserveTableError: String? = null,
     val showCashDrawerDialog: Boolean = false,
     val showMenu: Boolean = false,
     val cashDrawerError: String? = null,
@@ -187,12 +191,60 @@ class FloorPlanViewModel @Inject constructor(
     fun onTableClick(table: TableEntity, onNavigateToOrder: (String) -> Unit) {
         when (table.status) {
             "free" -> _uiState.update { it.copy(showOpenTableDialog = table) }
+            "reserved" -> _uiState.update { it.copy(showReservationInfoDialog = table) }
             else -> onNavigateToOrder(table.id)
         }
     }
 
     fun dismissOpenTableDialog() {
         _uiState.update { it.copy(showOpenTableDialog = null) }
+    }
+
+    fun showReserveTableDialog(table: TableEntity) {
+        _uiState.update { it.copy(showOpenTableDialog = null, showReserveTableDialog = table, reserveTableError = null) }
+    }
+
+    fun dismissReserveTableDialog() {
+        _uiState.update { it.copy(showReserveTableDialog = null, reserveTableError = null) }
+    }
+
+    fun dismissReservationInfoDialog() {
+        _uiState.update { it.copy(showReservationInfoDialog = null) }
+    }
+
+    /** Show open table dialog for a table (e.g. from reservation info). */
+    fun openTableFromReservation(table: TableEntity) {
+        _uiState.update { it.copy(showReservationInfoDialog = null, showOpenTableDialog = table) }
+    }
+
+    fun reserveTable(tableId: String, guestName: String, fromTimeMs: Long, toTimeMs: Long) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(reserveTableLoading = true, reserveTableError = null) }
+            val ok = apiSyncRepository.reserveTable(tableId, guestName.trim(), fromTimeMs, toTimeMs)
+            _uiState.update {
+                it.copy(
+                    reserveTableLoading = false,
+                    showReserveTableDialog = null,
+                    reserveTableError = if (ok) null else "Failed to reserve. Check connection and try again."
+                )
+            }
+            if (ok) loadTables()
+        }
+    }
+
+    fun cancelReservation(tableId: String) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(reserveTableLoading = true, reserveTableError = null) }
+            val ok = apiSyncRepository.cancelTableReservation(tableId)
+            _uiState.update {
+                it.copy(
+                    reserveTableLoading = false,
+                    showReservationInfoDialog = null,
+                    reserveTableError = if (ok) null else "Failed to cancel reservation."
+                )
+            }
+            if (ok) loadTables()
+        }
     }
 
     fun openTable(tableId: String, guestCount: Int, onNavigateToOrder: (String) -> Unit) {
