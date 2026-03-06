@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import { ArrowLeft, Plus, Trash2, BookOpen, RefreshCw, Search, FileSpreadsheet, FileDown } from "lucide-react";
 import * as XLSX from "xlsx";
-import { getProducts, getCategories, getPrinters, getModifierGroups, createProduct, updateProduct, deleteProduct, setProductShowInTill, getZohoItems, checkZohoConnection, clearAndSyncProducts, getPendingZohoRemovalProducts, confirmProductRemoval } from "@/lib/api";
+import { getProducts, getCategories, getPrinters, getModifierGroups, createProduct, updateProduct, deleteProduct, setProductShowInTill, getZohoItems, syncZohoBooks, checkZohoConnection, clearAndSyncProducts, getPendingZohoRemovalProducts, confirmProductRemoval } from "@/lib/api";
 
 type Product = {
   id: string;
@@ -67,7 +67,26 @@ export default function ProductsPage() {
     return () => clearInterval(t);
   }, []);
 
-  /* Zoho otomatik ürün sync kapatıldı – sadece manuel "Zoho Sync" butonu ile yapılır. */
+  useEffect(() => {
+    let mounted = true;
+    async function runSync() {
+      try {
+        const r = await syncZohoBooks();
+        if (mounted && !r.error) {
+          setLastSync(new Date().toLocaleTimeString());
+          load();
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    runSync();
+    const t = setInterval(runSync, 60000);
+    return () => {
+      mounted = false;
+      clearInterval(t);
+    };
+  }, []);
 
   async function load(silent = false) {
     if (!silent) {
