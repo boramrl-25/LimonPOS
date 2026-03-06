@@ -626,6 +626,18 @@ class ApiSyncRepository @Inject constructor(
         }
     }
 
+    private fun normalizeModifierGroupIds(raw: List<Any>?): List<String> {
+        if (raw.isNullOrEmpty()) return emptyList()
+        return raw.mapNotNull { item ->
+            when (item) {
+                is String -> item.takeIf { it.isNotEmpty() }
+                is Number -> item.toString().takeIf { it.isNotEmpty() }
+                is Map<*, *> -> (item["id"] ?: item["Id"])?.toString()?.takeIf { it.isNotEmpty() }
+                else -> null
+            }
+        }.distinct()
+    }
+
     private suspend fun syncProducts() {
         ensureAllCategoryExists()
         val response = apiService.getProducts()
@@ -664,6 +676,7 @@ class ApiSyncRepository @Inject constructor(
                     else -> true
                 }
                 val prodOdMin = dto.overdueUndeliveredMinutes?.takeIf { it in 1..1440 }
+                val modIds = normalizeModifierGroupIds(dto.modifierGroups)
                 ProductEntity(
                     id = dto.id,
                     name = dto.name,
@@ -673,7 +686,7 @@ class ApiSyncRepository @Inject constructor(
                     price = parseDouble(dto.price, 0.0),
                     taxRate = taxRate,
                     printers = (dto.printers ?: emptyList()).let { Gson().toJson(it) },
-                    modifierGroups = (dto.modifierGroups ?: emptyList()).let { Gson().toJson(it) },
+                    modifierGroups = Gson().toJson(modIds),
                     active = active,
                     showInTill = showInTill,
                     syncStatus = "SYNCED",
@@ -686,7 +699,8 @@ class ApiSyncRepository @Inject constructor(
         }
         productDao.deleteAll()
         productDao.insertProducts(entities)
-        Log.d("ApiSync", "syncProducts: inserted ${entities.size} products")
+        val hiddenCount = entities.count { !it.showInTill }
+        Log.d("ApiSync", "syncProducts: inserted ${entities.size} products, $hiddenCount hidden (showInTill=false)")
     }
 
     private suspend fun syncPrinters() {
