@@ -571,11 +571,14 @@ class OrderViewModel @Inject constructor(
     val optimisticallyDeliveredIds: State<Set<String>> get() = _optimisticallyDeliveredIds
 
     fun markItemDelivered(itemId: String) {
+        val ow = _uiState.value.orderWithItems ?: return
+        val item = ow.items.find { it.id == itemId } ?: return
         _optimisticallyDeliveredIds.value = _optimisticallyDeliveredIds.value + itemId
         viewModelScope.launch {
             orderRepository.markItemDelivered(itemId)
-            // Do not remove from optimistic set here – Room flow may not have emitted yet.
-            // Cleanup happens when orderWithItems flow emits (see collect block).
+            if (apiSyncRepository.isOnline()) {
+                apiSyncRepository.pushItemDeliveredStatus(ow.order.id, item.copy(deliveredAt = System.currentTimeMillis()))
+            }
         }
     }
 

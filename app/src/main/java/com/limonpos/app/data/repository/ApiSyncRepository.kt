@@ -318,6 +318,19 @@ class ApiSyncRepository @Inject constructor(
         }
     }
 
+    /** Push single item's delivered status immediately (so web floor shows "Masaya gitti" without waiting for full sync). */
+    suspend fun pushItemDeliveredStatus(orderId: String, item: OrderItemEntity) {
+        if (!isOnline() || item.deliveredAt == null) return
+        val apiItemId = item.apiId ?: item.id
+        try {
+            restoreAuthTokenIfNeeded()
+            val res = apiService.updateOrderItemStatus(orderId, apiItemId, OrderItemStatusRequest("delivered"))
+            if (!res.isSuccessful) Log.e("ApiSync", "pushItemDelivered failed for ${item.id}")
+        } catch (e: Exception) {
+            Log.e("ApiSync", "pushItemDelivered error: ${e.message}", e)
+        }
+    }
+
     /** KDS local-first: push preparing/ready/delivered status to backend so web stays in sync */
     private suspend fun pushOrderItemStatusUpdates() {
         if (!isOnline()) return
@@ -399,13 +412,14 @@ class ApiSyncRepository @Inject constructor(
                     }
                 }
 
-                // Add only (localCount - apiCount) per line key so items never double
+                // Add only (localCount - apiCount) per line key so items never double; store apiId for pushOrderItemStatus
                 for ((key, localGroup) in localItems.groupBy { orderItemLineKey(it.productName, it.quantity, it.price, it.notes) }) {
                     val apiCount = apiCountByKey[key] ?: 0
                     val toAdd = localGroup.size - apiCount
                     if (toAdd <= 0) continue
                     val template = localGroup.first()
-                    repeat(toAdd) {
+                    val itemsToUpdate = localGroup.filter { it.apiId == null }.take(toAdd)
+                    for (i in 0 until toAdd) {
                         val itemReq = AddOrderItemRequest(
                             productId = template.productId,
                             productName = template.productName,
@@ -414,7 +428,12 @@ class ApiSyncRepository @Inject constructor(
                             notes = template.notes
                         )
                         val addRes = apiService.addOrderItem(localOrderId, itemReq)
-                        if (!addRes.isSuccessful) {
+                        if (addRes.isSuccessful) {
+                            val dto = addRes.body()
+                            if (dto != null && i < itemsToUpdate.size) {
+                                orderItemDao.updateOrderItem(itemsToUpdate[i].copy(apiId = dto.id, syncStatus = "SYNCED"))
+                            }
+                        } else {
                             Log.e("ApiSync", "addOrderItem failed for ${template.productName}")
                         }
                     }
@@ -447,7 +466,12 @@ class ApiSyncRepository @Inject constructor(
                     notes = item.notes
                 )
                 val addRes = apiService.addOrderItem(apiOrderId, itemReq)
-                if (!addRes.isSuccessful) {
+                if (addRes.isSuccessful) {
+                    val dto = addRes.body()
+                    if (dto != null) {
+                        orderItemDao.updateOrderItem(item.copy(apiId = dto.id, syncStatus = "SYNCED"))
+                    }
+                } else {
                     Log.e("ApiSync", "addOrderItem failed for ${item.productName}")
                 }
             }
