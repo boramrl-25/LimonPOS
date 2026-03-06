@@ -124,7 +124,7 @@ class FloorPlanViewModel @Inject constructor(
             apiSyncRepository.clearOverdueMinutesCache() // ilk döngüde web’deki 1 dk ayarı hemen kullanılsın
             while (true) {
                 val minutes = apiSyncRepository.getOverdueUndeliveredMinutes()
-                val list = orderRepository.getOverdueUndelivered(minutes * 60 * 1000L)
+                val list = orderRepository.getOverdueUndelivered(minutes)
                 if (list.isNotEmpty()) _overdueWarning.value = list
                 delay(30 * 1000L) // 30 sn: 1 dk uyarı çalışsın, API/DB yükü makul kalsın
             }

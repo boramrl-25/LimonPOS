@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Limon POS</string>
+    <string name="notification_channel_overdue">Products not delivered to table</string>
+    <string name="notification_channel_overdue_desc">Alert when items sent to kitchen have not been marked as delivered for too long</string>
+    <string name="notification_overdue_title">Products not delivered to table</string>
+    <string name="notification_overdue_text">Tables: %1$s — tap to open</string>
 </resources>

@@ -21,5 +21,8 @@ data class ProductEntity(
     val modifierGroups: String = "[]", // JSON array of modifier group IDs
     val active: Boolean = true,
     val showInTill: Boolean = true, // pos_enabled from web - show in till/POS
-    val syncStatus: String = "SYNCED"
+    val syncStatus: String = "SYNCED",
+    /** Masaya gitmeyen ürün uyarı süresi (dakika). null = kategori/global ayarı kullan. */
+    @androidx.room.ColumnInfo(name = "overdueUndeliveredMinutes")
+    val overdueUndeliveredMinutes: Int? = null
 )

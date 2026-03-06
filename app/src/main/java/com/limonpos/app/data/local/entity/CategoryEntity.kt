@@ -16,5 +16,8 @@ data class CategoryEntity(
     @ColumnInfo(name = "showTill")
     val showTill: Boolean = true,
     val syncStatus: String = "SYNCED",
-    val printers: String = "[]" // JSON array of printer IDs
+    val printers: String = "[]", // JSON array of printer IDs
+    /** Masaya gitmeyen ürün uyarı süresi (dakika). null = global ayarı kullan. */
+    @ColumnInfo(name = "overdueUndeliveredMinutes")
+    val overdueUndeliveredMinutes: Int? = null
 )

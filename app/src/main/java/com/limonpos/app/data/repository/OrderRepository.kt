@@ -1,8 +1,10 @@
 package com.limonpos.app.data.repository
 
+import com.limonpos.app.data.local.dao.CategoryDao
 import com.limonpos.app.data.local.dao.OrderDao
 import com.limonpos.app.data.local.dao.OrderItemDao
 import com.limonpos.app.data.local.dao.PaymentDao
+import com.limonpos.app.data.local.dao.ProductDao
 import com.limonpos.app.data.local.dao.VoidLogDao
 import com.limonpos.app.data.local.entity.OrderEntity
 import com.limonpos.app.data.local.entity.VoidLogEntity
@@ -32,7 +34,9 @@ class OrderRepository @Inject constructor(
     private val orderItemDao: OrderItemDao,
     private val paymentDao: PaymentDao,
     private val tableRepository: TableRepository,
-    private val voidLogDao: VoidLogDao
+    private val voidLogDao: VoidLogDao,
+    private val categoryDao: CategoryDao,
+    private val productDao: ProductDao
 ) {
     suspend fun createOrder(
         tableId: String,
@@ -109,6 +113,12 @@ class OrderRepository @Inject constructor(
     suspend fun sendToKitchen(orderId: String) {
         val order = orderDao.getOrderById(orderId) ?: throw Exception("Order not found")
         orderDao.updateOrder(order.copy(status = "sent", syncStatus = "PENDING"))
+        val now = System.currentTimeMillis()
+        for (item in orderItemDao.getOrderItems(orderId).first()) {
+            if (item.sentAt == null) {
+                orderItemDao.updateOrderItem(item.copy(status = "sent", sentAt = now, syncStatus = "PENDING"))
+            }
+        }
     }
 
     suspend fun markItemsAsSent(orderId: String, itemIds: List<String>) {
@@ -141,11 +151,13 @@ class OrderRepository @Inject constructor(
         return true
     }
 
-    suspend fun getOverdueUndelivered(olderThanMs: Long): List<OverdueUndelivered> {
+    /**
+     * Ürün/kategori bazlı süre: product.overdueUndeliveredMinutes ?: category.overdueUndeliveredMinutes ?: defaultMinutes
+     */
+    suspend fun getOverdueUndelivered(defaultMinutes: Int): List<OverdueUndelivered> {
         val orders = orderDao.getOpenAndSentOrders()
         val result = mutableListOf<OverdueUndelivered>()
         val now = System.currentTimeMillis()
-        val cutoff = now - olderThanMs
         for (order in orders) {
             // Kapanmış/ödeme alınmış masalarda "ürün masaya gitmedi" uyarısı gösterme
             if (order.status == "paid" || order.status == "closed") continue
@@ -157,7 +169,14 @@ class OrderRepository @Inject constructor(
             val totalPaid = paymentDao.getPaymentsSumByOrder(order.id)
             if (totalPaid >= order.total - 0.01) continue
             val items = orderItemDao.getOrderItems(order.id).first()
-            val overdue = items.filter { it.sentAt != null && it.deliveredAt == null && it.sentAt < cutoff }
+            val overdue = items.filter { item ->
+                if (item.sentAt == null || item.deliveredAt != null) return@filter false
+                val product = productDao.getProductById(item.productId)
+                val category = product?.categoryId?.let { categoryDao.getCategoryById(it) }
+                val minutes = (product?.overdueUndeliveredMinutes ?: category?.overdueUndeliveredMinutes ?: defaultMinutes).coerceIn(1, 1440)
+                val cutoff = now - minutes * 60 * 1000L
+                item.sentAt < cutoff
+            }
             if (overdue.isNotEmpty()) {
                 result.add(OverdueUndelivered(tableNumber = order.tableNumber, tableId = order.tableId, orderId = order.id, items = overdue))
             }

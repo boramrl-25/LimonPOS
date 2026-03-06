@@ -254,14 +254,17 @@ class ApiSyncRepository @Inject constructor(
         val occupiedTables = tableDao.getOccupiedTables()
         val billTables = tableDao.getBillTables()
         val tablesToPush = occupiedTables + billTables
+        val orderIds = mutableSetOf<String>()
         for (table in tablesToPush) {
             val orderId = table.currentOrderId ?: continue
-            ensureOrderExistsOnApi(orderId)
+            orderIds.add(orderId)
             pushTableState(table)
         }
-        val openAndSentOrders = orderDao.getOpenAndSentOrders()
-        for (order in openAndSentOrders) {
-            ensureOrderExistsOnApi(order.id)
+        for (order in orderDao.getOpenAndSentOrders()) {
+            orderIds.add(order.id)
+        }
+        for (orderId in orderIds) {
+            ensureOrderExistsOnApi(orderId)
         }
         for (table in tablesToPush) {
             pushTableState(table)
@@ -326,6 +329,10 @@ class ApiSyncRepository @Inject constructor(
         }
     }
 
+    /** Normalized key for comparing order line (avoids 1 vs 1.0 duplicate-adds). */
+    private fun orderItemLineKey(productName: String, quantity: Number, price: Number, notes: String): String =
+        "$productName|${quantity.toDouble()}|${price.toDouble()}|${notes}"
+
     /** Ensures order exists on API with items. Creates if missing; keeps API items exactly in sync with local items. */
     private suspend fun ensureOrderExistsOnApi(localOrderId: String): String? {
         if (!isOnline()) return null
@@ -340,17 +347,16 @@ class ApiSyncRepository @Inject constructor(
                 val apiOrder = getResponse.body() ?: return localOrderId
                 val apiItems = apiOrder.items ?: emptyList()
 
-                // Build comparison keys so API order items mirror local order items (no unexpected extras)
                 val localKeys = localItems.map {
-                    "${it.productName}|${it.quantity}|${it.price}|${it.notes}"
+                    orderItemLineKey(it.productName, it.quantity, it.price, it.notes)
                 }.toSet()
-                val apiItemsByKey = apiItems.associateBy {
-                    "${it.productName}|${it.quantity}|${it.price}|${it.notes}"
-                }
+                val apiCountByKey = apiItems.groupingBy {
+                    orderItemLineKey(it.productName, it.quantity.toDouble(), it.price, it.notes)
+                }.eachCount()
 
-                // Remove remote items that are not present locally
+                // Remove remote items that are not present locally (by line key)
                 for (apiItem in apiItems) {
-                    val key = "${apiItem.productName}|${apiItem.quantity}|${apiItem.price}|${apiItem.notes}"
+                    val key = orderItemLineKey(apiItem.productName, apiItem.quantity.toDouble(), apiItem.price, apiItem.notes)
                     if (key !in localKeys) {
                         try {
                             apiService.deleteOrderItem(localOrderId, apiItem.id)
@@ -360,20 +366,23 @@ class ApiSyncRepository @Inject constructor(
                     }
                 }
 
-                // Add local items that are missing on API
-                for (item in localItems) {
-                    val key = "${item.productName}|${item.quantity}|${item.price}|${item.notes}"
-                    if (!apiItemsByKey.containsKey(key)) {
+                // Add only (localCount - apiCount) per line key so items never double
+                for ((key, localGroup) in localItems.groupBy { orderItemLineKey(it.productName, it.quantity, it.price, it.notes) }) {
+                    val apiCount = apiCountByKey[key] ?: 0
+                    val toAdd = localGroup.size - apiCount
+                    if (toAdd <= 0) continue
+                    val template = localGroup.first()
+                    repeat(toAdd) {
                         val itemReq = AddOrderItemRequest(
-                            productId = item.productId,
-                            productName = item.productName,
-                            quantity = item.quantity,
-                            price = item.price,
-                            notes = item.notes
+                            productId = template.productId,
+                            productName = template.productName,
+                            quantity = template.quantity,
+                            price = template.price,
+                            notes = template.notes
                         )
                         val addRes = apiService.addOrderItem(localOrderId, itemReq)
                         if (!addRes.isSuccessful) {
-                            Log.e("ApiSync", "addOrderItem failed for ${item.productName}")
+                            Log.e("ApiSync", "addOrderItem failed for ${template.productName}")
                         }
                     }
                 }
@@ -580,6 +589,7 @@ class ApiSyncRepository @Inject constructor(
                         else -> true
                     }
                     val showTill = (dto.showTill ?: 1) != 0
+                    val odMin = dto.overdueUndeliveredMinutes?.takeIf { it in 1..1440 }
                     CategoryEntity(
                         id = dto.id,
                         name = dto.name,
@@ -588,7 +598,8 @@ class ApiSyncRepository @Inject constructor(
                         active = active,
                         showTill = showTill,
                         syncStatus = "SYNCED",
-                        printers = (dto.printers ?: emptyList()).let { Gson().toJson(it) }
+                        printers = (dto.printers ?: emptyList()).let { Gson().toJson(it) },
+                        overdueUndeliveredMinutes = odMin
                     )
                 })
             }
@@ -649,6 +660,7 @@ class ApiSyncRepository @Inject constructor(
                     is Number -> (dto.active as Number).toInt() != 0
                     else -> true
                 }
+                val prodOdMin = dto.overdueUndeliveredMinutes?.takeIf { it in 1..1440 }
                 ProductEntity(
                     id = dto.id,
                     name = dto.name,
@@ -661,7 +673,8 @@ class ApiSyncRepository @Inject constructor(
                     modifierGroups = (dto.modifierGroups ?: emptyList()).let { Gson().toJson(it) },
                     active = active,
                     showInTill = showInTill,
-                    syncStatus = "SYNCED"
+                    syncStatus = "SYNCED",
+                    overdueUndeliveredMinutes = prodOdMin
                 )
             }
         } catch (e: Exception) {
