@@ -192,7 +192,7 @@ export default function ProductsPage() {
         name_turkish: form.name_turkish?.trim() || "",
         sku: form.sku?.trim() || "",
         category_id: form.category_id || undefined,
-        price: Number(form.price) || 0,
+        price: Math.max(0, Number(form.price) || 0),
         tax_rate: (Number(form.tax_rate) || 0) / 100,
         image_url: form.image_url?.trim() || "",
         printers: form.printers,
@@ -470,7 +470,7 @@ export default function ProductsPage() {
     const overdueRaw = row.OverdueMinutes ?? row.overdue_undelivered_minutes ?? row.dk ?? "";
     const imageUrl = String(row.ImageURL ?? row.image_url ?? "").trim();
 
-    const price = Number(priceRaw) || 0;
+    const price = Math.max(0, Number(priceRaw) || 0);
     const tax_rate = (Number(taxRaw) || 0) / 100;
     const pos_enabled = tillRaw === "on" || tillRaw === "1" || tillRaw === "true" || tillRaw === "yes";
     const overdue_undelivered_minutes =
@@ -1171,9 +1171,10 @@ export default function ProductsPage() {
                 <label className="block text-sm text-slate-400 mb-1">Price (AED)</label>
                 <input
                   type="number"
+                  min={0}
                   step="0.01"
                   value={form.price}
-                  onChange={(e) => setForm((f) => ({ ...f, price: parseFloat(e.target.value) || 0 }))}
+                  onChange={(e) => setForm((f) => ({ ...f, price: Math.max(0, parseFloat(e.target.value) || 0) }))}
                   className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white"
                 />
               </div>
