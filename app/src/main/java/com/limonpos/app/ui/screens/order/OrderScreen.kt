@@ -860,17 +860,7 @@ private fun AddProductModifiersDialog(
                     Text(gwo.group.name, fontWeight = FontWeight.Medium, color = LimonText)
                     gwo.options.forEach { opt ->
                         Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    val set = selectedOptions.toMutableSet()
-                                    if (opt.id in set) set.remove(opt.id)
-                                    else if (gwo.group.maxSelect == 1) {
-                                        set.removeAll(gwo.options.map { it.id })
-                                        set.add(opt.id)
-                                    } else set.add(opt.id)
-                                    selectedOptions = set
-                                },
+                            modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Checkbox(
@@ -884,7 +874,21 @@ private fun AddProductModifiersDialog(
                                     selectedOptions = set
                                 }
                             )
-                            Text("${opt.name} (+${CurrencyUtils.format(opt.price)})", color = LimonText)
+                            Text(
+                                "${opt.name} (+${CurrencyUtils.format(opt.price)})",
+                                color = LimonText,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable {
+                                        val set = selectedOptions.toMutableSet()
+                                        if (opt.id in set) set.remove(opt.id)
+                                        else if (gwo.group.maxSelect == 1) {
+                                            set.removeAll(gwo.options.map { it.id })
+                                            set.add(opt.id)
+                                        } else set.add(opt.id)
+                                        selectedOptions = set
+                                    }
+                            )
                         }
                     }
                 }

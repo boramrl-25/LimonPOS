@@ -1,5 +1,8 @@
 package com.limonpos.app.ui.screens.settings
 
+import android.content.Intent
+import android.os.Build
+import android.provider.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -14,15 +17,20 @@ import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.core.content.ContextCompat
 import com.limonpos.app.ui.theme.*
 import kotlinx.coroutines.delay
+import android.Manifest
+import android.content.pm.PackageManager
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -37,10 +45,13 @@ fun SettingsScreen(
     onSync: () -> Unit = {},
     onLogout: () -> Unit
 ) {
+    val context = LocalContext.current
     val userRole by viewModel.userRole.collectAsState(null)
     val isManager by viewModel.isManager.collectAsState(false)
     val isKdsOnly = userRole == "kds"
     val message by viewModel.message.collectAsState()
+    val needsNotificationPermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
     var menuExpanded by remember { mutableStateOf(false) }
     var showClearSalesConfirm by remember { mutableStateOf(false) }
 
@@ -112,6 +123,33 @@ fun SettingsScreen(
         ) {
             message?.let { msg ->
                 Text(msg, color = LimonPrimary, modifier = Modifier.padding(bottom = 16.dp), fontSize = 14.sp)
+            }
+            if (needsNotificationPermission) {
+                Text("Bildirimler / Notifications", fontWeight = FontWeight.Bold, color = LimonText, fontSize = 16.sp, modifier = Modifier.padding(bottom = 12.dp))
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = LimonError.copy(alpha = 0.15f))
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Bildirim izni verilmemiş. Masaya gitmedi uyarıları gelmez.", color = LimonText, fontSize = 14.sp)
+                        Text("Notification permission denied. Overdue alerts will not appear.", color = LimonTextSecondary, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Button(
+                            onClick = {
+                                val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                    putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                                }
+                                context.startActivity(intent)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = LimonPrimary)
+                        ) {
+                            Icon(Icons.Default.Notifications, contentDescription = null, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Ayarlara git / Open Settings", color = LimonText)
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(24.dp))
             }
             if (isKdsOnly) {
                 Text("Kitchen Display", fontWeight = FontWeight.Bold, color = LimonText, fontSize = 16.sp, modifier = Modifier.padding(bottom = 12.dp))
