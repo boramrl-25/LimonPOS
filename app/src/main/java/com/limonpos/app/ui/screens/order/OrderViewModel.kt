@@ -149,12 +149,14 @@ class OrderViewModel @Inject constructor(
                         if (_uiState.value.categoriesWithProducts.isEmpty()) {
                             apiSyncRepository.syncFromApi()
                         } else {
-                            apiSyncRepository.syncCatalog()
+                            val ok = apiSyncRepository.syncCatalog()
+                            if (!ok) _uiState.update { it.copy(syncError = apiSyncRepository.lastSyncError ?: "Sync hatası") }
                         }
                         loadCategoriesWithProducts()
                     }
                 } catch (e: Exception) {
-                    android.util.Log.e("OrderViewModel", "Background sync error: ${e.message}")
+                    android.util.Log.e("OrderViewModel", "Background sync error: ${e.message}", e)
+                    _uiState.update { it.copy(syncError = e.message ?: "Sync hatası") }
                 }
             }
         }
@@ -273,8 +275,9 @@ class OrderViewModel @Inject constructor(
             if (apiSyncRepository.isOnline()) {
                 _uiState.update { it.copy(syncInProgress = true, syncError = null) }
                 try {
-                    apiSyncRepository.syncCatalog()
+                    val ok = apiSyncRepository.syncCatalog()
                     loadCategoriesWithProducts()
+                    if (!ok) _uiState.update { it.copy(syncError = apiSyncRepository.lastSyncError ?: "Sync hatası") }
                 } catch (e: Exception) {
                     _uiState.update { it.copy(syncError = e.message ?: "Sync hatası") }
                     loadCategoriesWithProducts()

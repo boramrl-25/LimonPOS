@@ -321,8 +321,34 @@ export default function ProductsPage() {
 
   function downloadProductsTemplate() {
     const rows = [
-      { Name: "Örnek Ürün", SKU: "SKU001", Category: "Beverages", Price: 25.5, VATPercent: 5, Till: "On" },
-      { Name: "İkinci Ürün", SKU: "SKU002", Category: "Food", Price: 15, VATPercent: 5, Till: "On" },
+      {
+        Name: "Örnek Ürün",
+        NameArabic: "",
+        NameTurkish: "",
+        SKU: "SKU001",
+        Category: "Beverages",
+        Price: 25.5,
+        VATPercent: 5,
+        Till: "On",
+        Printers: "Kitchen, Bar",
+        Modifiers: "Size, Breakfast extra",
+        OverdueMinutes: 10,
+        ImageURL: "",
+      },
+      {
+        Name: "İkinci Ürün",
+        NameArabic: "",
+        NameTurkish: "",
+        SKU: "SKU002",
+        Category: "Food",
+        Price: 15,
+        VATPercent: 5,
+        Till: "On",
+        Printers: "Kitchen",
+        Modifiers: "",
+        OverdueMinutes: "",
+        ImageURL: "",
+      },
     ];
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
@@ -335,14 +361,30 @@ export default function ProductsPage() {
       alert("No products to export");
       return;
     }
-    const rows = products.map((p) => ({
-      Name: p.name,
-      SKU: p.sku || "",
-      Category: p.category || "",
-      Price: p.price ?? 0,
-      VATPercent: (p.tax_rate ?? 0) * 100,
-      Till: Boolean(p.pos_enabled) ? "On" : "Off",
-    }));
+    const printerById = new Map(printers.map((pr) => [pr.id, pr.name]));
+    const modifierById = new Map(modifierGroups.map((mg) => [mg.id, mg.name]));
+    const rows = products.map((p) => {
+      const printerNames = (Array.isArray(p.printers) ? p.printers : [])
+        .map((id) => printerById.get(id))
+        .filter(Boolean) as string[];
+      const modifierNames = (toModifierIds(p.modifier_groups) || [])
+        .map((id) => modifierById.get(id))
+        .filter(Boolean) as string[];
+      return {
+        Name: p.name,
+        NameArabic: p.name_arabic || "",
+        NameTurkish: p.name_turkish || "",
+        SKU: p.sku || "",
+        Category: p.category || "",
+        Price: p.price ?? 0,
+        VATPercent: (p.tax_rate ?? 0) * 100,
+        Till: Boolean(p.pos_enabled) ? "On" : "Off",
+        Printers: printerNames.join(", "),
+        Modifiers: modifierNames.join(", "),
+        OverdueMinutes: p.overdue_undelivered_minutes ?? "",
+        ImageURL: p.image_url || "",
+      };
+    });
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Products");
@@ -369,15 +411,25 @@ export default function ProductsPage() {
       for (const row of rows) {
         const name = String(row.Name ?? row.name ?? "").trim();
         if (!name) continue;
+        const nameArabic = String(row.NameArabic ?? row.name_arabic ?? "").trim();
+        const nameTurkish = String(row.NameTurkish ?? row.name_turkish ?? "").trim();
         const sku = String(row.SKU ?? row.sku ?? "").trim();
         const priceRaw = row.Price ?? row.price ?? 0;
         const taxRaw = row.VATPercent ?? row.tax_rate ?? 0;
         const categoryName = String(row.Category ?? row.category ?? "").trim();
         const tillRaw = String(row.Till ?? row.pos_enabled ?? "").toLowerCase();
+        const printerStr = String(row.Printers ?? row.printers ?? "").trim();
+        const modifierStr = String(row.Modifiers ?? row.Modifierler ?? row.modifiers ?? row.modifier_groups ?? "").trim();
+        const overdueRaw = row.OverdueMinutes ?? row.overdue_undelivered_minutes ?? row.dk ?? "";
+        const imageUrl = String(row.ImageURL ?? row.image_url ?? "").trim();
 
         const price = Number(priceRaw) || 0;
         const tax_rate = (Number(taxRaw) || 0) / 100;
         const pos_enabled = tillRaw === "on" || tillRaw === "1" || tillRaw === "true" || tillRaw === "yes";
+        const overdue_undelivered_minutes =
+          overdueRaw === "" || overdueRaw === null || overdueRaw === undefined
+            ? undefined
+            : Math.min(1440, Math.max(1, Number(overdueRaw) || 0)) || undefined;
 
         let category_id: string | undefined = undefined;
         if (categoryName) {
@@ -385,34 +437,38 @@ export default function ProductsPage() {
           if (cat) category_id = cat.id;
         }
 
+        const printerNames = printerStr ? printerStr.split(/[,;]/).map((s) => s.trim()).filter(Boolean) : [];
+        const modifierNames = modifierStr ? modifierStr.split(/[,;]/).map((s) => s.trim()).filter(Boolean) : [];
+        const printerIds = printerNames
+          .map((n) => printers.find((pr) => (pr.name || "").trim().toLowerCase() === n.toLowerCase())?.id)
+          .filter((id): id is string => Boolean(id));
+        const modifierIds = modifierNames
+          .map((n) => modifierGroups.find((mg) => (mg.name || "").trim().toLowerCase() === n.toLowerCase())?.id)
+          .filter((id): id is string => Boolean(id));
+
         const existing =
           (sku && products.find((p) => (p.sku || "").toLowerCase() === sku.toLowerCase())) ||
           products.find((p) => p.name.trim().toLowerCase() === name.toLowerCase());
 
+        const payload = {
+          name,
+          name_arabic: nameArabic || undefined,
+          name_turkish: nameTurkish || undefined,
+          sku,
+          price,
+          tax_rate,
+          category_id: category_id ?? existing?.category_id ?? undefined,
+          image_url: imageUrl || existing?.image_url ?? "",
+          printers: printerIds.length > 0 ? printerIds : (existing?.printers ?? []),
+          modifier_groups: modifierIds.length > 0 ? modifierIds : (existing?.modifier_groups ?? []),
+          pos_enabled,
+          overdue_undelivered_minutes,
+        };
+
         if (existing) {
-          await updateProduct(existing.id, {
-            name,
-            sku,
-            price,
-            tax_rate,
-            category_id: category_id ?? existing.category_id ?? undefined,
-            image_url: existing.image_url ?? "",
-            printers: existing.printers ?? [],
-            modifier_groups: existing.modifier_groups ?? [],
-            pos_enabled,
-          });
+          await updateProduct(existing.id, payload);
         } else {
-          await createProduct({
-            name,
-            sku,
-            price,
-            tax_rate,
-            category_id,
-            image_url: "",
-            printers: [],
-            modifier_groups: [],
-            pos_enabled,
-          });
+          await createProduct(payload);
         }
       }
 

@@ -152,20 +152,29 @@ class ApiSyncRepository @Inject constructor(
         }
     }
 
+    /** Last sync error message (for UI). Cleared on success. */
+    var lastSyncError: String? = null
+        private set
+
     /** Fast catalog sync for manual refresh: categories, products, modifier groups (+ printers/users). */
     suspend fun syncCatalog(): Boolean {
-        if (!isOnline()) return false
+        if (!isOnline()) {
+            lastSyncError = "İnternet bağlantısı yok"
+            return false
+        }
         restoreAuthTokenIfNeeded()
-        try {
+        return try {
+            lastSyncError = null
             syncCategories()
             syncModifierGroups()
-            syncProducts()
+            if (!syncProducts()) return false
             syncPrinters()
             syncUsers()
-            return true
+            true
         } catch (e: Exception) {
+            lastSyncError = e.message ?: "Sync hatası"
             Log.e("ApiSync", "syncCatalog error: ${e.message}", e)
-            throw e
+            false
         }
     }
 
@@ -656,76 +665,87 @@ class ApiSyncRepository @Inject constructor(
         }.distinct()
     }
 
-    private suspend fun syncProducts() {
+    private suspend fun syncProducts(): Boolean {
         ensureAllCategoryExists()
-        var response = apiService.getProducts()
-        if (!response.isSuccessful && response.code() == 401) {
-            Log.w("ApiSync", "syncProducts: 401, refreshing token via login")
-            if (refreshTokenFromLogin()) {
-                response = apiService.getProducts()
+        return try {
+            var response = apiService.getProducts()
+            if (!response.isSuccessful && response.code() == 401) {
+                Log.w("ApiSync", "syncProducts: 401, refreshing token via login")
+                if (refreshTokenFromLogin()) {
+                    response = apiService.getProducts()
+                }
             }
-        }
-        if (!response.isSuccessful) {
-            val msg = "syncProducts: API failed ${response.code()} ${response.message()}"
-            Log.w("ApiSync", msg)
-            throw RuntimeException(if (response.code() == 401) "Yetkisiz (401) - Giriş yapıp tekrar deneyin veya sunucu adresini kontrol edin" else msg)
-        }
-        val dtos = response.body() ?: run {
-            Log.w("ApiSync", "syncProducts: empty or invalid response body")
-            throw RuntimeException("Ürün listesi alınamadı")
-        }
-        if (dtos.isEmpty()) {
-            Log.w("ApiSync", "syncProducts: API returned 0 products, keeping local products")
-            return
-        }
-        val categories = categoryDao.getAllCategories().first()
+            if (!response.isSuccessful) {
+                val msg = if (response.code() == 401) "Yetkisiz (401) - Giriş yapıp tekrar deneyin" else "API ${response.code()}"
+                Log.w("ApiSync", "syncProducts: $msg")
+                lastSyncError = msg
+                return false
+            }
+            val dtos = response.body()
+            if (dtos == null) {
+                Log.w("ApiSync", "syncProducts: empty or invalid response body")
+                lastSyncError = "Ürün listesi alınamadı"
+                return false
+            }
+            if (dtos.isEmpty()) {
+                Log.w("ApiSync", "syncProducts: API returned 0 products, keeping local")
+                return true
+            }
+            val categories = categoryDao.getAllCategories().first()
         val categoryByName = categories.associateBy { it.name }
         val defaultCategoryId = categories.firstOrNull { it.id != "all" }?.id ?: "all"
 
-        val entities = try {
-            dtos.map { dto ->
-                val catId = dto.categoryId?.takeIf { it.isNotEmpty() }
-                    ?: dto.categoryName?.let { categoryByName[it]?.id }
-                    ?: defaultCategoryId
-                val taxRate = parseDouble(dto.taxRate, 0.0)
-                val showInTill = when (dto.posEnabled) {
-                    is Boolean -> dto.posEnabled
-                    is Number -> (dto.posEnabled as Number).toInt() != 0
-                    is String -> (dto.posEnabled as String).lowercase() in listOf("true", "1")
-                    null -> true  // default: show in till when API omits pos_enabled (e.g. new products)
-                    else -> false
+            val entities = try {
+                dtos.map { dto ->
+                    val catId = dto.categoryId?.takeIf { it.isNotEmpty() }
+                        ?: dto.categoryName?.let { categoryByName[it]?.id }
+                        ?: defaultCategoryId
+                    val taxRate = parseDouble(dto.taxRate, 0.0)
+                    val showInTill = when (dto.posEnabled) {
+                        is Boolean -> dto.posEnabled
+                        is Number -> (dto.posEnabled as Number).toInt() != 0
+                        is String -> (dto.posEnabled as String).lowercase() in listOf("true", "1")
+                        null -> true  // default: show in till when API omits pos_enabled (e.g. new products)
+                        else -> false
+                    }
+                    val active = when (dto.active) {
+                        is Boolean -> dto.active
+                        is Number -> (dto.active as Number).toInt() != 0
+                        else -> true
+                    }
+                    val prodOdMin = dto.overdueUndeliveredMinutes?.takeIf { it in 1..1440 }
+                    val modIds = normalizeModifierGroupIds(dto.modifierGroups)
+                    ProductEntity(
+                        id = dto.id,
+                        name = dto.name,
+                        nameArabic = dto.nameArabic ?: "",
+                        nameTurkish = dto.nameTurkish ?: "",
+                        categoryId = catId,
+                        price = parseDouble(dto.price, 0.0),
+                        taxRate = taxRate,
+                        printers = (dto.printers ?: emptyList()).let { Gson().toJson(it) },
+                        modifierGroups = Gson().toJson(modIds),
+                        active = active,
+                        showInTill = showInTill,
+                        syncStatus = "SYNCED",
+                        overdueUndeliveredMinutes = prodOdMin
+                    )
                 }
-                val active = when (dto.active) {
-                    is Boolean -> dto.active
-                    is Number -> (dto.active as Number).toInt() != 0
-                    else -> true
-                }
-                val prodOdMin = dto.overdueUndeliveredMinutes?.takeIf { it in 1..1440 }
-                val modIds = normalizeModifierGroupIds(dto.modifierGroups)
-                ProductEntity(
-                    id = dto.id,
-                    name = dto.name,
-                    nameArabic = dto.nameArabic ?: "",
-                    nameTurkish = dto.nameTurkish ?: "",
-                    categoryId = catId,
-                    price = parseDouble(dto.price, 0.0),
-                    taxRate = taxRate,
-                    printers = (dto.printers ?: emptyList()).let { Gson().toJson(it) },
-                    modifierGroups = Gson().toJson(modIds),
-                    active = active,
-                    showInTill = showInTill,
-                    syncStatus = "SYNCED",
-                    overdueUndeliveredMinutes = prodOdMin
-                )
+            } catch (e: Exception) {
+                Log.e("ApiSync", "syncProducts: mapping failed ${e.message}", e)
+                lastSyncError = e.message ?: "Ürün verisi işlenemedi"
+                return false
             }
+            productDao.deleteAll()
+            productDao.insertProducts(entities)
+            val hiddenCount = entities.count { !it.showInTill }
+            Log.d("ApiSync", "syncProducts: inserted ${entities.size} products, $hiddenCount hidden (showInTill=false)")
+            true
         } catch (e: Exception) {
-            Log.e("ApiSync", "syncProducts: mapping failed ${e.message}", e)
-            return
+            Log.e("ApiSync", "syncProducts error: ${e.message}", e)
+            lastSyncError = e.message ?: "Sync hatası"
+            false
         }
-        productDao.deleteAll()
-        productDao.insertProducts(entities)
-        val hiddenCount = entities.count { !it.showInTill }
-        Log.d("ApiSync", "syncProducts: inserted ${entities.size} products, $hiddenCount hidden (showInTill=false)")
     }
 
     private suspend fun syncPrinters() {
