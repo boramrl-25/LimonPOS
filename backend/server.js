@@ -578,7 +578,8 @@ app.post("/api/products", authMiddleware, async (req, res) => {
   await ensureData();
   const id = req.body.id || `p_${uuid().slice(0, 8)}`;
   const body = req.body;
-  const prod = { id, name: body.name || "Product", name_arabic: body.name_arabic || "", name_turkish: body.name_turkish || "", sku: body.sku || "", category_id: body.category_id || null, price: body.price ?? 0, tax_rate: body.tax_rate ?? 0, image_url: body.image_url || "", printers: JSON.stringify(body.printers || []), modifier_groups: JSON.stringify(body.modifier_groups || []), active: body.active !== false ? 1 : 0, pos_enabled: body.pos_enabled === true || body.pos_enabled === 1 || body.pos_enabled === "1" ? 1 : 0, sellable: true, overdue_undelivered_minutes: body.overdue_undelivered_minutes != null && body.overdue_undelivered_minutes !== "" ? Math.min(1440, Math.max(1, Number(body.overdue_undelivered_minutes) || 10)) : null };
+  const posEnabled = body.pos_enabled === undefined ? 1 : (body.pos_enabled === true || body.pos_enabled === 1 || body.pos_enabled === "1" ? 1 : 0);
+  const prod = { id, name: body.name || "Product", name_arabic: body.name_arabic || "", name_turkish: body.name_turkish || "", sku: body.sku || "", category_id: body.category_id || null, price: body.price ?? 0, tax_rate: body.tax_rate ?? 0, image_url: body.image_url || "", printers: JSON.stringify(body.printers || []), modifier_groups: JSON.stringify(body.modifier_groups || []), active: body.active !== false ? 1 : 0, pos_enabled: posEnabled, sellable: true, overdue_undelivered_minutes: body.overdue_undelivered_minutes != null && body.overdue_undelivered_minutes !== "" ? Math.min(1440, Math.max(1, Number(body.overdue_undelivered_minutes) || 10)) : null };
   db.data.products = db.data.products.filter((p) => p.id !== id);
   db.data.products.push(prod);
   await db.write();

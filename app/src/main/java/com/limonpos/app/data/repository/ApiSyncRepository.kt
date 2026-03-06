@@ -668,7 +668,7 @@ class ApiSyncRepository @Inject constructor(
                     is Boolean -> dto.posEnabled
                     is Number -> (dto.posEnabled as Number).toInt() != 0
                     is String -> (dto.posEnabled as String).lowercase() in listOf("true", "1")
-                    null -> false
+                    null -> true  // default: show in till when API omits pos_enabled (e.g. new products)
                     else -> false
                 }
                 val active = when (dto.active) {
