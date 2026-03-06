@@ -93,6 +93,23 @@ class ApiSyncRepository @Inject constructor(
         if (!pin.isNullOrBlank()) authTokenProvider.setToken(pin)
     }
 
+    /** 401 alındığında login API ile yeni token al. */
+    private suspend fun refreshTokenFromLogin(): Boolean {
+        val pin = sessionManager.getUserPin() ?: return false
+        return try {
+            val loginRes = apiService.login(LoginRequest(pin = pin))
+            if (loginRes.isSuccessful) {
+                val token = loginRes.body()?.token ?: pin
+                authTokenProvider.setToken(token)
+                Log.d("ApiSync", "Token refreshed via login")
+                true
+            } else false
+        } catch (e: Exception) {
+            Log.e("ApiSync", "refreshToken failed: ${e.message}")
+            false
+        }
+    }
+
     /** Clears all sales data from local database (orders, items, payments, voids, transfer logs) and resets tables. */
     suspend fun clearLocalSales() {
         orderItemDao.deleteAll()
@@ -139,16 +156,16 @@ class ApiSyncRepository @Inject constructor(
     suspend fun syncCatalog(): Boolean {
         if (!isOnline()) return false
         restoreAuthTokenIfNeeded()
-        return try {
+        try {
             syncCategories()
             syncModifierGroups()
             syncProducts()
             syncPrinters()
             syncUsers()
-            true
+            return true
         } catch (e: Exception) {
             Log.e("ApiSync", "syncCatalog error: ${e.message}", e)
-            false
+            throw e
         }
     }
 
@@ -641,14 +658,21 @@ class ApiSyncRepository @Inject constructor(
 
     private suspend fun syncProducts() {
         ensureAllCategoryExists()
-        val response = apiService.getProducts()
+        var response = apiService.getProducts()
+        if (!response.isSuccessful && response.code() == 401) {
+            Log.w("ApiSync", "syncProducts: 401, refreshing token via login")
+            if (refreshTokenFromLogin()) {
+                response = apiService.getProducts()
+            }
+        }
         if (!response.isSuccessful) {
-            Log.w("ApiSync", "syncProducts: API failed ${response.code()}, keeping local products")
-            return
+            val msg = "syncProducts: API failed ${response.code()} ${response.message()}"
+            Log.w("ApiSync", msg)
+            throw RuntimeException(if (response.code() == 401) "Yetkisiz (401) - Giriş yapıp tekrar deneyin veya sunucu adresini kontrol edin" else msg)
         }
         val dtos = response.body() ?: run {
-            Log.w("ApiSync", "syncProducts: empty or invalid response body, keeping local products")
-            return
+            Log.w("ApiSync", "syncProducts: empty or invalid response body")
+            throw RuntimeException("Ürün listesi alınamadı")
         }
         if (dtos.isEmpty()) {
             Log.w("ApiSync", "syncProducts: API returned 0 products, keeping local products")
@@ -761,13 +785,19 @@ class ApiSyncRepository @Inject constructor(
             val existing = modifierGroupDao.getAllModifierGroups().first()
             existing.filter { it.id !in apiIds }.forEach { modifierGroupDao.deleteModifierGroup(it) }
             dtos.forEach { dto ->
+                val required = when (dto.required) {
+                    is Boolean -> dto.required
+                    is Number -> (dto.required as Number).toInt() != 0
+                    is String -> (dto.required as String).lowercase() in listOf("true", "1")
+                    else -> false
+                }
                 modifierGroupDao.insertModifierGroup(
                     ModifierGroupEntity(
                         id = dto.id,
                         name = dto.name,
                         minSelect = dto.minSelect,
                         maxSelect = dto.maxSelect,
-                        required = dto.required
+                        required = required
                     )
                 )
                 modifierOptionDao.deleteOptionsByGroupId(dto.id)

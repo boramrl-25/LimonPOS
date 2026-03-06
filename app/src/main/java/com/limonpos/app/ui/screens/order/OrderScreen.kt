@@ -95,6 +95,13 @@ fun OrderScreen(
         }
     }
 
+    LaunchedEffect(uiState.syncError) {
+        uiState.syncError?.let { msg ->
+            snackbarHostState.showSnackbar(msg, duration = SnackbarDuration.Long)
+            viewModel.clearSyncError()
+        }
+    }
+
     LaunchedEffect(navigateToFloorPlanRequest) {
         if (navigateToFloorPlanRequest > 0) {
             viewModel.consumeNavigateToFloorPlanRequest()

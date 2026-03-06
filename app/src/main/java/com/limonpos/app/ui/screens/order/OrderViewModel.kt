@@ -71,7 +71,8 @@ data class OrderUiState(
     val voidError: String? = null,
     /** After one successful post-void PIN check, allow multiple voids without re-entering PIN. */
     val postVoidAuthorized: Boolean = false,
-    val syncInProgress: Boolean = false
+    val syncInProgress: Boolean = false,
+    val syncError: String? = null
 )
 
 data class ModifierGroupWithOptions(
@@ -143,13 +144,17 @@ class OrderViewModel @Inject constructor(
         viewModelScope.launch {
             while (true) {
                 delay(10000)
-                if (apiSyncRepository.isOnline()) {
-                    if (_uiState.value.categoriesWithProducts.isEmpty()) {
-                        apiSyncRepository.syncFromApi()
-                    } else {
-                        apiSyncRepository.syncCatalog()
+                try {
+                    if (apiSyncRepository.isOnline()) {
+                        if (_uiState.value.categoriesWithProducts.isEmpty()) {
+                            apiSyncRepository.syncFromApi()
+                        } else {
+                            apiSyncRepository.syncCatalog()
+                        }
+                        loadCategoriesWithProducts()
                     }
-                    loadCategoriesWithProducts()
+                } catch (e: Exception) {
+                    android.util.Log.e("OrderViewModel", "Background sync error: ${e.message}")
                 }
             }
         }
@@ -266,15 +271,24 @@ class OrderViewModel @Inject constructor(
     private fun syncAndReloadProducts() {
         viewModelScope.launch {
             if (apiSyncRepository.isOnline()) {
-                _uiState.update { it.copy(syncInProgress = true) }
+                _uiState.update { it.copy(syncInProgress = true, syncError = null) }
                 try {
                     apiSyncRepository.syncCatalog()
+                    loadCategoriesWithProducts()
+                } catch (e: Exception) {
+                    _uiState.update { it.copy(syncError = e.message ?: "Sync hatası") }
                     loadCategoriesWithProducts()
                 } finally {
                     _uiState.update { it.copy(syncInProgress = false) }
                 }
+            } else {
+                _uiState.update { it.copy(syncError = "İnternet bağlantısı yok") }
             }
         }
+    }
+
+    fun clearSyncError() {
+        _uiState.update { it.copy(syncError = null) }
     }
 
     fun refreshProductsFromApi() {

@@ -550,16 +550,21 @@ app.get("/api/products", authMiddleware, async (req, res) => {
   const catById = Object.fromEntries((db.data.categories || []).map((c) => [c.id, c]));
   const products = (db.data.products || []).filter((p) => p.sellable !== false);
   console.log("GET /api/products - count:", products.length, "from", req.ip);
+  function toModifierIds(arr) {
+    if (!Array.isArray(arr)) return [];
+    return arr.map((x) => {
+      if (typeof x === "string") return x.trim() || null;
+      if (typeof x === "number") return String(x);
+      return (x?.id ?? x?.Id)?.toString?.()?.trim() || null;
+    }).filter(Boolean);
+  }
   res.json(
     products.map((r) => {
-      let modGroups = JSON.parse(r.modifier_groups || "[]");
-      if (!Array.isArray(modGroups)) modGroups = [];
+      let modIds = toModifierIds(JSON.parse(r.modifier_groups || "[]"));
       const cat = r.category_id ? catById[r.category_id] : null;
       if (cat && cat.modifier_groups) {
-        const catMods = JSON.parse(cat.modifier_groups || "[]");
-        if (Array.isArray(catMods) && catMods.length > 0) {
-          modGroups = [...new Set([...modGroups, ...catMods])];
-        }
+        const catIds = toModifierIds(JSON.parse(cat.modifier_groups || "[]"));
+        modIds = [...new Set([...modIds, ...catIds])];
       }
       return {
         ...r,
@@ -567,7 +572,7 @@ app.get("/api/products", authMiddleware, async (req, res) => {
         pos_enabled: r.pos_enabled === 1 ? 1 : 0,
         category: cats[r.category_id] || "",
         printers: JSON.parse(r.printers || "[]"),
-        modifier_groups: modGroups,
+        modifier_groups: modIds,
         zoho_suggest_remove: !!r.zoho_suggest_remove,
       };
     }),

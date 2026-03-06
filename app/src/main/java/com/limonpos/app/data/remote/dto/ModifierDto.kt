@@ -7,7 +7,7 @@ data class ModifierGroupDto(
     @SerializedName("name") val name: String,
     @SerializedName("min_select") val minSelect: Int = 0,
     @SerializedName("max_select") val maxSelect: Int = 1,
-    @SerializedName("required") val required: Boolean = false,
+    @SerializedName("required") val required: Any? = false,  // API returns 0/1 (number)
     @SerializedName("options") val options: List<ModifierOptionDto>? = null
 )
 

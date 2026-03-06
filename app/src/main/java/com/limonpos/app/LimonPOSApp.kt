@@ -2,6 +2,9 @@ package com.limonpos.app
 
 import android.app.Application
 import android.util.Log
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import com.limonpos.app.data.local.DatabaseSeeder
 import com.limonpos.app.data.repository.ApiSyncRepository
 import com.limonpos.app.data.repository.OrderRepository
@@ -34,6 +37,20 @@ class LimonPOSApp : Application() {
         databaseSeeder.seedIfEmpty()
         startCloudSyncWhenOnline()
         startOverdueCheckLoop()
+        ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
+            override fun onStart(owner: LifecycleOwner) {
+                applicationScope.launch {
+                    try {
+                        if (networkMonitor.isOnline.first() && apiSyncRepository.isOnline()) {
+                            apiSyncRepository.syncCatalog()
+                            Log.d("LimonPOSApp", "App resumed: catalog synced from web")
+                        }
+                    } catch (e: Exception) {
+                        Log.e("LimonPOSApp", "App resume sync failed: ${e.message}")
+                    }
+                }
+            }
+        })
     }
 
     /** Masaya gitmeyen ürün uyarısı: uygulama genelinde her 15 sn kontrol, OverdueWarningHolder güncellenir. */
@@ -66,7 +83,7 @@ class LimonPOSApp : Application() {
                     syncJob = applicationScope.launch {
                         apiSyncRepository.syncFromApi()
                         while (true) {
-                            delay(30 * 1000L) // 30 saniyede bir (web floor ile sürekli uyum, bağlantı stabil)
+                            delay(15 * 1000L) // 15 saniyede bir (web ürün değişiklikleri daha hızlı yansır)
                             if (!networkMonitor.isOnline.first()) break
                             apiSyncRepository.syncFromApi()
                         }
