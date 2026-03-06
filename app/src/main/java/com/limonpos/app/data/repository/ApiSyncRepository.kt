@@ -629,12 +629,13 @@ class ApiSyncRepository @Inject constructor(
     private fun normalizeModifierGroupIds(raw: List<Any>?): List<String> {
         if (raw.isNullOrEmpty()) return emptyList()
         return raw.mapNotNull { item ->
-            when (item) {
-                is String -> item.takeIf { it.isNotEmpty() }
-                is Number -> item.toString().takeIf { it.isNotEmpty() }
-                is Map<*, *> -> (item["id"] ?: item["Id"])?.toString()?.takeIf { it.isNotEmpty() }
+            val id = when (item) {
+                is String -> item.trim().takeIf { it.isNotEmpty() }
+                is Number -> item.toString().trim().takeIf { it.isNotEmpty() }
+                is Map<*, *> -> (item["id"] ?: item["Id"])?.toString()?.trim()?.takeIf { it.isNotEmpty() }
                 else -> null
             }
+            id
         }.distinct()
     }
 
