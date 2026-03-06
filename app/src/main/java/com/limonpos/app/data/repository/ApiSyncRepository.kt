@@ -318,17 +318,23 @@ class ApiSyncRepository @Inject constructor(
         }
     }
 
-    /** KDS local-first: push preparing/ready status to backend so web stays in sync */
+    /** KDS local-first: push preparing/ready/delivered status to backend so web stays in sync */
     private suspend fun pushOrderItemStatusUpdates() {
         if (!isOnline()) return
         val openAndSent = orderDao.getOpenAndSentOrders()
         for (order in openAndSent) {
             val items = orderItemDao.getOrderItems(order.id).first()
             for (item in items) {
-                if (item.status != "preparing" && item.status != "ready") continue
+                val statusToPush = when {
+                    item.deliveredAt != null -> "delivered"
+                    item.status == "preparing" -> "preparing"
+                    item.status == "ready" -> "ready"
+                    else -> null
+                }
+                if (statusToPush == null) continue
                 val apiItemId = item.apiId ?: item.id
                 try {
-                    val res = apiService.updateOrderItemStatus(order.id, apiItemId, OrderItemStatusRequest(item.status))
+                    val res = apiService.updateOrderItemStatus(order.id, apiItemId, OrderItemStatusRequest(statusToPush))
                     if (!res.isSuccessful) Log.e("ApiSync", "updateOrderItemStatus failed for ${item.id}")
                 } catch (e: Exception) {
                     Log.e("ApiSync", "pushOrderItemStatus error: ${e.message}")

@@ -1519,17 +1519,20 @@ app.get("/api/dashboard/discounts-today", authMiddleware, async (req, res) => {
   res.json({ count: list.length, list, totalDiscountAmount });
 });
 
-// KDS: update order item status (preparing / ready) for local-first sync
+// KDS: update order item status (preparing / ready / delivered) for local-first sync
 app.put("/api/orders/:orderId/items/:itemId/status", authMiddleware, async (req, res) => {
   await ensureData();
   const { orderId, itemId } = req.params;
   const status = (req.body && req.body.status) || req.query.status;
-  if (!status || !["preparing", "ready"].includes(status)) {
-    return res.status(400).json({ error: "status must be 'preparing' or 'ready'" });
+  if (!status || !["preparing", "ready", "delivered"].includes(status)) {
+    return res.status(400).json({ error: "status must be 'preparing', 'ready' or 'delivered'" });
   }
   const idx = (db.data.order_items || []).findIndex((i) => i.id === itemId && i.order_id === orderId);
   if (idx < 0) return res.status(404).json({ error: "Not found" });
   db.data.order_items[idx].status = status;
+  if (status === "delivered") {
+    db.data.order_items[idx].delivered_at = Date.now();
+  }
   await db.write();
   res.json(db.data.order_items[idx]);
 });

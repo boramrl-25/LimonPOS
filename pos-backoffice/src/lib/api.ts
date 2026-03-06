@@ -600,7 +600,7 @@ export async function cancelTableReservation(tableId: string) {
   return res.json();
 }
 
-export type OrderItem = { id: string; product_name: string; quantity: number; price: number; notes?: string; status: string; sent_at: number | null };
+export type OrderItem = { id: string; product_name: string; quantity: number; price: number; notes?: string; status: string; sent_at: number | null; delivered_at?: number | null };
 export type Order = { id: string; table_id: string; table_number: string; status: string; items: OrderItem[]; waiter_name?: string };
 
 export async function createTable(table: Record<string, unknown>) {

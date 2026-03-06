@@ -290,23 +290,27 @@ export default function FloorPlanPage() {
               </button>
             </div>
             <div className="p-4 overflow-y-auto flex-1">
-              <p className="text-slate-400 text-sm mb-3">Sent to kitchen = mutfakta; Not sent = henüz gönderilmedi</p>
+              <p className="text-slate-400 text-sm mb-3">Mutfakta = mutfağa gitti; Masaya gitti = garson teslim etti</p>
               <ul className="space-y-3">
                 {(selectedTableOrder.order.items || []).map((item) => {
-                  const sent = item.status === "sent" && item.sent_at != null;
+                  const sent = item.status !== "pending" && item.sent_at != null;
+                  const delivered = item.delivered_at != null || item.status === "delivered";
                   const ago = minsAgo(item.sent_at ?? null);
+                  const deliveredAgo = item.delivered_at ? minsAgo(item.delivered_at) : null;
                   return (
-                    <li key={item.id} className={`flex justify-between items-start py-2 border-b border-slate-700/50 ${sent ? "text-slate-200" : "text-amber-200"}`}>
+                    <li key={item.id} className={`flex justify-between items-start py-2 border-b border-slate-700/50 ${delivered ? "text-emerald-200" : sent ? "text-slate-200" : "text-amber-200"}`}>
                       <div>
                         <span className="font-medium">{item.product_name}</span>
                         {item.quantity > 1 && <span className="text-slate-400 ml-1">×{item.quantity}</span>}
                         {item.notes && <span className="text-slate-500 text-sm block">{item.notes}</span>}
                       </div>
                       <div className="text-right text-sm">
-                        {sent ? (
-                          <span className="text-emerald-400">Sent to kitchen — {ago}</span>
+                        {delivered ? (
+                          <span className="text-emerald-400 font-medium">Masaya gitti{deliveredAgo != null ? ` — ${deliveredAgo}` : ""}</span>
+                        ) : sent ? (
+                          <span className="text-sky-400">Mutfakta — {ago}</span>
                         ) : (
-                          <span className="text-amber-400">Not sent to kitchen</span>
+                          <span className="text-amber-400">Henüz gönderilmedi</span>
                         )}
                       </div>
                     </li>
