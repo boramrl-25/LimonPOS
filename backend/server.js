@@ -233,16 +233,27 @@ async function ensureData() {
     db.data.products = (db.data.products || []).map((p) => {
       const val = p.pos_enabled;
       const enabled =
-        val === undefined ||
-        val === null ||
-        val === 0 ||
-        val === "0" ||
-        val === false
+        val === undefined || val === null
           ? 1
-          : val;
+          : val === 1 || val === "1" || val === true
+            ? 1
+            : 0;
       return { ...p, pos_enabled: enabled };
     });
     db.data.migrations.posEnabledDefaultToOne = true;
+  }
+  if (!db.data.migrations.posEnabledRespectZero) {
+    db.data.products = (db.data.products || []).map((p) => {
+      const val = p.pos_enabled;
+      const enabled =
+        val === undefined || val === null
+          ? 1
+          : val === 1 || val === "1" || val === true
+            ? 1
+            : 0;
+      return { ...p, pos_enabled: enabled };
+    });
+    db.data.migrations.posEnabledRespectZero = true;
   }
   // Migration: normalize table layout so tables are ordered by number (1–10 together, then 11–20, etc.)
   if (!db.data.migrations.tablesGridLayoutV1) {
