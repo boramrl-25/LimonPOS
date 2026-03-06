@@ -654,7 +654,7 @@ class ApiSyncRepository @Inject constructor(
                 val showInTill = when (dto.posEnabled) {
                     is Boolean -> dto.posEnabled
                     is Number -> (dto.posEnabled as Number).toInt() != 0
-                    is String -> (dto.posEnabled as String).lowercase() in listOf("true", "1", "yes", "on")
+                    is String -> (dto.posEnabled as String).lowercase() in listOf("true", "1")
                     else -> false
                 }
                 val active = when (dto.active) {
