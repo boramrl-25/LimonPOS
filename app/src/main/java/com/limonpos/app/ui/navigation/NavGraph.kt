@@ -119,8 +119,21 @@ fun NavGraph(
         LaunchedEffect(Unit) {
             overdueWarningHolder.overdue.collect { list ->
                 if (!list.isNullOrEmpty() && overdueWarningHolder.shouldShowNotification(list)) {
-                    showOverdueNotification(context, list)
+                    val minutes = overdueWarningHolder.getLastUsedDefaultMinutes()
+                    showOverdueNotification(context, list, minutes)
                 }
+            }
+        }
+        LaunchedEffect(Unit) {
+            val activity = context as? android.app.Activity
+            val tableId = activity?.intent?.getStringExtra("open_table_id")
+            if (!tableId.isNullOrBlank()) {
+                activity?.intent?.removeExtra("open_table_id")
+                navController.navigate(Routes.FLOOR_PLAN) {
+                    popUpTo(Routes.GATE) { inclusive = true }
+                    launchSingleTop = true
+                }
+                navController.navigate(Routes.order(tableId)) { launchSingleTop = true }
             }
         }
         // Scheduled sync: only at fixed times when online (no continuous background polling)

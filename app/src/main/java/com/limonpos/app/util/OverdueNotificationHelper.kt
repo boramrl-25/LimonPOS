@@ -21,10 +21,11 @@ private const val CHANNEL_ID = "overdue_undelivered"
 private const val NOTIFICATION_ID = 9001
 
 /**
- * Shows a high-priority notification for overdue undelivered items.
- * Uses sound and can show on lock screen (full-screen intent when possible).
+ * Shows a high-priority notification for overdue undelivered items (English).
+ * configuredMinutes: the warning threshold used (e.g. from settings).
+ * Tap opens the app to the first table’s cart.
  */
-fun showOverdueNotification(context: Context, list: List<OverdueUndelivered>) {
+fun showOverdueNotification(context: Context, list: List<OverdueUndelivered>, configuredMinutes: Int) {
     if (list.isEmpty()) return
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
         ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -45,11 +46,13 @@ fun showOverdueNotification(context: Context, list: List<OverdueUndelivered>) {
         }
         notificationManager.createNotificationChannel(channel)
     }
-    val summary = list.joinToString(", ") { "Table ${it.tableNumber}" }
+    val tablesSummary = list.joinToString(", ") { "Table ${it.tableNumber}" }
     val title = context.getString(R.string.notification_overdue_title)
-    val text = context.getString(R.string.notification_overdue_text, summary)
+    val text = context.getString(R.string.notification_overdue_text, configuredMinutes, tablesSummary)
+    val firstTableId = list.firstOrNull()?.tableId
     val intent = Intent(context, MainActivity::class.java).apply {
         flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        if (!firstTableId.isNullOrBlank()) putExtra("open_table_id", firstTableId)
     }
     val pendingIntent = PendingIntent.getActivity(
         context,

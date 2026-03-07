@@ -190,11 +190,11 @@ class OrderRepository @Inject constructor(
     }
 
     /**
-     * Masaya gitmeyen ürün uyarısı. Sadece product.overdueUndeliveredMinutes kullanılır (1..1440).
-     * sentAt != null, deliveredAt == null ve ürün dakikası aşılmış item'lar overdue sayılır.
-     * Üründe overdueUndeliveredMinutes yoksa veya geçersizse o item uyarıya dahil edilmez.
+     * Items sent to kitchen but not delivered, past their due time.
+     * Resolution: product.overdueUndeliveredMinutes ?: category.overdueUndeliveredMinutes ?: settingsDefaultMinutes, then coerceIn(1, 1440).
+     * Excludes items with deliveredAt != null.
      */
-    suspend fun getOverdueUndelivered(): List<OverdueUndelivered> {
+    suspend fun getOverdueUndelivered(settingsDefaultMinutes: Int): List<OverdueUndelivered> {
         val orders = orderDao.getOpenAndSentOrders()
         val result = mutableListOf<OverdueUndelivered>()
         val now = System.currentTimeMillis()
@@ -208,8 +208,9 @@ class OrderRepository @Inject constructor(
             val items = orderItemDao.getOrderItems(order.id).first()
             val overdue = items.filter { item ->
                 if (item.sentAt == null || item.deliveredAt != null) return@filter false
-                val product = productDao.getProductById(item.productId) ?: return@filter false
-                val minutes = product.overdueUndeliveredMinutes?.takeIf { it in 1..1440 } ?: return@filter false
+                val product = productDao.getProductById(item.productId)
+                val category = product?.categoryId?.let { categoryDao.getCategoryById(it) }
+                val minutes = (product?.overdueUndeliveredMinutes ?: category?.overdueUndeliveredMinutes ?: settingsDefaultMinutes).coerceIn(1, 1440)
                 val cutoff = now - minutes * 60 * 1000L
                 item.sentAt < cutoff
             }

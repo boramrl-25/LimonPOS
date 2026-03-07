@@ -6,6 +6,7 @@ import android.util.Log
 import com.google.gson.Gson
 import com.limonpos.app.data.local.dao.*
 import com.limonpos.app.data.local.entity.*
+import com.limonpos.app.data.prefs.AppSettingsPreferences
 import com.limonpos.app.data.prefs.FloorPlanSectionsPreferences
 import com.limonpos.app.data.prefs.ServerPreferences
 import com.limonpos.app.data.remote.ApiService
@@ -37,11 +38,53 @@ class ApiSyncRepository @Inject constructor(
     private val closedBillAccessRequestDao: ClosedBillAccessRequestDao,
     private val transferLogDao: TransferLogDao,
     private val floorPlanSectionsPreferences: FloorPlanSectionsPreferences,
+    private val appSettingsPreferences: AppSettingsPreferences,
     private val serverPreferences: ServerPreferences,
     private val sessionManager: SessionManager,
     private val authTokenProvider: AuthTokenProvider
 ) {
     suspend fun isOnline(): Boolean = networkMonitor.isOnline.first()
+
+    private var cachedOverdueMinutes: Int? = null
+    private var cachedOverdueMinutesAt: Long = 0L
+    private val OVERDUE_CACHE_MS = 15 * 1000L
+
+    /** Next getOverdueUndeliveredMinutes() will refetch from API (e.g. after user saves settings). */
+    fun clearOverdueMinutesCache() {
+        cachedOverdueMinutes = null
+    }
+
+    /**
+     * Global default minutes for "products not delivered to table" warning.
+     * Source: when online, API settings; result is written to DataStore. When offline/error, DataStore (default 10).
+     */
+    suspend fun getOverdueUndeliveredMinutes(): Int {
+        val now = System.currentTimeMillis()
+        if (cachedOverdueMinutes != null && (now - cachedOverdueMinutesAt) < OVERDUE_CACHE_MS) {
+            return cachedOverdueMinutes!!
+        }
+        if (isOnline()) {
+            restoreAuthTokenIfNeeded()
+            try {
+                val res = apiService.getSettings()
+                if (res.isSuccessful) {
+                    val body = res.body()
+                    val minutes = (body?.overdueUndeliveredMinutes ?: appSettingsPreferences.getOverdueUndeliveredDefaultMinutes())
+                        .coerceIn(AppSettingsPreferences.MIN_MINUTES, AppSettingsPreferences.MAX_MINUTES)
+                    appSettingsPreferences.setOverdueUndeliveredDefaultMinutes(minutes)
+                    cachedOverdueMinutes = minutes
+                    cachedOverdueMinutesAt = now
+                    return minutes
+                }
+            } catch (e: Exception) {
+                Log.e("ApiSync", "getSettings error: ${e.message}")
+            }
+        }
+        val local = appSettingsPreferences.getOverdueUndeliveredDefaultMinutes()
+        cachedOverdueMinutes = local
+        cachedOverdueMinutesAt = now
+        return local
+    }
 
     /** Uygulama yeniden başlayınca token bellekten silinir; SessionManager'daki PIN ile geri yükle ki sync 401 almasın. */
     private suspend fun restoreAuthTokenIfNeeded() {

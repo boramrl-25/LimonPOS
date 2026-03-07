@@ -15,10 +15,14 @@ class OverdueWarningHolder @Inject constructor() {
     private var lastNotifiedItemIds: Set<String> = emptySet()
     private var lastNotifiedAt: Long = 0L
     private val NOTIFICATION_COOLDOWN_MS = 2 * 60 * 1000L
+    private var lastUsedDefaultMinutes: Int = 10
 
-    fun update(list: List<OverdueUndelivered>?) {
+    fun update(list: List<OverdueUndelivered>?, defaultMinutes: Int = 10) {
+        lastUsedDefaultMinutes = defaultMinutes.coerceIn(1, 1440)
         _overdue.value = list
     }
+
+    fun getLastUsedDefaultMinutes(): Int = lastUsedDefaultMinutes
 
     /**
      * Returns true if we should show notification/sound for this list (avoids repeating for same items within cooldown).
