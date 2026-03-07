@@ -489,8 +489,7 @@ fun OrderScreen(
             product = product,
             getModifierGroups = { viewModel.getModifierGroupsForProduct(product) },
             onDismiss = { viewModel.dismissModifierDialog() },
-            onAddWithModifiers = { opts, notes -> viewModel.addToCart(product, opts, notes) },
-            onAddWithoutModifiers = { viewModel.addToCart(product, emptyList(), "") }
+            onAddWithModifiers = { opts, notes, qty -> viewModel.addToCart(product, opts, notes, qty) }
         )
     }
     viewModel.productToAddWithNotes.collectAsState(null).value?.let { product ->
@@ -849,17 +848,18 @@ private fun AddProductModifiersDialog(
     product: ProductEntity,
     getModifierGroups: suspend () -> List<ModifierGroupWithOptions>,
     onDismiss: () -> Unit,
-    onAddWithModifiers: (List<ModifierOptionEntity>, String) -> Unit,
-    onAddWithoutModifiers: () -> Unit
+    onAddWithModifiers: (List<ModifierOptionEntity>, String, Int) -> Unit
 ) {
     var groups by remember { mutableStateOf<List<ModifierGroupWithOptions>>(emptyList()) }
     var selectedOptions by remember { mutableStateOf<Set<String>>(emptySet()) }
     var loading by remember { mutableStateOf(true) }
+    var quantityText by remember { mutableStateOf("1") }
 
     LaunchedEffect(product) {
         loading = true
         groups = getModifierGroups()
         selectedOptions = emptySet()
+        quantityText = "1"
         loading = false
     }
 
@@ -912,12 +912,26 @@ private fun AddProductModifiersDialog(
             }
         },
         confirmButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onAddWithoutModifiers) { Text("Add without modifiers") }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = quantityText,
+                    onValueChange = { v ->
+                        if (v.isEmpty()) quantityText = v
+                        else v.toIntOrNull()?.takeIf { it >= 0 }?.let { quantityText = v }
+                    },
+                    label = { Text("Adet") },
+                    modifier = Modifier.width(80.dp),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                )
                 Button(
                     onClick = {
                         val opts = groups.flatMap { it.options }.filter { it.id in selectedOptions }
-                        onAddWithModifiers(opts, "")
+                        val qty = quantityText.toIntOrNull()?.coerceAtLeast(1) ?: 1
+                        onAddWithModifiers(opts, "", qty)
                     }
                 ) { Text("Add") }
             }
