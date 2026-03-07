@@ -6,7 +6,6 @@ import android.util.Log
 import com.google.gson.Gson
 import com.limonpos.app.data.local.dao.*
 import com.limonpos.app.data.local.entity.*
-import com.limonpos.app.data.prefs.AppSettingsPreferences
 import com.limonpos.app.data.prefs.FloorPlanSectionsPreferences
 import com.limonpos.app.data.prefs.ServerPreferences
 import com.limonpos.app.data.remote.ApiService
@@ -38,53 +37,11 @@ class ApiSyncRepository @Inject constructor(
     private val closedBillAccessRequestDao: ClosedBillAccessRequestDao,
     private val transferLogDao: TransferLogDao,
     private val floorPlanSectionsPreferences: FloorPlanSectionsPreferences,
-    private val appSettingsPreferences: AppSettingsPreferences,
     private val serverPreferences: ServerPreferences,
     private val sessionManager: SessionManager,
     private val authTokenProvider: AuthTokenProvider
 ) {
     suspend fun isOnline(): Boolean = networkMonitor.isOnline.first()
-
-    private var cachedOverdueMinutes: Int? = null
-    private var cachedOverdueMinutesAt: Long = 0L
-    private val OVERDUE_CACHE_MS = 15 * 1000L
-
-    /** Next getOverdueUndeliveredMinutes() will refetch from API (e.g. after user saves settings). */
-    fun clearOverdueMinutesCache() {
-        cachedOverdueMinutes = null
-    }
-
-    /**
-     * Global default minutes for "products not delivered to table" warning.
-     * Source: when online, API settings; result is written to DataStore. When offline/error, DataStore (default 10).
-     */
-    suspend fun getOverdueUndeliveredMinutes(): Int {
-        val now = System.currentTimeMillis()
-        if (cachedOverdueMinutes != null && (now - cachedOverdueMinutesAt) < OVERDUE_CACHE_MS) {
-            return cachedOverdueMinutes!!
-        }
-        if (isOnline()) {
-            restoreAuthTokenIfNeeded()
-            try {
-                val res = apiService.getSettings()
-                if (res.isSuccessful) {
-                    val body = res.body()
-                    val minutes = (body?.overdueUndeliveredMinutes ?: appSettingsPreferences.getOverdueUndeliveredDefaultMinutes())
-                        .coerceIn(AppSettingsPreferences.MIN_MINUTES, AppSettingsPreferences.MAX_MINUTES)
-                    appSettingsPreferences.setOverdueUndeliveredDefaultMinutes(minutes)
-                    cachedOverdueMinutes = minutes
-                    cachedOverdueMinutesAt = now
-                    return minutes
-                }
-            } catch (e: Exception) {
-                Log.e("ApiSync", "getSettings error: ${e.message}")
-            }
-        }
-        val local = appSettingsPreferences.getOverdueUndeliveredDefaultMinutes()
-        cachedOverdueMinutes = local
-        cachedOverdueMinutesAt = now
-        return local
-    }
 
     /** Uygulama yeniden başlayınca token bellekten silinir; SessionManager'daki PIN ile geri yükle ki sync 401 almasın. */
     private suspend fun restoreAuthTokenIfNeeded() {
@@ -239,10 +196,10 @@ class ApiSyncRepository @Inject constructor(
             syncStatus = "SYNCED"
         )
         orderDao.insertOrder(orderEntity)
-        val localItemsById = localItems.associateBy { it.id }
+        val localByApiId = localItems.associateBy { it.apiId ?: it.id }
         orderItemDao.deleteOrderItems(dto.id)
         val itemEntities = mergedItems.map { item ->
-            val local = localItemsById[item.id]
+            val local = localByApiId[item.id]
             OrderItemEntity(
                 id = item.id,
                 orderId = dto.id,
@@ -252,7 +209,7 @@ class ApiSyncRepository @Inject constructor(
                 price = item.price,
                 notes = item.notes,
                 status = item.status,
-                sentAt = item.sentAt,
+                sentAt = local?.sentAt ?: item.sentAt,
                 deliveredAt = local?.deliveredAt,
                 apiId = item.id,
                 syncStatus = "SYNCED"
@@ -613,11 +570,11 @@ class ApiSyncRepository @Inject constructor(
                     syncStatus = "SYNCED"
                 )
                 orderDao.insertOrder(orderEntity)
-                // Keep local deliveredAt information when pulling from API
-                val localItemsById = localItems.associateBy { it.id }
+                // Keep local deliveredAt and sentAt when pulling from API (sentAt immutable - prefer local first-send time)
+                val localByApiId = localItems.associateBy { it.apiId ?: it.id }
                 orderItemDao.deleteOrderItems(dto.id)
                 val itemEntities = mergedItems.map { item ->
-                    val local = localItemsById[item.id]
+                    val local = localByApiId[item.id]
                     OrderItemEntity(
                         id = item.id,
                         orderId = dto.id,
@@ -627,7 +584,7 @@ class ApiSyncRepository @Inject constructor(
                         price = item.price,
                         notes = item.notes,
                         status = item.status,
-                        sentAt = item.sentAt,
+                        sentAt = local?.sentAt ?: item.sentAt,
                         deliveredAt = local?.deliveredAt,
                         apiId = item.id,
                         syncStatus = "SYNCED"
@@ -734,6 +691,9 @@ class ApiSyncRepository @Inject constructor(
 
             val entities = try {
                 dtos.map { dto ->
+                    if (dto.overdueUndeliveredMinutes != null) {
+                        Log.d("OverdueVerify", "step1 DTO: productId=${dto.id} name=${dto.name} overdueUndeliveredMinutes=${dto.overdueUndeliveredMinutes}")
+                    }
                     val catId = dto.categoryId?.takeIf { it.isNotEmpty() }
                         ?: dto.categoryName?.let { categoryByName[it]?.id }
                         ?: defaultCategoryId
@@ -751,6 +711,9 @@ class ApiSyncRepository @Inject constructor(
                         else -> true
                     }
                     val prodOdMin = dto.overdueUndeliveredMinutes?.takeIf { it in 1..1440 }
+                    if (dto.overdueUndeliveredMinutes != null) {
+                        Log.d("OverdueVerify", "step2 entity: productId=${dto.id} dto.overdue=${dto.overdueUndeliveredMinutes} entity.overdue=$prodOdMin")
+                    }
                     val modIds = normalizeModifierGroupIds(dto.modifierGroups)
                     ProductEntity(
                         id = dto.id,
@@ -775,6 +738,13 @@ class ApiSyncRepository @Inject constructor(
             }
             productDao.deleteAll()
             productDao.insertProducts(entities)
+            val withOverdue = entities.filter { it.overdueUndeliveredMinutes != null }
+            if (withOverdue.isNotEmpty()) {
+                for (e in withOverdue) {
+                    val readBack = productDao.getProductById(e.id)
+                    Log.d("OverdueVerify", "step3 DB read: productId=${e.id} entity.overdue=${e.overdueUndeliveredMinutes} DB.overdue=${readBack?.overdueUndeliveredMinutes}")
+                }
+            }
             val hiddenCount = entities.count { !it.showInTill }
             Log.d("ApiSync", "syncProducts: inserted ${entities.size} products, $hiddenCount hidden (showInTill=false)")
             true

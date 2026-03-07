@@ -127,59 +127,6 @@ fun SettingsScreen(
             message?.let { msg ->
                 Text(msg, color = LimonPrimary, modifier = Modifier.padding(bottom = 16.dp), fontSize = 14.sp)
             }
-            if (!isKdsOnly) {
-                val overdueFromPrefs by viewModel.overdueDefaultMinutesFromPrefs.collectAsState(10)
-                val overdueInput by viewModel.overdueDefaultMinutesInput.collectAsState(initial = "")
-                val isSavingOverdue by viewModel.isSavingOverdueDefault.collectAsState(false)
-                val overdueError by viewModel.overdueDefaultError.collectAsState(null)
-                val overdueSaved by viewModel.overdueDefaultSavedMessage.collectAsState(null)
-                LaunchedEffect(overdueFromPrefs) {
-                    viewModel.loadOverdueDefaultIntoInput(overdueFromPrefs)
-                }
-                LaunchedEffect(overdueSaved) {
-                    overdueSaved?.let {
-                        kotlinx.coroutines.delay(2000)
-                        viewModel.clearOverdueDefaultSavedMessage()
-                    }
-                }
-                Text("Products not delivered to table warning", fontWeight = FontWeight.Bold, color = LimonText, fontSize = 16.sp, modifier = Modifier.padding(bottom = 12.dp))
-                Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = LimonSurface)) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Default warning time in minutes when product/category override is not set (1–1440).", color = LimonTextSecondary, fontSize = 12.sp, modifier = Modifier.padding(bottom = 8.dp))
-                        OutlinedTextField(
-                            value = overdueInput,
-                            onValueChange = { viewModel.setOverdueDefaultMinutesInput(it.filter { c -> c.isDigit() }.take(4)) },
-                            label = { Text("Minutes", color = LimonTextSecondary) },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = LimonText,
-                                unfocusedTextColor = LimonText,
-                                focusedBorderColor = LimonPrimary,
-                                unfocusedBorderColor = LimonTextSecondary.copy(alpha = 0.5f),
-                                focusedLabelColor = LimonPrimary,
-                                unfocusedLabelColor = LimonTextSecondary
-                            )
-                        )
-                        overdueError?.let { err ->
-                            Text(err, color = LimonError, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
-                        }
-                        overdueSaved?.let { msg ->
-                            Text(msg, color = LimonPrimary, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Button(
-                            onClick = { viewModel.saveOverdueDefaultMinutes() },
-                            enabled = !isSavingOverdue,
-                            colors = ButtonDefaults.buttonColors(containerColor = LimonPrimary)
-                        ) {
-                            Text(if (isSavingOverdue) "Saving…" else "Save default minutes", color = Color.White)
-                        }
-                    }
-                }
-                Spacer(modifier = Modifier.height(24.dp))
-            }
             if (needsNotificationPermission) {
                 Text("Bildirimler / Notifications", fontWeight = FontWeight.Bold, color = LimonText, fontSize = 16.sp, modifier = Modifier.padding(bottom = 12.dp))
                 Card(

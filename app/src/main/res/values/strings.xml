@@ -4,5 +4,5 @@
     <string name="notification_channel_overdue">Products not delivered to table</string>
     <string name="notification_channel_overdue_desc">Alert when items sent to kitchen have not been marked as delivered for too long</string>
     <string name="notification_overdue_title">Products not delivered to table</string>
-    <string name="notification_overdue_text">Items not delivered within %1$d minutes. Tables: %2$s. Tap to open.</string>
+    <string name="notification_overdue_text">Items not delivered. Tables: %1$s. Tap to open.</string>
 </resources>

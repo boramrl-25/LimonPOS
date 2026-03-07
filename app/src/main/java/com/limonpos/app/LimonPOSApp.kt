@@ -53,18 +53,17 @@ class LimonPOSApp : Application() {
         })
     }
 
-    /** Masaya gitmeyen ürün uyarısı: her 15 sn; dakika = product ?: category ?: settings default. */
+    /** Masaya gitmeyen ürün uyarısı: her 15 sn; sadece product.overdueUndeliveredMinutes, null ise disabled. */
     private fun startOverdueCheckLoop() {
         applicationScope.launch {
-            apiSyncRepository.clearOverdueMinutesCache()
             while (true) {
                 try {
-                    val defaultMinutes = apiSyncRepository.getOverdueUndeliveredMinutes()
-                    val list = orderRepository.getOverdueUndelivered(defaultMinutes)
+                    val list = orderRepository.getOverdueUndelivered()
+                    Log.d("OverdueVerify", "step7 loop: list.size=${list.size} tables=${list.map { it.tableNumber }}")
                     if (list.isNotEmpty()) {
                         Log.d("LimonPOSApp", "Overdue items: ${list.map { "Table ${it.tableNumber}" }}")
                     }
-                    overdueWarningHolder.update(if (list.isNotEmpty()) list else null, defaultMinutes)
+                    overdueWarningHolder.update(if (list.isNotEmpty()) list else null)
                 } catch (e: Exception) {
                     Log.e("LimonPOSApp", "Overdue check error: ${e.message}")
                 }

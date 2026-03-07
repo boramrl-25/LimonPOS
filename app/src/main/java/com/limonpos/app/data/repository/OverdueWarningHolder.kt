@@ -1,5 +1,6 @@
 package com.limonpos.app.data.repository
 
+import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -15,14 +16,11 @@ class OverdueWarningHolder @Inject constructor() {
     private var lastNotifiedItemIds: Set<String> = emptySet()
     private var lastNotifiedAt: Long = 0L
     private val NOTIFICATION_COOLDOWN_MS = 2 * 60 * 1000L
-    private var lastUsedDefaultMinutes: Int = 10
 
-    fun update(list: List<OverdueUndelivered>?, defaultMinutes: Int = 10) {
-        lastUsedDefaultMinutes = defaultMinutes.coerceIn(1, 1440)
+    fun update(list: List<OverdueUndelivered>?) {
+        Log.d("OverdueVerify", "step8 holder.update list.size=${list?.size ?: 0}")
         _overdue.value = list
     }
-
-    fun getLastUsedDefaultMinutes(): Int = lastUsedDefaultMinutes
 
     /**
      * Returns true if we should show notification/sound for this list (avoids repeating for same items within cooldown).

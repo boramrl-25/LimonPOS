@@ -25,7 +25,7 @@ private const val NOTIFICATION_ID = 9001
  * configuredMinutes: the warning threshold used (e.g. from settings).
  * Tap opens the app to the first table’s cart.
  */
-fun showOverdueNotification(context: Context, list: List<OverdueUndelivered>, configuredMinutes: Int) {
+fun showOverdueNotification(context: Context, list: List<OverdueUndelivered>) {
     if (list.isEmpty()) return
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
         ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -48,7 +48,7 @@ fun showOverdueNotification(context: Context, list: List<OverdueUndelivered>, co
     }
     val tablesSummary = list.joinToString(", ") { "Table ${it.tableNumber}" }
     val title = context.getString(R.string.notification_overdue_title)
-    val text = context.getString(R.string.notification_overdue_text, configuredMinutes, tablesSummary)
+    val text = context.getString(R.string.notification_overdue_text, tablesSummary)
     val firstTableId = list.firstOrNull()?.tableId
     val intent = Intent(context, MainActivity::class.java).apply {
         flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP

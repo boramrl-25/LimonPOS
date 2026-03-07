@@ -43,6 +43,7 @@ import com.limonpos.app.ui.screens.categories.CategoriesScreen
 import com.limonpos.app.ui.screens.modifiers.ModifiersScreen
 import com.limonpos.app.ui.screens.serversettings.ServerSettingsScreen
 import com.limonpos.app.util.showOverdueNotification
+import android.util.Log
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.Duration
@@ -118,9 +119,9 @@ fun NavGraph(
         val context = LocalContext.current
         LaunchedEffect(Unit) {
             overdueWarningHolder.overdue.collect { list ->
+                Log.d("OverdueVerify", "step9 UI collect: list.size=${list?.size ?: 0} tables=${list?.map { it.tableNumber }}")
                 if (!list.isNullOrEmpty() && overdueWarningHolder.shouldShowNotification(list)) {
-                    val minutes = overdueWarningHolder.getLastUsedDefaultMinutes()
-                    showOverdueNotification(context, list, minutes)
+                    showOverdueNotification(context, list)
                 }
             }
         }

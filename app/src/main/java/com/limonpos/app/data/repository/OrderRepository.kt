@@ -3,7 +3,6 @@ package com.limonpos.app.data.repository
 import androidx.room.withTransaction
 import com.limonpos.app.data.local.AppDatabase
 import com.limonpos.app.data.local.dao.AppliedClientActionDao
-import com.limonpos.app.data.local.dao.CategoryDao
 import com.limonpos.app.data.local.dao.OrderDao
 import com.limonpos.app.data.local.dao.OrderItemDao
 import com.limonpos.app.data.local.dao.PaymentDao
@@ -18,6 +17,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
+import android.util.Log
 import java.util.UUID
 import javax.inject.Inject
 
@@ -41,7 +41,6 @@ class OrderRepository @Inject constructor(
     private val paymentDao: PaymentDao,
     private val tableRepository: TableRepository,
     private val voidLogDao: VoidLogDao,
-    private val categoryDao: CategoryDao,
     private val productDao: ProductDao
 ) {
     suspend fun createOrder(
@@ -152,20 +151,28 @@ class OrderRepository @Inject constructor(
         val order = orderDao.getOrderById(orderId) ?: throw Exception("Order not found")
         orderDao.updateOrder(order.copy(status = "sent", syncStatus = "PENDING"))
         val now = System.currentTimeMillis()
-        for (item in orderItemDao.getOrderItems(orderId).first()) {
+        val items = orderItemDao.getOrderItems(orderId).first()
+        for (item in items) {
             if (item.sentAt == null) {
                 orderItemDao.updateOrderItem(item.copy(status = "sent", sentAt = now, syncStatus = "PENDING"))
+                Log.d("OverdueVerify", "step4 sentAt set: orderId=$orderId itemId=${item.id} productId=${item.productId} sentAt=$now deliveredAt=${item.deliveredAt}")
             }
         }
     }
 
+    /** Mark items as sent. sentAt is set only when item.sentAt == null (immutable once set). */
     suspend fun markItemsAsSent(orderId: String, itemIds: List<String>) {
         if (itemIds.isEmpty()) return
         val order = orderDao.getOrderById(orderId) ?: return
         val now = System.currentTimeMillis()
         for (item in orderItemDao.getOrderItems(orderId).first()) {
             if (item.id in itemIds) {
-                orderItemDao.updateOrderItem(item.copy(status = "sent", sentAt = now, syncStatus = "PENDING"))
+                if (item.sentAt == null) {
+                    orderItemDao.updateOrderItem(item.copy(status = "sent", sentAt = now, syncStatus = "PENDING"))
+                    Log.d("OverdueVerify", "step4 sentAt set: orderId=$orderId itemId=${item.id} productId=${item.productId} sentAt=$now deliveredAt=${item.deliveredAt}")
+                } else {
+                    orderItemDao.updateOrderItem(item.copy(status = "sent", syncStatus = "PENDING"))
+                }
             }
         }
         orderDao.updateOrder(order.copy(status = "sent", syncStatus = "PENDING"))
@@ -191,10 +198,10 @@ class OrderRepository @Inject constructor(
 
     /**
      * Items sent to kitchen but not delivered, past their due time.
-     * Minutes: product.overdueUndeliveredMinutes ?: category.overdueUndeliveredMinutes ?: settingsDefaultMinutes, then coerceIn(1, 1440).
+     * Only product.overdueUndeliveredMinutes (1..1440). If null, feature disabled for that item.
      * Excludes sentAt == null and deliveredAt != null.
      */
-    suspend fun getOverdueUndelivered(settingsDefaultMinutes: Int): List<OverdueUndelivered> {
+    suspend fun getOverdueUndelivered(): List<OverdueUndelivered> {
         val orders = orderDao.getOpenAndSentOrders()
         val result = mutableListOf<OverdueUndelivered>()
         val now = System.currentTimeMillis()
@@ -209,18 +216,28 @@ class OrderRepository @Inject constructor(
             val overdue = items.filter { item ->
                 if (item.sentAt == null) return@filter false
                 if (item.deliveredAt != null) return@filter false
+                Log.d("OverdueVerify", "step5 candidate: orderId=${order.id} itemId=${item.id} productId=${item.productId} sentAt=${item.sentAt} deliveredAt=${item.deliveredAt}")
                 val product = productDao.getProductById(item.productId)
-                val category = product?.categoryId?.let { categoryDao.getCategoryById(it) }
-                val minutes = (product?.overdueUndeliveredMinutes
-                    ?: category?.overdueUndeliveredMinutes
-                    ?: settingsDefaultMinutes).coerceIn(1, 1440)
+                val minutes = product?.overdueUndeliveredMinutes
+                Log.d("OverdueVerify", "step5 product: productId=${item.productId} product.overdueUndeliveredMinutes=$minutes")
+                if (minutes == null) {
+                    Log.d("OverdueVerify", "step6 filter OUT: itemId=${item.id} reason=minutes==null")
+                    return@filter false
+                }
+                if (minutes !in 1..1440) {
+                    Log.d("OverdueVerify", "step6 filter OUT: itemId=${item.id} reason=minutes !in 1..1440 ($minutes)")
+                    return@filter false
+                }
                 val cutoff = now - minutes * 60 * 1000L
-                item.sentAt < cutoff
+                val isOverdue = item.sentAt < cutoff
+                Log.d("OverdueVerify", "step6 itemId=${item.id} cutoff=$cutoff now=$now isOverdue=$isOverdue (sentAt < cutoff)")
+                isOverdue
             }
             if (overdue.isNotEmpty()) {
                 result.add(OverdueUndelivered(tableNumber = order.tableNumber, tableId = order.tableId, orderId = order.id, items = overdue))
             }
         }
+        Log.d("OverdueVerify", "step6 getOverdueUndelivered result size=${result.size} tables=${result.map { it.tableNumber }}")
         return result
     }
 
