@@ -19,6 +19,7 @@ import {
   RotateCcw,
   BarChart2,
   ShoppingBag,
+  SlidersHorizontal,
 } from "lucide-react";
 import { logout } from "@/lib/api";
 
@@ -30,6 +31,7 @@ const navItems = [
   { href: "/settings/zoho", label: "Zoho Books", icon: BookOpen },
   { href: "/settings/users", label: "Users", icon: Users },
   { href: "/products", label: "Products", icon: Package },
+  { href: "/modifiers", label: "Modifiers", icon: SlidersHorizontal },
   { href: "/categories", label: "Categories", icon: FolderOpen },
   { href: "/printers", label: "Printers", icon: Printer },
 ];
