@@ -35,7 +35,11 @@ class PrinterWarningHolder @Inject constructor() {
     /** Dismiss current warning and show next from queue if any. */
     fun clear() {
         synchronized(lock) {
-            _state.value = queue.pollFirst()
+            if (queue.isNotEmpty()) {
+                _state.value = queue.removeFirst()
+            } else {
+                _state.value = null
+            }
         }
     }
 }

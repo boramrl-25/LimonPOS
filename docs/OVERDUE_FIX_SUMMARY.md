@@ -16,19 +16,51 @@
 
 ---
 
-## OrderRepository — getOverdueUndelivered imzası ve mantık
+## OrderRepository — getOverdueUndelivered: kodda olan son hali
 
-**İmza:**
+**Dosya:** `app/src/main/java/com/limonpos/app/data/repository/OrderRepository.kt` (satır 192–225)
+
 ```kotlin
-suspend fun getOverdueUndelivered(settingsDefaultMinutes: Int): List<OverdueUndelivered>
+    /**
+     * Items sent to kitchen but not delivered, past their due time.
+     * Minutes: product.overdueUndeliveredMinutes ?: category.overdueUndeliveredMinutes ?: settingsDefaultMinutes, then coerceIn(1, 1440).
+     * Excludes sentAt == null and deliveredAt != null.
+     */
+    suspend fun getOverdueUndelivered(settingsDefaultMinutes: Int): List<OverdueUndelivered> {
+        val orders = orderDao.getOpenAndSentOrders()
+        val result = mutableListOf<OverdueUndelivered>()
+        val now = System.currentTimeMillis()
+        for (order in orders) {
+            if (order.status == "paid" || order.status == "closed") continue
+            val table = tableRepository.getTableById(order.tableId)
+            if (table == null || table.status == "free") continue
+            if (table.currentOrderId == null || table.currentOrderId != order.id) continue
+            val totalPaid = paymentDao.getPaymentsSumByOrder(order.id)
+            if (totalPaid >= order.total - 0.01) continue
+            val items = orderItemDao.getOrderItems(order.id).first()
+            val overdue = items.filter { item ->
+                if (item.sentAt == null) return@filter false
+                if (item.deliveredAt != null) return@filter false
+                val product = productDao.getProductById(item.productId)
+                val category = product?.categoryId?.let { categoryDao.getCategoryById(it) }
+                val minutes = (product?.overdueUndeliveredMinutes
+                    ?: category?.overdueUndeliveredMinutes
+                    ?: settingsDefaultMinutes).coerceIn(1, 1440)
+                val cutoff = now - minutes * 60 * 1000L
+                item.sentAt < cutoff
+            }
+            if (overdue.isNotEmpty()) {
+                result.add(OverdueUndelivered(tableNumber = order.tableNumber, tableId = order.tableId, orderId = order.id, items = overdue))
+            }
+        }
+        return result
+    }
 ```
 
-**Dakika çözümü (her item için):**
-- `product?.overdueUndeliveredMinutes ?: category?.overdueUndeliveredMinutes ?: settingsDefaultMinutes`
-- Sonra `.coerceIn(1, 1440)`
-- **Dışlanan:** `sentAt == null` → dahil etme
-- **Dışlanan:** `deliveredAt != null` → dahil etme
-- Category: `product?.categoryId?.let { categoryDao.getCategoryById(it) }`
+- **İmza:** `suspend fun getOverdueUndelivered(settingsDefaultMinutes: Int): List<OverdueUndelivered>`
+- **Dakika:** product ?: category ?: settingsDefaultMinutes, sonra coerceIn(1, 1440)
+- **Category lookup:** `product?.categoryId?.let { categoryDao.getCategoryById(it) }`
+- **Dışlanan:** sentAt == null; deliveredAt != null
 
 ---
 

@@ -333,8 +333,8 @@ class OrderViewModel @Inject constructor(
 
     /** Reuse same clientActionId for duplicate add (same key within window) so DB idempotency applies. */
     private var lastAddToCartKey: String? = null
-    private var lastAddToCartTimeMs: Long = 0L
-    private var lastAddToCartClientActionId: String? = null
+    private var lastAddToCartAt: Long = 0L
+    private var lastClientActionId: String? = null
     private val addToCartDebounceMs = 500L
     private var isAddingProduct = false
     private val addProductMutex = Mutex()
@@ -387,14 +387,14 @@ class OrderViewModel @Inject constructor(
             val key = "${product.id}|$totalPrice|$notes|$quantity"
             val now = System.currentTimeMillis()
             val clientActionId = addToCartMutex.withLock {
-                val reuse = key == lastAddToCartKey && (now - lastAddToCartTimeMs) < addToCartDebounceMs
-                if (reuse && lastAddToCartClientActionId != null) {
-                    lastAddToCartClientActionId!!
+                val reuse = key == lastAddToCartKey && (now - lastAddToCartAt) < addToCartDebounceMs
+                if (reuse && lastClientActionId != null) {
+                    lastClientActionId!!
                 } else {
                     val newId = java.util.UUID.randomUUID().toString()
                     lastAddToCartKey = key
-                    lastAddToCartTimeMs = now
-                    lastAddToCartClientActionId = newId
+                    lastAddToCartAt = now
+                    lastClientActionId = newId
                     newId
                 }
             }
