@@ -191,8 +191,8 @@ class OrderRepository @Inject constructor(
 
     /**
      * Items sent to kitchen but not delivered, past their due time.
-     * Resolution: product.overdueUndeliveredMinutes ?: category.overdueUndeliveredMinutes ?: settingsDefaultMinutes, then coerceIn(1, 1440).
-     * Excludes items with deliveredAt != null.
+     * Minutes: product.overdueUndeliveredMinutes ?: category.overdueUndeliveredMinutes ?: settingsDefaultMinutes, then coerceIn(1, 1440).
+     * Excludes sentAt == null and deliveredAt != null.
      */
     suspend fun getOverdueUndelivered(settingsDefaultMinutes: Int): List<OverdueUndelivered> {
         val orders = orderDao.getOpenAndSentOrders()
@@ -207,10 +207,13 @@ class OrderRepository @Inject constructor(
             if (totalPaid >= order.total - 0.01) continue
             val items = orderItemDao.getOrderItems(order.id).first()
             val overdue = items.filter { item ->
-                if (item.sentAt == null || item.deliveredAt != null) return@filter false
+                if (item.sentAt == null) return@filter false
+                if (item.deliveredAt != null) return@filter false
                 val product = productDao.getProductById(item.productId)
                 val category = product?.categoryId?.let { categoryDao.getCategoryById(it) }
-                val minutes = (product?.overdueUndeliveredMinutes ?: category?.overdueUndeliveredMinutes ?: settingsDefaultMinutes).coerceIn(1, 1440)
+                val minutes = (product?.overdueUndeliveredMinutes
+                    ?: category?.overdueUndeliveredMinutes
+                    ?: settingsDefaultMinutes).coerceIn(1, 1440)
                 val cutoff = now - minutes * 60 * 1000L
                 item.sentAt < cutoff
             }
