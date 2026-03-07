@@ -39,6 +39,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.limonpos.app.data.local.entity.TableEntity
+import com.limonpos.app.data.repository.ReservationStatusHelper
+import com.limonpos.app.data.repository.UpcomingReservationAlert
 import com.limonpos.app.data.repository.OverdueUndelivered
 import com.limonpos.app.ui.theme.*
 import com.limonpos.app.ui.components.PrinterWarningDialog
@@ -62,6 +64,8 @@ fun FloorPlanScreen(
     val waiterName by viewModel.waiterName.collectAsState()
     val printerWarningState by viewModel.printerWarningState.collectAsState()
     val overdueWarning by viewModel.overdueWarning.collectAsState(initial = null)
+    val reservationUpcoming by viewModel.reservationUpcoming.collectAsState(initial = emptyList())
+    val canCancelReservation by viewModel.canCancelReservation.collectAsState(initial = false)
     val pendingVoidCount by viewModel.pendingVoidRequestCount.collectAsState(0)
     val pendingClosedBillAccessCount by viewModel.pendingClosedBillAccessRequestCount.collectAsState(0)
     var tableToClose by remember { mutableStateOf<TableEntity?>(null) }
@@ -164,6 +168,29 @@ fun FloorPlanScreen(
             onDismiss = { viewModel.dismissOverdueWarning() },
             onGoToTable = { tableId ->
                 viewModel.dismissOverdueWarning()
+                onNavigateToOrder(tableId)
+            }
+        )
+    }
+
+    LaunchedEffect(reservationUpcoming) {
+        if (reservationUpcoming.isNotEmpty() && viewModel.shouldPlayReservationNotification(reservationUpcoming)) {
+            val tg = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 80)
+            try {
+                tg.startTone(ToneGenerator.TONE_PROP_BEEP2, 300)
+                delay(200)
+                tg.startTone(ToneGenerator.TONE_PROP_BEEP2, 300)
+            } finally {
+                tg.release()
+            }
+        }
+    }
+    if (reservationUpcoming.isNotEmpty()) {
+        ReservationUpcomingDialog(
+            list = reservationUpcoming,
+            onDismiss = { viewModel.dismissReservationReminder() },
+            onGoToTable = { tableId ->
+                viewModel.dismissReservationReminder()
                 onNavigateToOrder(tableId)
             }
         )
@@ -408,6 +435,11 @@ fun FloorPlanScreen(
                     Spacer(Modifier.width(4.dp))
                     Text("Bill", color = LimonTextSecondary, fontSize = 12.sp)
                 }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(modifier = Modifier.size(12.dp).background(LimonError, CircleShape))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Reservation soon", color = LimonTextSecondary, fontSize = 12.sp)
+                }
             }
             LazyVerticalGrid(
                 modifier = Modifier.weight(1f),
@@ -417,8 +449,12 @@ fun FloorPlanScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(tables, key = { it.id }) { table ->
+                    val now = System.currentTimeMillis()
+                    val isOccupiedWithUpcoming = (table.status == "occupied" || table.status == "bill") &&
+                        ReservationStatusHelper.isReservationUpcoming(table, now, 30)
                     TableCard(
                         table = table,
+                        isOccupiedWithUpcomingReservation = isOccupiedWithUpcoming,
                         onClick = { viewModel.onTableClick(table, onNavigateToOrder) },
                         onCloseTable = if (table.status == "occupied" || table.status == "bill") {
                             { tableToClose = table }
@@ -479,6 +515,8 @@ fun FloorPlanScreen(
         ReservationInfoDialog(
             table = table,
             loading = uiState.reserveTableLoading,
+            error = uiState.reserveTableError,
+            canCancelReservation = canCancelReservation,
             onDismiss = { viewModel.dismissReservationInfoDialog() },
             onCancelReservation = { viewModel.cancelReservation(table.id) },
             onOpenTable = { viewModel.openTableFromReservation(table) }
@@ -494,10 +532,18 @@ fun FloorPlanScreen(
     }
 
     tableToClose?.let { table ->
+        val willReturnToReserved = ReservationStatusHelper.shouldReturnToReservedAfterClose(table, System.currentTimeMillis())
         AlertDialog(
             onDismissRequest = { tableToClose = null; viewModel.clearCloseTableError() },
             title = { Text("Close Table ${table.name}", color = LimonText) },
-            text = { Text("Items will be discarded. Continue?", color = LimonTextSecondary) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Items will be discarded. Continue?", color = LimonTextSecondary)
+                    if (willReturnToReserved) {
+                        Text("Table will remain reserved for the upcoming reservation.", color = LimonInfo, fontSize = 13.sp)
+                    }
+                }
+            },
             confirmButton = {
                 Button(
                     onClick = {
@@ -788,6 +834,8 @@ private fun ReserveTableDialog(
 private fun ReservationInfoDialog(
     table: TableEntity,
     loading: Boolean,
+    error: String?,
+    canCancelReservation: Boolean,
     onDismiss: () -> Unit,
     onCancelReservation: () -> Unit,
     onOpenTable: () -> Unit
@@ -814,6 +862,7 @@ private fun ReservationInfoDialog(
                     Text("To: $toStr", color = LimonTextSecondary, fontSize = 14.sp)
                 }
                 Text("Reservation is cancelled automatically 10 min after end time.", color = LimonTextSecondary, fontSize = 12.sp)
+                error?.let { Text(it, color = LimonError, fontSize = 12.sp) }
                 if (loading) {
                     Spacer(Modifier.height(8.dp))
                     LinearProgressIndicator(color = LimonPrimary, modifier = Modifier.fillMaxWidth())
@@ -826,7 +875,9 @@ private fun ReservationInfoDialog(
         dismissButton = {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TextButton(onClick = onDismiss) { Text("Close", color = LimonTextSecondary) }
-                TextButton(onClick = onCancelReservation) { Text("Cancel reservation", color = LimonError) }
+                if (canCancelReservation) {
+                    TextButton(onClick = onCancelReservation) { Text("Cancel reservation", color = LimonError) }
+                }
             }
         },
         containerColor = LimonSurface
@@ -958,6 +1009,7 @@ private fun TransferTableDialog(
 @Composable
 private fun TableCard(
     table: TableEntity,
+    isOccupiedWithUpcomingReservation: Boolean = false,
     onClick: () -> Unit,
     onCloseTable: (() -> Unit)? = null
 ) {
@@ -972,6 +1024,7 @@ private fun TableCard(
             .clickable(onClick = onClick)
             .then(
                 when {
+                    isOccupiedWithUpcomingReservation -> Modifier.border(2.dp, LimonError, RoundedCornerShape(12.dp))
                     isOccupied -> Modifier.border(2.dp, LimonPrimary, RoundedCornerShape(12.dp))
                     isBill -> Modifier.border(2.dp, LimonSuccess, RoundedCornerShape(12.dp))
                     isReserved -> Modifier.border(2.dp, LimonInfo, RoundedCornerShape(12.dp))
@@ -981,6 +1034,7 @@ private fun TableCard(
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
             containerColor = when {
+                isOccupiedWithUpcomingReservation -> LimonError.copy(alpha = 0.15f)
                 isOccupied -> LimonSurface
                 isBill -> LimonSurface.copy(alpha = 0.9f)
                 isReserved -> LimonInfo.copy(alpha = 0.25f)
@@ -1025,7 +1079,20 @@ private fun TableCard(
                         modifier = Modifier.padding(top = 2.dp)
                     )
                 }
-                if (isOccupied) {
+                if (isOccupiedWithUpcomingReservation) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Reservation soon",
+                        color = LimonError,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = "Occupied",
+                        color = LimonPrimary,
+                        fontSize = 11.sp
+                    )
+                } else if (isOccupied) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "Occupied",
@@ -1083,7 +1150,6 @@ private fun OverdueUndeliveredDialogFloor(
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("10 dakikadan fazla süredir mutfakta olup masaya gelmeyen ürünler:", color = LimonTextSecondary, fontSize = 13.sp)
                 list.forEach { block ->
                     Card(
                         colors = CardDefaults.cardColors(containerColor = LimonSurface),
@@ -1111,6 +1177,53 @@ private fun OverdueUndeliveredDialogFloor(
         confirmButton = {
             Button(onClick = onDismiss, colors = ButtonDefaults.buttonColors(containerColor = LimonPrimary)) {
                 Text("Tamam", color = Color.Black)
+            }
+        },
+        containerColor = LimonSurface
+    )
+}
+
+@Composable
+private fun ReservationUpcomingDialog(
+    list: List<UpcomingReservationAlert>,
+    onDismiss: () -> Unit,
+    onGoToTable: (String) -> Unit
+) {
+    val fromStr: (Long) -> String = { ts ->
+        java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date(ts))
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text("Upcoming reservations (30 min)", fontWeight = FontWeight.Bold, color = LimonText)
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                list.forEach { alert ->
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = LimonSurface),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.clickable { onGoToTable(alert.tableId) }
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Table ${alert.tableNumber}", fontWeight = FontWeight.Bold, color = LimonPrimary, fontSize = 15.sp)
+                                Text("Tap to go", color = LimonTextSecondary, fontSize = 12.sp)
+                            }
+                            alert.guestName?.takeIf { it.isNotBlank() }?.let { Text("Guest: $it", color = LimonTextSecondary, fontSize = 13.sp) }
+                            Text("${fromStr(alert.reservationFrom)} – ${fromStr(alert.reservationTo)}", color = LimonTextSecondary, fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onDismiss, colors = ButtonDefaults.buttonColors(containerColor = LimonPrimary)) {
+                Text("OK", color = Color.Black)
             }
         },
         containerColor = LimonSurface

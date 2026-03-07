@@ -824,7 +824,10 @@ class OrderViewModel @Inject constructor(
     private suspend fun doCloseTable() {
         withContext(Dispatchers.IO) {
             orderRepository.closeTableManually(tableId)
-            if (apiSyncRepository.isOnline()) apiSyncRepository.pushCloseTable(tableId)
+            if (apiSyncRepository.isOnline()) {
+                apiSyncRepository.pushCloseTable(tableId)
+                apiSyncRepository.pushTableStatesNow()
+            }
         }
         _navigateToFloorPlanRequest.value = _navigateToFloorPlanRequest.value + 1
     }

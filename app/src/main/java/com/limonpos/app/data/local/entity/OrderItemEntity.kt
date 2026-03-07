@@ -6,7 +6,7 @@ import androidx.room.PrimaryKey
 
 @Entity(
     tableName = "order_items",
-    indices = [Index(value = ["orderId"])]
+    indices = [Index(value = ["orderId"]), Index(value = ["orderId", "clientLineId"])]
 )
 data class OrderItemEntity(
     @PrimaryKey
@@ -20,6 +20,9 @@ data class OrderItemEntity(
     val status: String = "pending",
     val sentAt: Long? = null,
     val deliveredAt: Long? = null,
+    /** Client-generated UUID for line identity. Used for sync reconciliation instead of fuzzy key. */
+    val clientLineId: String? = null,
+    /** Backend-assigned line id (apiLineId). Stored in apiId field. */
     val apiId: String? = null,
     val syncStatus: String = "SYNCED"
 )

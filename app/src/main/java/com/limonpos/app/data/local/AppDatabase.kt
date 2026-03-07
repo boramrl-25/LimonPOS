@@ -66,6 +66,13 @@ val MIGRATION_14_15 = object : Migration(14, 15) {
     }
 }
 
+val MIGRATION_15_16 = object : Migration(15, 16) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE order_items ADD COLUMN clientLineId TEXT NULL")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_order_items_orderId_clientLineId ON order_items(orderId, clientLineId)")
+    }
+}
+
 @Database(
     entities = [
         TableEntity::class,
@@ -85,7 +92,7 @@ val MIGRATION_14_15 = object : Migration(14, 15) {
         ClosedBillAccessRequestEntity::class,
         AppliedClientActionEntity::class
     ],
-    version = 15,
+    version = 16,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

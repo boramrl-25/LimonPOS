@@ -326,6 +326,7 @@ class PaymentViewModel @Inject constructor(
                         try {
                             if (apiSyncRepository.isOnline()) {
                                 apiSyncRepository.pushCloseTable(tableId)
+                                apiSyncRepository.pushTableStatesNow()
                             }
                             zohoBooksRepository.pushSalesReceipt(ow.order, ow.items, split.method)
                             if (apiSyncRepository.isOnline()) {
@@ -407,6 +408,7 @@ class PaymentViewModel @Inject constructor(
                     try {
                         if (apiSyncRepository.isOnline()) {
                             apiSyncRepository.pushCloseTable(tableId)
+                            apiSyncRepository.pushTableStatesNow()
                         }
                         val primaryMethod = splits.firstOrNull()?.method ?: "cash"
                         zohoBooksRepository.pushSalesReceipt(ow.order, ow.items, primaryMethod)

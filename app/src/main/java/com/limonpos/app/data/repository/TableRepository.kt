@@ -42,8 +42,10 @@ class TableRepository @Inject constructor(
 
     suspend fun closeTable(tableId: String) {
         val table = tableDao.getTableById(tableId) ?: return
+        val now = System.currentTimeMillis()
+        val newStatus = if (ReservationStatusHelper.shouldReturnToReservedAfterClose(table, now)) "reserved" else "free"
         val updated = table.copy(
-            status = "free",
+            status = newStatus,
             currentOrderId = null,
             guestCount = 0,
             waiterId = null,

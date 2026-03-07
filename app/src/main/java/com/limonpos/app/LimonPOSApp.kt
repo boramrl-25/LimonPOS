@@ -9,6 +9,10 @@ import com.limonpos.app.data.local.DatabaseSeeder
 import com.limonpos.app.data.repository.ApiSyncRepository
 import com.limonpos.app.data.repository.OrderRepository
 import com.limonpos.app.data.repository.OverdueWarningHolder
+import com.limonpos.app.data.repository.ReservationReminderHolder
+import com.limonpos.app.data.repository.ReservationStatusHelper
+import com.limonpos.app.data.repository.TableRepository
+import com.limonpos.app.data.repository.UpcomingReservationAlert
 import com.limonpos.app.di.ApplicationScope
 import com.limonpos.app.util.NetworkMonitor
 import dagger.hilt.android.HiltAndroidApp
@@ -27,6 +31,8 @@ class LimonPOSApp : Application() {
     @Inject lateinit var apiSyncRepository: ApiSyncRepository
     @Inject lateinit var orderRepository: OrderRepository
     @Inject lateinit var overdueWarningHolder: OverdueWarningHolder
+    @Inject lateinit var reservationReminderHolder: ReservationReminderHolder
+    @Inject lateinit var tableRepository: TableRepository
     @Inject lateinit var networkMonitor: NetworkMonitor
     @Inject @ApplicationScope lateinit var applicationScope: CoroutineScope
 
@@ -37,6 +43,7 @@ class LimonPOSApp : Application() {
         databaseSeeder.seedIfEmpty()
         startCloudSyncWhenOnline()
         startOverdueCheckLoop()
+        startReservationReminderLoop()
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStart(owner: LifecycleOwner) {
                 applicationScope.launch {
@@ -59,7 +66,6 @@ class LimonPOSApp : Application() {
             while (true) {
                 try {
                     val list = orderRepository.getOverdueUndelivered()
-                    Log.d("OverdueVerify", "step7 loop: list.size=${list.size} tables=${list.map { it.tableNumber }}")
                     if (list.isNotEmpty()) {
                         Log.d("LimonPOSApp", "Overdue items: ${list.map { "Table ${it.tableNumber}" }}")
                     }
@@ -68,6 +74,34 @@ class LimonPOSApp : Application() {
                     Log.e("LimonPOSApp", "Overdue check error: ${e.message}")
                 }
                 kotlinx.coroutines.delay(15 * 1000L)
+            }
+        }
+    }
+
+    /** Rezervasyon 30 dk kala uyarı: her 45 sn; aynı rezervasyon için tekrar bildirim yok. */
+    private fun startReservationReminderLoop() {
+        applicationScope.launch {
+            while (true) {
+                try {
+                    val tables = tableRepository.getAllTables().first()
+                    val now = System.currentTimeMillis()
+                    val list = tables
+                        .filter { ReservationStatusHelper.isReservationUpcoming(it, now, 30) }
+                        .map { t ->
+                            UpcomingReservationAlert(
+                                tableId = t.id,
+                                tableNumber = t.number,
+                                reservationFrom = t.reservationFrom!!,
+                                reservationTo = t.reservationTo!!,
+                                guestName = t.reservationGuestName,
+                                guestPhone = t.reservationGuestPhone
+                            )
+                        }
+                    reservationReminderHolder.update(list)
+                } catch (e: Exception) {
+                    Log.e("LimonPOSApp", "Reservation reminder check error: ${e.message}")
+                }
+                kotlinx.coroutines.delay(45 * 1000L)
             }
         }
     }

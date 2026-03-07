@@ -39,7 +39,8 @@ class ApiSyncRepository @Inject constructor(
     private val floorPlanSectionsPreferences: FloorPlanSectionsPreferences,
     private val serverPreferences: ServerPreferences,
     private val sessionManager: SessionManager,
-    private val authTokenProvider: AuthTokenProvider
+    private val authTokenProvider: AuthTokenProvider,
+    private val authRepository: AuthRepository
 ) {
     suspend fun isOnline(): Boolean = networkMonitor.isOnline.first()
 
@@ -164,7 +165,7 @@ class ApiSyncRepository @Inject constructor(
         return res.body()?.request
     }
 
-    /** Refresh single order from API (e.g. after web approves discount). */
+    /** Refresh single order from API (e.g. after web approves discount). Line-identity upsert: match by clientLineId or apiId. */
     suspend fun refreshOrderFromApi(orderId: String): Boolean {
         if (!isOnline()) return false
         restoreAuthTokenIfNeeded()
@@ -175,10 +176,6 @@ class ApiSyncRepository @Inject constructor(
         val voidedIds = voidLogDao.getVoidedItemIdsForOrder(dto.id).toSet()
         val filteredItems = items.filter { it.id !in voidedIds }
         val localItems = orderItemDao.getOrderItems(dto.id).first()
-        val mergedItems = filteredItems
-            .groupBy { listOf(it.productId, it.productName, it.price, it.notes, it.status, it.sentAt) }
-            .values
-            .map { group -> group.first().copy(quantity = group.sumOf { it.quantity }) }
         val orderEntity = OrderEntity(
             id = dto.id,
             tableId = dto.tableId,
@@ -196,31 +193,7 @@ class ApiSyncRepository @Inject constructor(
             syncStatus = "SYNCED"
         )
         orderDao.insertOrder(orderEntity)
-        val localByApiId = localItems.associateBy { it.apiId ?: it.id }
-        val localSentAtByLine = localItems.filter { it.sentAt != null }
-            .groupBy { "${it.productId}|${it.productName}|${it.price}|${it.notes}" }
-            .mapValues { (_, items) -> items.minOf { it.sentAt!! } }
-        orderItemDao.deleteOrderItems(dto.id)
-        val itemEntities = mergedItems.map { item ->
-            val local = localByApiId[item.id]
-            val lineKey = "${item.productId}|${item.productName}|${item.price}|${item.notes}"
-            val preservedSentAt = local?.sentAt ?: localSentAtByLine[lineKey]
-            OrderItemEntity(
-                id = item.id,
-                orderId = dto.id,
-                productId = item.productId,
-                productName = item.productName,
-                quantity = item.quantity,
-                price = item.price,
-                notes = item.notes,
-                status = item.status,
-                sentAt = preservedSentAt ?: item.sentAt,
-                deliveredAt = local?.deliveredAt,
-                apiId = item.id,
-                syncStatus = "SYNCED"
-            )
-        }
-        if (itemEntities.isNotEmpty()) orderItemDao.insertOrderItems(itemEntities)
+        upsertOrderItemsFromApi(dto.id, filteredItems, localItems)
         return true
     }
 
@@ -349,11 +322,65 @@ class ApiSyncRepository @Inject constructor(
         }
     }
 
-    /** Normalized key for comparing order line (avoids 1 vs 1.0 duplicate-adds). */
-    private fun orderItemLineKey(productName: String, quantity: Number, price: Number, notes: String): String =
-        "$productName|${quantity.toDouble()}|${price.toDouble()}|${notes}"
+    /**
+     * Line-identity upsert: match by clientLineId or apiId. No fuzzy merge. No delete-all.
+     * sentAt immutable. KDS status monotonic.
+     */
+    private suspend fun upsertOrderItemsFromApi(
+        orderId: String,
+        apiItems: List<OrderItemDto>,
+        localItems: List<OrderItemEntity>
+    ) {
+        val localByClientLineId = localItems.filter { it.clientLineId != null }.associateBy { it.clientLineId!! }
+        val localByApiId = localItems.filter { it.apiId != null }.associateBy { it.apiId!! }
+        val apiIds = apiItems.map { it.id }.toSet()
 
-    /** Ensures order exists on API with items. Creates if missing; keeps API items exactly in sync with local items. */
+        for (local in localItems) {
+            if (local.apiId != null && local.apiId !in apiIds) {
+                orderItemDao.deleteOrderItem(local)
+            }
+        }
+
+        for (item in apiItems) {
+            val local = item.clientLineId?.let { localByClientLineId[it] }
+                ?: localByApiId[item.id]
+            val (resolvedStatus, resolvedDeliveredAt) = resolveStatusForSync(local?.status, local?.deliveredAt, item.status)
+            val resolvedSentAt = local?.sentAt ?: item.sentAt
+            val resolvedDeliveredAtFinal = resolvedDeliveredAt ?: local?.deliveredAt ?: item.deliveredAt
+            val entity = OrderItemEntity(
+                id = local?.id ?: item.id,
+                orderId = orderId,
+                productId = item.productId,
+                productName = item.productName,
+                quantity = item.quantity,
+                price = item.price,
+                notes = item.notes,
+                status = resolvedStatus,
+                sentAt = resolvedSentAt,
+                deliveredAt = resolvedDeliveredAtFinal,
+                clientLineId = item.clientLineId ?: local?.clientLineId,
+                apiId = item.id,
+                syncStatus = "SYNCED"
+            )
+            orderItemDao.insertOrderItem(entity)
+        }
+    }
+
+    /** KDS status hierarchy: delivered > ready > preparing > sent > pending. Never regress — local-first. */
+    private fun resolveStatusForSync(localStatus: String?, localDeliveredAt: Long?, apiStatus: String?): Pair<String, Long?> {
+        val rank = { s: String? -> when (s) { "delivered" -> 5; "ready" -> 4; "preparing" -> 3; "sent" -> 2; "pending" -> 1; else -> 0 } }
+        val localRank = if (localDeliveredAt != null) 5 else rank(localStatus)
+        val apiRank = rank(apiStatus)
+        return when {
+            localRank >= apiRank && localDeliveredAt != null -> "delivered" to localDeliveredAt
+            localRank >= apiRank && localStatus != null -> localStatus to null
+            apiRank > localRank && apiStatus == "delivered" -> "delivered" to null
+            apiRank > localRank -> apiStatus!! to null
+            else -> (localStatus ?: apiStatus ?: "pending") to localDeliveredAt
+        }
+    }
+
+    /** Ensures order exists on API with items. Line-identity: one local line = one API line, client_line_id for idempotency. sendOrderToKitchen is NOT called here — only via explicit ensureOrderAndSendToKitchen. */
     private suspend fun ensureOrderExistsOnApi(localOrderId: String): String? {
         if (!isOnline()) return null
         val order = orderDao.getOrderById(localOrderId) ?: return null
@@ -366,66 +393,68 @@ class ApiSyncRepository @Inject constructor(
             if (getResponse.isSuccessful) {
                 val apiOrder = getResponse.body() ?: return localOrderId
                 val apiItems = apiOrder.items ?: emptyList()
+                val apiByClientLineId = apiItems.filter { it.clientLineId != null }.associateBy { it.clientLineId!! }
 
-                val localKeys = localItems.map {
-                    orderItemLineKey(it.productName, it.quantity, it.price, it.notes)
-                }.toSet()
-                val apiCountByKey = apiItems.groupingBy {
-                    orderItemLineKey(it.productName, it.quantity.toDouble(), it.price, it.notes)
-                }.eachCount()
-
-                // Remove remote items that are not present locally (by line key)
-                for (apiItem in apiItems) {
-                    val key = orderItemLineKey(apiItem.productName, apiItem.quantity.toDouble(), apiItem.price, apiItem.notes)
-                    if (key !in localKeys) {
-                        try {
-                            apiService.deleteOrderItem(localOrderId, apiItem.id)
-                        } catch (e: Exception) {
-                            Log.e("ApiSync", "deleteOrderItem failed for ${apiItem.id}", e)
+                for (item in localItems) {
+                    val existingApi = item.clientLineId?.let { apiByClientLineId[it] }
+                    if (existingApi != null) {
+                        if (existingApi.quantity != item.quantity || existingApi.notes != item.notes) {
+                            try {
+                                val req = AddOrderItemRequest(
+                                    productId = item.productId,
+                                    productName = item.productName,
+                                    quantity = item.quantity,
+                                    price = item.price,
+                                    notes = item.notes,
+                                    clientLineId = item.clientLineId
+                                )
+                                apiService.updateOrderItem(localOrderId, existingApi.id, req)
+                                orderItemDao.updateOrderItem(item.copy(apiId = existingApi.id, syncStatus = "SYNCED"))
+                            } catch (e: Exception) {
+                                Log.e("ApiSync", "updateOrderItem failed for ${item.id}", e)
+                            }
+                        } else if (item.apiId != existingApi.id) {
+                            orderItemDao.updateOrderItem(item.copy(apiId = existingApi.id, syncStatus = "SYNCED"))
                         }
-                    }
-                }
-
-                // Add only (localCount - apiCount) per line key so items never double; store apiId for pushOrderItemStatus
-                for ((key, localGroup) in localItems.groupBy { orderItemLineKey(it.productName, it.quantity, it.price, it.notes) }) {
-                    val apiCount = apiCountByKey[key] ?: 0
-                    val toAdd = localGroup.size - apiCount
-                    if (toAdd <= 0) continue
-                    val template = localGroup.first()
-                    val itemsToUpdate = localGroup.filter { it.apiId == null }
-                    var updateIdx = 0
-                    for (i in 0 until toAdd) {
-                        val itemReq = AddOrderItemRequest(
-                            productId = template.productId,
-                            productName = template.productName,
-                            quantity = template.quantity,
-                            price = template.price,
-                            notes = template.notes
+                    } else if (item.apiId != null) {
+                        val match = apiItems.find { it.id == item.apiId }
+                        if (match != null && (match.quantity != item.quantity || match.notes != item.notes)) {
+                            try {
+                                apiService.updateOrderItem(localOrderId, item.apiId, AddOrderItemRequest(
+                                    productId = item.productId,
+                                    productName = item.productName,
+                                    quantity = item.quantity,
+                                    price = item.price,
+                                    notes = item.notes,
+                                    clientLineId = item.clientLineId
+                                ))
+                            } catch (e: Exception) {
+                                Log.e("ApiSync", "updateOrderItem failed for ${item.id}", e)
+                            }
+                        }
+                    } else {
+                        val req = AddOrderItemRequest(
+                            productId = item.productId,
+                            productName = item.productName,
+                            quantity = item.quantity,
+                            price = item.price,
+                            notes = item.notes,
+                            clientLineId = item.clientLineId
                         )
-                        val addRes = apiService.addOrderItem(localOrderId, itemReq)
+                        val addRes = apiService.addOrderItem(localOrderId, req)
                         if (addRes.isSuccessful) {
-                            val dto = addRes.body()
-                            val item = itemsToUpdate.getOrNull(updateIdx)
-                            if (dto != null && item != null) {
+                            addRes.body()?.let { dto ->
                                 orderItemDao.updateOrderItem(item.copy(apiId = dto.id, syncStatus = "SYNCED"))
-                                updateIdx++
                             }
                         } else {
-                            Log.e("ApiSync", "addOrderItem failed for ${template.productName}")
+                            Log.e("ApiSync", "addOrderItem failed for ${item.productName}")
                         }
                     }
                 }
-
-                if (order.status == "sent") apiService.sendOrderToKitchen(localOrderId)
                 return localOrderId
             }
 
-            // Order not found on API: create with all local items
-            val createReq = CreateOrderRequest(
-                id = localOrderId,
-                tableId = order.tableId,
-                guestCount = guestCount
-            )
+            val createReq = CreateOrderRequest(id = localOrderId, tableId = order.tableId, guestCount = guestCount)
             val createResponse = apiService.createOrder(order.waiterId, createReq)
             if (!createResponse.isSuccessful) {
                 Log.e("ApiSync", "createOrder failed: ${createResponse.code()} ${createResponse.errorBody()?.string()}")
@@ -433,28 +462,23 @@ class ApiSyncRepository @Inject constructor(
             }
             val apiOrder = createResponse.body() ?: return null
             val apiOrderId = apiOrder.id
-
             for (item in localItems) {
-                val itemReq = AddOrderItemRequest(
+                val req = AddOrderItemRequest(
                     productId = item.productId,
                     productName = item.productName,
                     quantity = item.quantity,
                     price = item.price,
-                    notes = item.notes
+                    notes = item.notes,
+                    clientLineId = item.clientLineId
                 )
-                val addRes = apiService.addOrderItem(apiOrderId, itemReq)
+                val addRes = apiService.addOrderItem(apiOrderId, req)
                 if (addRes.isSuccessful) {
-                    val dto = addRes.body()
-                    if (dto != null) {
+                    addRes.body()?.let { dto ->
                         orderItemDao.updateOrderItem(item.copy(apiId = dto.id, syncStatus = "SYNCED"))
                     }
                 } else {
                     Log.e("ApiSync", "addOrderItem failed for ${item.productName}")
                 }
-            }
-            // If local order is already sent, push that status
-            if (order.status == "sent") {
-                apiService.sendOrderToKitchen(apiOrderId)
             }
             apiOrderId
         } catch (e: Exception) {
@@ -512,7 +536,7 @@ class ApiSyncRepository @Inject constructor(
         tableDao.insertTables(entities)
     }
 
-    /** Pulls orders (with items) from API for tables that have currentOrderId. Web→App sync (local voids win). */
+    /** Pulls orders (with items) from API for tables that have currentOrderId. Line-identity upsert: no fuzzy merge, no delete-all. */
     private suspend fun syncOrdersFromApi() {
         val tables = tableDao.getAllTables().first()
         for (table in tables) {
@@ -524,40 +548,14 @@ class ApiSyncRepository @Inject constructor(
                 val dto = response.body() ?: continue
                 val items = dto.items ?: emptyList()
 
-                // Respect local voids: never bring back items that were voided/refunded locally.
                 val voidedIds = voidLogDao.getVoidedItemIdsForOrder(dto.id).toSet()
                 val filteredItems = items.filter { it.id !in voidedIds }
-
                 val localItems = orderItemDao.getOrderItems(dto.id).first()
-                // Merge duplicate lines from API (same product/price/notes/status) into single rows with summed quantity
-                val mergedItems = filteredItems
-                    .groupBy {
-                        listOf(
-                            it.productId,
-                            it.productName,
-                            it.price,
-                            it.notes,
-                            it.status,
-                            it.sentAt
-                        )
-                    }
-                    .values
-                    .map { group ->
-                        val first = group.first()
-                        val totalQty = group.sumOf { it.quantity }
-                        first.copy(quantity = totalQty)
-                    }
 
-                val remoteTotalQty = mergedItems.sumOf { it.quantity.toLong() }
-                val localTotalQty = localItems.sumOf { it.quantity.toLong() }
-                if (mergedItems.isEmpty() && localItems.isNotEmpty()) {
-                    // Remote has no (non-voided) items but local still has some: keep local version.
+                if (filteredItems.isEmpty() && localItems.isNotEmpty()) {
                     continue
                 }
-                if (remoteTotalQty < localTotalQty && localItems.isNotEmpty()) {
-                    // Remote has fewer items than local (possibly stale API state) – do not overwrite local.
-                    continue
-                }
+
                 val orderEntity = OrderEntity(
                     id = dto.id,
                     tableId = dto.tableId,
@@ -575,34 +573,7 @@ class ApiSyncRepository @Inject constructor(
                     syncStatus = "SYNCED"
                 )
                 orderDao.insertOrder(orderEntity)
-                // Keep local deliveredAt and sentAt when pulling from API (sentAt immutable - prefer local first-send time)
-                val localByApiId = localItems.associateBy { it.apiId ?: it.id }
-                val localSentAtByLine = localItems.filter { it.sentAt != null }
-                    .groupBy { "${it.productId}|${it.productName}|${it.price}|${it.notes}" }
-                    .mapValues { (_, items) -> items.minOf { it.sentAt!! } }
-                orderItemDao.deleteOrderItems(dto.id)
-                val itemEntities = mergedItems.map { item ->
-                    val local = localByApiId[item.id]
-                    val lineKey = "${item.productId}|${item.productName}|${item.price}|${item.notes}"
-                    val preservedSentAt = local?.sentAt ?: localSentAtByLine[lineKey]
-                    OrderItemEntity(
-                        id = item.id,
-                        orderId = dto.id,
-                        productId = item.productId,
-                        productName = item.productName,
-                        quantity = item.quantity,
-                        price = item.price,
-                        notes = item.notes,
-                        status = item.status,
-                        sentAt = preservedSentAt ?: item.sentAt,
-                        deliveredAt = local?.deliveredAt,
-                        apiId = item.id,
-                        syncStatus = "SYNCED"
-                    )
-                }
-                if (itemEntities.isNotEmpty()) {
-                    orderItemDao.insertOrderItems(itemEntities)
-                }
+                upsertOrderItemsFromApi(dto.id, filteredItems, localItems)
             } catch (e: Exception) {
                 Log.e("ApiSync", "syncOrdersFromApi error for order $orderId: ${e.message}")
             }
@@ -701,9 +672,6 @@ class ApiSyncRepository @Inject constructor(
 
             val entities = try {
                 dtos.map { dto ->
-                    if (dto.overdueUndeliveredMinutes != null) {
-                        Log.d("OverdueVerify", "step1 DTO: productId=${dto.id} name=${dto.name} overdueUndeliveredMinutes=${dto.overdueUndeliveredMinutes}")
-                    }
                     val catId = dto.categoryId?.takeIf { it.isNotEmpty() }
                         ?: dto.categoryName?.let { categoryByName[it]?.id }
                         ?: defaultCategoryId
@@ -721,9 +689,6 @@ class ApiSyncRepository @Inject constructor(
                         else -> true
                     }
                     val prodOdMin = dto.overdueUndeliveredMinutes?.takeIf { it in 1..1440 }
-                    if (dto.overdueUndeliveredMinutes != null) {
-                        Log.d("OverdueVerify", "step2 entity: productId=${dto.id} dto.overdue=${dto.overdueUndeliveredMinutes} entity.overdue=$prodOdMin")
-                    }
                     val modIds = normalizeModifierGroupIds(dto.modifierGroups)
                     ProductEntity(
                         id = dto.id,
@@ -748,13 +713,6 @@ class ApiSyncRepository @Inject constructor(
             }
             productDao.deleteAll()
             productDao.insertProducts(entities)
-            val withOverdue = entities.filter { it.overdueUndeliveredMinutes != null }
-            if (withOverdue.isNotEmpty()) {
-                for (e in withOverdue) {
-                    val readBack = productDao.getProductById(e.id)
-                    Log.d("OverdueVerify", "step3 DB read: productId=${e.id} entity.overdue=${e.overdueUndeliveredMinutes} DB.overdue=${readBack?.overdueUndeliveredMinutes}")
-                }
-            }
             val hiddenCount = entities.count { !it.showInTill }
             Log.d("ApiSync", "syncProducts: inserted ${entities.size} products, $hiddenCount hidden (showInTill=false)")
             true
@@ -1117,7 +1075,8 @@ class ApiSyncRepository @Inject constructor(
                 productName = item.productName,
                 quantity = item.quantity,
                 price = item.price,
-                notes = item.notes
+                notes = item.notes,
+                clientLineId = item.clientLineId
             )
             val response = apiService.addOrderItem(orderId, req)
             if (!response.isSuccessful) {
@@ -1140,7 +1099,8 @@ class ApiSyncRepository @Inject constructor(
                 productName = item.productName,
                 quantity = item.quantity,
                 price = item.price,
-                notes = item.notes
+                notes = item.notes,
+                clientLineId = item.clientLineId
             )
             val response = apiService.updateOrderItem(orderId, apiItemId, req)
             response.isSuccessful
@@ -1199,7 +1159,7 @@ class ApiSyncRepository @Inject constructor(
             dto.items?.forEach { itemDto ->
                 orderItemDao.insertOrderItem(
                     OrderItemEntity(
-                        id = itemDto.id,
+                        id = itemDto.clientLineId ?: itemDto.id,
                         orderId = orderId,
                         productId = itemDto.productId,
                         productName = itemDto.productName,
@@ -1208,6 +1168,7 @@ class ApiSyncRepository @Inject constructor(
                         notes = itemDto.notes,
                         status = itemDto.status,
                         sentAt = itemDto.sentAt,
+                        clientLineId = itemDto.clientLineId,
                         apiId = itemDto.id,
                         syncStatus = "SYNCED"
                     )
@@ -1298,8 +1259,9 @@ class ApiSyncRepository @Inject constructor(
         } catch (_: Exception) { false }
     }
 
-    /** Cancel active reservation for table. */
+    /** Cancel active reservation for table. Only supervisor/manager can cancel; returns false otherwise. */
     suspend fun cancelTableReservation(tableId: String): Boolean {
+        if (!authRepository.isSupervisorRole()) return false
         if (!isOnline()) return false
         restoreAuthTokenIfNeeded()
         return try {

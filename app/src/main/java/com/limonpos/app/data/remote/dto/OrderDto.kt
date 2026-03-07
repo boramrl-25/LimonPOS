@@ -28,7 +28,9 @@ data class OrderItemDto(
     @SerializedName("price") val price: Double,
     @SerializedName("notes") val notes: String = "",
     @SerializedName("status") val status: String = "pending",
-    @SerializedName("sent_at") val sentAt: Long? = null
+    @SerializedName("sent_at") val sentAt: Long? = null,
+    @SerializedName("delivered_at") val deliveredAt: Long? = null,
+    @SerializedName("client_line_id") val clientLineId: String? = null
 )
 
 data class CreateOrderRequest(
@@ -42,7 +44,8 @@ data class AddOrderItemRequest(
     @SerializedName("product_name") val productName: String,
     @SerializedName("quantity") val quantity: Int,
     @SerializedName("price") val price: Double,
-    @SerializedName("notes") val notes: String = ""
+    @SerializedName("notes") val notes: String = "",
+    @SerializedName("client_line_id") val clientLineId: String? = null
 )
 
 /** KDS: push item status (preparing / ready) to backend for sync */

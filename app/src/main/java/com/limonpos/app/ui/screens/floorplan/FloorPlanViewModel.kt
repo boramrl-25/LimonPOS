@@ -1,4 +1,4 @@
-﻿package com.limonpos.app.ui.screens.floorplan
+package com.limonpos.app.ui.screens.floorplan
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -11,6 +11,8 @@ import com.limonpos.app.data.repository.ApiSyncRepository
 import com.limonpos.app.data.repository.AuthRepository
 import com.limonpos.app.data.repository.OrderRepository
 import com.limonpos.app.data.repository.OverdueWarningHolder
+import com.limonpos.app.data.repository.ReservationReminderHolder
+import com.limonpos.app.data.repository.UpcomingReservationAlert
 import com.limonpos.app.data.repository.TableRepository
 import com.limonpos.app.data.repository.OverdueUndelivered
 import com.limonpos.app.data.repository.VoidRequestRepository
@@ -70,7 +72,8 @@ class FloorPlanViewModel @Inject constructor(
     private val kitchenPrintHelper: KitchenPrintHelper,
     private val voidRequestRepository: VoidRequestRepository,
     private val closedBillAccessRequestDao: ClosedBillAccessRequestDao,
-    private val overdueWarningHolder: OverdueWarningHolder
+    private val overdueWarningHolder: OverdueWarningHolder,
+    private val reservationReminderHolder: ReservationReminderHolder
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(FloorPlanUiState())
@@ -98,11 +101,17 @@ class FloorPlanViewModel @Inject constructor(
 
     val overdueWarning: StateFlow<List<OverdueUndelivered>?> = overdueWarningHolder.overdue
 
+    val reservationUpcoming: StateFlow<List<UpcomingReservationAlert>> = reservationReminderHolder.upcoming
+
+    private val _canCancelReservation = MutableStateFlow(false)
+    val canCancelReservation: StateFlow<Boolean> = _canCancelReservation.asStateFlow()
+
     companion object {
         private const val POLL_INTERVAL_MS = 25_000L
     }
 
     init {
+        viewModelScope.launch { _canCancelReservation.value = authRepository.isSupervisorRole() }
         loadTables()
         syncFromApi()
         startPeriodicSync()
@@ -123,6 +132,14 @@ class FloorPlanViewModel @Inject constructor(
         overdueWarningHolder.update(null)
     }
 
+    fun dismissReservationReminder() {
+        reservationReminderHolder.dismiss()
+    }
+
+    /** Returns true if we should play notification sound for this list (first time only per reservation). */
+    fun shouldPlayReservationNotification(list: List<UpcomingReservationAlert>): Boolean =
+        reservationReminderHolder.shouldShowNotification(list)
+
     private fun syncFromApi() {
         viewModelScope.launch {
             if (apiSyncRepository.isOnline()) {
@@ -137,6 +154,7 @@ class FloorPlanViewModel @Inject constructor(
 
     private fun loadTables() {
         viewModelScope.launch {
+            _canCancelReservation.value = authRepository.isSupervisorRole()
             tableRepository.getAllTables().collect { allTables ->
                 val floors = allTables.map { it.floor }.distinct().sorted()
                 val byFloor = allTables.groupBy { it.floor }
@@ -222,6 +240,12 @@ class FloorPlanViewModel @Inject constructor(
 
     fun cancelReservation(tableId: String) {
         viewModelScope.launch {
+            if (!authRepository.isSupervisorRole()) {
+                _uiState.update {
+                    it.copy(reserveTableError = "Only supervisor or manager can cancel reservations.")
+                }
+                return@launch
+            }
             _uiState.update { it.copy(reserveTableLoading = true, reserveTableError = null) }
             val ok = apiSyncRepository.cancelTableReservation(tableId)
             _uiState.update {
@@ -351,6 +375,7 @@ class FloorPlanViewModel @Inject constructor(
             orderRepository.closeTableManually(tableId)
             if (apiSyncRepository.isOnline()) {
                 apiSyncRepository.pushCloseTable(tableId)
+                apiSyncRepository.pushTableStatesNow()
             }
         }
     }

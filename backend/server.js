@@ -979,30 +979,30 @@ app.get("/api/dashboard/open-orders", authMiddleware, async (req, res) => {
   res.json(list);
 });
 
-// Masalarda gecikmiş ürünü olan masa id'leri (mutfağa gitti, masaya gitmedi, süre aşıldı). Web floor'da yanıp sönsün.
+// Masalarda gecikmiş ürünü olan masa id'leri (mutfağa gitti, masaya gitmedi, ürün bazlı süre aşıldı). Web floor'da yanıp sönsün.
 app.get("/api/dashboard/overdue-table-ids", authMiddleware, async (req, res) => {
   await ensureData();
   const settings = db.data.settings || {};
-  const overdueMinutes = Math.min(1440, Math.max(1, (settings.overdue_undelivered_minutes ?? 10) | 0));
+  const defaultOverdueMinutes = Math.min(1440, Math.max(1, (settings.overdue_undelivered_minutes ?? 10) | 0));
   const tables = db.data.tables || [];
   const orders = db.data.orders || [];
   const orderItems = db.data.order_items || [];
+  const products = db.data.products || [];
   const orderIdsLinkedToTable = new Set(tables.filter((t) => t.current_order_id).map((t) => t.current_order_id));
   const openOrders = orders.filter((o) => (o.status === "open" || o.status === "sent") && orderIdsLinkedToTable.has(o.id));
   const now = Date.now();
-  const thresholdMs = overdueMinutes * 60 * 1000;
   const tableIds = new Set();
   for (const order of openOrders) {
-    const hasOverdue = orderItems.some(
-      (i) =>
-        i.order_id === order.id &&
-        i.sent_at != null &&
-        (i.delivered_at == null || i.delivered_at === undefined) &&
-        now - i.sent_at > thresholdMs
-    );
+    const hasOverdue = orderItems.some((i) => {
+      if (i.order_id !== order.id || i.sent_at == null || (i.delivered_at != null && i.delivered_at !== undefined)) return false;
+      const product = i.product_id ? products.find((p) => p.id === i.product_id) : null;
+      const itemMinutes = product?.overdue_undelivered_minutes != null ? product.overdue_undelivered_minutes : defaultOverdueMinutes;
+      const thresholdMs = itemMinutes * 60 * 1000;
+      return now - i.sent_at > thresholdMs;
+    });
     if (hasOverdue) tableIds.add(order.table_id);
   }
-  res.json({ tableIds: [...tableIds], overdueMinutes });
+  res.json({ tableIds: [...tableIds], overdueMinutes: defaultOverdueMinutes });
 });
 
 // Daily Sales: ?date=YYYY-MM-DD (tek gün) veya ?dateFrom=YYYY-MM-DD&dateTo=YYYY-MM-DD (aralık); yoksa bugün.
@@ -1336,12 +1336,19 @@ app.get("/api/orders/discount-requests", authMiddleware, async (req, res) => {
   res.json({ requests: list });
 });
 
-// Orders (full ticket detail: order, items, payments, voids, refunds)
+// Orders (full ticket detail: order, items, payments, voids, refunds). Items enriched with product overdue_undelivered_minutes for web floor.
 app.get("/api/orders/:id", authMiddleware, async (req, res) => {
   await ensureData();
   const order = db.data.orders.find((o) => o.id === req.params.id);
   if (!order) return res.status(404).json({ error: "Not found" });
-  const items = (db.data.order_items || []).filter((i) => i.order_id === order.id);
+  const rawItems = (db.data.order_items || []).filter((i) => i.order_id === order.id);
+  const products = db.data.products || [];
+  const defaultOverdue = Math.min(1440, Math.max(1, (db.data.settings?.overdue_undelivered_minutes ?? 10) | 0));
+  const items = rawItems.map((i) => {
+    const product = i.product_id ? products.find((p) => p.id === i.product_id) : null;
+    const overdue_undelivered_minutes = product?.overdue_undelivered_minutes != null ? product.overdue_undelivered_minutes : defaultOverdue;
+    return { ...i, overdue_undelivered_minutes };
+  });
   const payments = (db.data.payments || []).filter((p) => p.order_id === order.id);
   const voids = (db.data.void_logs || []).filter((v) => v.order_id === order.id);
   res.json({ ...order, items, payments, voids });
@@ -1401,9 +1408,32 @@ app.post("/api/orders/:id/items", authMiddleware, async (req, res) => {
   await ensureData();
   const orderId = req.params.id;
   const body = req.body;
-  const itemId = `item_${uuid().slice(0, 8)}`;
+  const clientLineId = body.client_line_id || null;
   db.data.order_items = db.data.order_items || [];
-  db.data.order_items.push({ id: itemId, order_id: orderId, product_id: body.product_id || null, product_name: body.product_name || "Item", quantity: body.quantity ?? 1, price: body.price ?? 0, notes: body.notes || "", status: "pending", sent_at: null });
+
+  // Idempotency: if client_line_id provided, find existing line in same order and update instead of create
+  if (clientLineId) {
+    const idx = db.data.order_items.findIndex((i) => i.order_id === orderId && i.client_line_id === clientLineId);
+    if (idx >= 0) {
+      const existing = db.data.order_items[idx];
+      const updated = {
+        ...existing,
+        product_id: body.product_id ?? existing.product_id,
+        product_name: body.product_name ?? existing.product_name,
+        quantity: body.quantity ?? existing.quantity ?? 1,
+        price: body.price ?? existing.price ?? 0,
+        notes: body.notes ?? existing.notes ?? "",
+      };
+      db.data.order_items[idx] = updated;
+      recalcOrderTotal(orderId);
+      await db.write();
+      return res.json({ ...updated, order_id: orderId });
+    }
+  }
+
+  const itemId = `item_${uuid().slice(0, 8)}`;
+  const newItem = { id: itemId, order_id: orderId, product_id: body.product_id || null, product_name: body.product_name || "Item", quantity: body.quantity ?? 1, price: body.price ?? 0, notes: body.notes || "", status: "pending", sent_at: null, client_line_id: clientLineId };
+  db.data.order_items.push(newItem);
   recalcOrderTotal(orderId);
   await db.write();
   const item = db.data.order_items.find((i) => i.id === itemId);

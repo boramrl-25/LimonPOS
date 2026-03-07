@@ -17,7 +17,6 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
-import android.util.Log
 import java.util.UUID
 import javax.inject.Inject
 
@@ -112,9 +111,9 @@ class OrderRepository @Inject constructor(
             updateItemQuantityAndNotes(existing.id, existing.quantity + safeQty, existing.notes)
             orderItemDao.getOrderItemById(existing.id)
         } else {
-            val itemId = UUID.randomUUID().toString()
+            val clientLineId = UUID.randomUUID().toString()
             val item = OrderItemEntity(
-                id = itemId,
+                id = clientLineId,
                 orderId = orderId,
                 productId = productId,
                 productName = productName,
@@ -123,6 +122,7 @@ class OrderRepository @Inject constructor(
                 notes = notes,
                 status = "pending",
                 sentAt = null,
+                clientLineId = clientLineId,
                 apiId = null,
                 syncStatus = "PENDING"
             )
@@ -155,12 +155,11 @@ class OrderRepository @Inject constructor(
         for (item in items) {
             if (item.sentAt == null) {
                 orderItemDao.updateOrderItem(item.copy(status = "sent", sentAt = now, syncStatus = "PENDING"))
-                Log.d("OverdueVerify", "step4 sentAt set: orderId=$orderId itemId=${item.id} productId=${item.productId} sentAt=$now deliveredAt=${item.deliveredAt}")
             }
         }
     }
 
-    /** Mark items as sent. sentAt is set only when item.sentAt == null (immutable once set). */
+    /** Mark items as sent. sentAt = first send time, set only when null (immutable once set). Retry/reprint do not touch sentAt. */
     suspend fun markItemsAsSent(orderId: String, itemIds: List<String>) {
         if (itemIds.isEmpty()) return
         val order = orderDao.getOrderById(orderId) ?: return
@@ -169,7 +168,6 @@ class OrderRepository @Inject constructor(
             if (item.id in itemIds) {
                 if (item.sentAt == null) {
                     orderItemDao.updateOrderItem(item.copy(status = "sent", sentAt = now, syncStatus = "PENDING"))
-                    Log.d("OverdueVerify", "step4 sentAt set: orderId=$orderId itemId=${item.id} productId=${item.productId} sentAt=$now deliveredAt=${item.deliveredAt}")
                 } else {
                     orderItemDao.updateOrderItem(item.copy(status = "sent", syncStatus = "PENDING"))
                 }
@@ -216,28 +214,16 @@ class OrderRepository @Inject constructor(
             val overdue = items.filter { item ->
                 if (item.sentAt == null) return@filter false
                 if (item.deliveredAt != null) return@filter false
-                Log.d("OverdueVerify", "step5 candidate: orderId=${order.id} itemId=${item.id} productId=${item.productId} sentAt=${item.sentAt} deliveredAt=${item.deliveredAt}")
                 val product = productDao.getProductById(item.productId)
-                val minutes = product?.overdueUndeliveredMinutes
-                Log.d("OverdueVerify", "step5 product: productId=${item.productId} product.overdueUndeliveredMinutes=$minutes")
-                if (minutes == null) {
-                    Log.d("OverdueVerify", "step6 filter OUT: itemId=${item.id} reason=minutes==null")
-                    return@filter false
-                }
-                if (minutes !in 1..1440) {
-                    Log.d("OverdueVerify", "step6 filter OUT: itemId=${item.id} reason=minutes !in 1..1440 ($minutes)")
-                    return@filter false
-                }
+                val minutes = product?.overdueUndeliveredMinutes ?: return@filter false
+                if (minutes !in 1..1440) return@filter false
                 val cutoff = now - minutes * 60 * 1000L
-                val isOverdue = item.sentAt < cutoff
-                Log.d("OverdueVerify", "step6 itemId=${item.id} cutoff=$cutoff now=$now isOverdue=$isOverdue (sentAt < cutoff)")
-                isOverdue
+                item.sentAt < cutoff
             }
             if (overdue.isNotEmpty()) {
                 result.add(OverdueUndelivered(tableNumber = order.tableNumber, tableId = order.tableId, orderId = order.id, items = overdue))
             }
         }
-        Log.d("OverdueVerify", "step6 getOverdueUndelivered result size=${result.size} tables=${result.map { it.tableNumber }}")
         return result
     }
 

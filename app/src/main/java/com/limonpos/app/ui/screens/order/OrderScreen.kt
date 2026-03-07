@@ -61,6 +61,7 @@ import com.limonpos.app.ui.theme.*
 import com.limonpos.app.ui.components.PrinterWarningDialog
 import kotlinx.coroutines.flow.StateFlow
 import com.limonpos.app.util.CurrencyUtils
+import com.limonpos.app.data.repository.ReservationStatusHelper
 import com.limonpos.app.data.repository.OverdueUndelivered
 import android.media.AudioManager
 import android.media.ToneGenerator
@@ -248,6 +249,26 @@ fun OrderScreen(
                         )
                     }
                     Spacer(modifier = Modifier.height(8.dp))
+                }
+                uiState.table?.let { table ->
+                    if (ReservationStatusHelper.isReservationUpcoming(table, System.currentTimeMillis(), 30)) {
+                        val fromStr = table.reservationFrom?.let { ts ->
+                            java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date(ts))
+                        } ?: ""
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            color = LimonError.copy(alpha = 0.15f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text(
+                                "Upcoming reservation at $fromStr${table.reservationGuestName?.takeIf { it.isNotBlank() }?.let { " – $it" }.orEmpty()}",
+                                color = LimonError,
+                                fontSize = 13.sp,
+                                modifier = Modifier.padding(12.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
                 }
                 uiState.closeTableError?.let { err ->
                     Surface(
@@ -497,10 +518,19 @@ fun OrderScreen(
     }
 
     if (showCloseTableConfirm) {
+        val table = uiState.table
+        val willReturnToReserved = table != null && ReservationStatusHelper.shouldReturnToReservedAfterClose(table, System.currentTimeMillis())
         AlertDialog(
             onDismissRequest = { showCloseTableConfirm = false; viewModel.clearCloseTableError() },
             title = { Text("Close Table", color = LimonText) },
-            text = { Text("Items will be discarded. Continue?", color = LimonTextSecondary) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Items will be discarded. Continue?", color = LimonTextSecondary)
+                    if (willReturnToReserved) {
+                        Text("Table will remain reserved for the upcoming reservation.", color = com.limonpos.app.ui.theme.LimonInfo, fontSize = 13.sp)
+                    }
+                }
+            },
             confirmButton = {
                 Button(
                     onClick = {
@@ -1111,7 +1141,6 @@ private fun OverdueUndeliveredDialog(
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("10 dakikadan fazla süredir mutfakta olup masaya gelmeyen ürünler:", color = LimonTextSecondary, fontSize = 13.sp)
                 overdueList.forEach { block ->
                     Card(
                         colors = CardDefaults.cardColors(containerColor = LimonSurface),

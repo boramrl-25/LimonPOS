@@ -1,9 +1,18 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { ArrowLeft, Search, RefreshCw, Settings2, X, Calendar } from "lucide-react";
 import { getTables, getFloorPlanSections, updateFloorPlanSections, getOrder, getOverdueTableIds, reserveTable, cancelTableReservation, type FloorPlanSections, type Order, type TableReservation } from "@/lib/api";
+import {
+  FLOOR_LEGEND,
+  DELAYED_ITEMS_TITLE,
+  getItemStatusText,
+  getItemStatusKind,
+  isItemDelayed,
+  getDelayLabel,
+  TOAST_TABLE_DELAYED,
+} from "@/lib/floorStatusStrings";
 
 type Table = {
   id: string;
@@ -36,6 +45,10 @@ export default function FloorPlanPage() {
   const [reserveError, setReserveError] = useState<string | null>(null);
   const [tableIdsWithOverdue, setTableIdsWithOverdue] = useState<string[]>([]);
   const [overdueMinutes, setOverdueMinutes] = useState(10);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const overdueCooldownMs = 2 * 60 * 1000; // 2 min same table
+  const lastOverdueWarningAt = useRef<Record<string, number>>({});
+  const prevOverdueTableIds = useRef<string[]>([]);
 
   useEffect(() => {
     load();
@@ -45,6 +58,38 @@ export default function FloorPlanPage() {
     const t = setInterval(load, 10000); // her 10 sn'de bir güncelle
     return () => clearInterval(t);
   }, []);
+
+  // Sound + toast when a table first has delayed items; cooldown per table to avoid spam
+  useEffect(() => {
+    const prev = prevOverdueTableIds.current;
+    const now = Date.now();
+    const added = tableIdsWithOverdue.filter((id) => !prev.includes(id));
+    for (const tableId of added) {
+      const last = lastOverdueWarningAt.current[tableId] ?? 0;
+      if (now - last >= overdueCooldownMs) {
+        lastOverdueWarningAt.current[tableId] = now;
+        const table = tables.find((t) => t.id === tableId);
+        const tableNum = table?.number ?? tableId;
+        setToastMessage(TOAST_TABLE_DELAYED(tableNum));
+        try {
+          const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.frequency.value = 800;
+          osc.type = "sine";
+          gain.gain.setValueAtTime(0.15, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
+          osc.start(ctx.currentTime);
+          osc.stop(ctx.currentTime + 0.15);
+        } catch {
+          // ignore if AudioContext not allowed (e.g. autoplay policy)
+        }
+      }
+    }
+    prevOverdueTableIds.current = tableIdsWithOverdue;
+  }, [tableIdsWithOverdue, tables, overdueCooldownMs]);
 
   async function load() {
     try {
@@ -170,17 +215,25 @@ export default function FloorPlanPage() {
     }
   }
 
-  /** English: "Just now", "1 min ago", "X min ago" for modal. */
-  function minsAgoEn(ts: number | null): string {
-    if (ts == null) return "";
-    const mins = Math.floor((Date.now() - ts) / 60000);
-    if (mins < 1) return "Just now";
-    if (mins === 1) return "1 min ago";
-    return `${mins} min ago`;
-  }
+  useEffect(() => {
+    if (!toastMessage) return;
+    const t = setTimeout(() => setToastMessage(null), 4000);
+    return () => clearTimeout(t);
+  }, [toastMessage]);
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
+      {toastMessage && (
+        <div
+          role="alert"
+          className="fixed top-4 left-1/2 -translate-x-1/2 z-[60] px-4 py-3 rounded-lg bg-amber-600 text-white font-medium shadow-lg flex items-center gap-3 max-w-md"
+        >
+          <span className="flex-1">{toastMessage}</span>
+          <button type="button" onClick={() => setToastMessage(null)} className="p-1 rounded hover:bg-amber-500">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
       <div className="flex items-center gap-4 mb-6">
         <Link href="/dashboard" className="text-slate-400 hover:text-white">
           <ArrowLeft className="w-5 h-5" />
@@ -234,7 +287,7 @@ export default function FloorPlanPage() {
         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500" /> Occupied</span>
         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-slate-500" /> Reserved</span>
         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500" /> Bill</span>
-        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" /> Gecikmiş ürün (yanıp söner)</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" /> Delayed items (pulsing)</span>
       </div>
 
       {loading ? (
@@ -301,54 +354,53 @@ export default function FloorPlanPage() {
             <div className="p-4 overflow-y-auto flex-1">
               {(() => {
                 const items = selectedTableOrder.order.items || [];
-                const thresholdMs = overdueMinutes * 60 * 1000;
-                const overdueItems = items.filter(
-                  (i) => i.sent_at != null && (i.delivered_at == null || i.delivered_at === undefined) && Date.now() - (i.sent_at ?? 0) > thresholdMs
-                );
+                const delayedItems = items.filter((i) => isItemDelayed(i, overdueMinutes));
                 return (
                   <>
-                    {overdueItems.length > 0 && (
+                    {delayedItems.length > 0 && (
                       <div className="mb-4 p-3 rounded-lg bg-red-900/40 border border-red-500/60">
-                        <p className="font-medium text-red-200 text-sm mb-2">Delayed items</p>
+                        <p className="font-medium text-red-200 text-sm mb-2">{DELAYED_ITEMS_TITLE}</p>
                         <ul className="space-y-1 text-sm">
-                          {overdueItems.map((item) => {
-                            const minsOverdue = Math.floor((Date.now() - (item.sent_at ?? 0)) / 60000) - overdueMinutes;
-                            return (
-                              <li key={item.id} className="text-red-100">
-                                {item.product_name}
-                                {item.quantity > 1 && ` ×${item.quantity}`}
-                                <span className="text-red-300 ml-1">— {minsOverdue > 0 ? `${minsOverdue} min delayed` : "past due"}</span>
-                              </li>
-                            );
-                          })}
+                          {delayedItems.map((item) => (
+                            <li key={item.id} className="text-red-100">
+                              {item.product_name}
+                              {item.quantity > 1 && ` ×${item.quantity}`}
+                              <span className="text-red-300 ml-1">— {getDelayLabel(item, overdueMinutes)}</span>
+                            </li>
+                          ))}
                         </ul>
                       </div>
                     )}
-                    <p className="text-slate-400 text-sm mb-3">In Kitchen = sent to kitchen; Delivered = waiter delivered to table</p>
+                    <p className="text-slate-400 text-sm mb-3">{FLOOR_LEGEND}</p>
                     <ul className="space-y-3">
                       {items.map((item) => {
-                        const sent = item.status !== "pending" && item.sent_at != null;
-                        const delivered = item.delivered_at != null || item.status === "delivered";
-                        const sentAgoEn = sent ? minsAgoEn(item.sent_at ?? null) : "";
-                        const deliveredAgoEn = item.delivered_at ? minsAgoEn(item.delivered_at) : null;
-                        const isOverdue = sent && !delivered && item.sent_at != null && Date.now() - (item.sent_at ?? 0) > thresholdMs;
+                        const kind = getItemStatusKind(item, overdueMinutes);
+                        const statusText = getItemStatusText(item, overdueMinutes);
+                        const rowClass =
+                          kind === "delivered"
+                            ? "text-emerald-200"
+                            : kind === "in_kitchen_delayed"
+                              ? "text-red-200"
+                              : kind === "in_kitchen"
+                                ? "text-slate-200"
+                                : "text-amber-200";
+                        const badgeClass =
+                          kind === "delivered"
+                            ? "text-emerald-400 font-medium"
+                            : kind === "in_kitchen_delayed"
+                              ? "text-red-400 font-medium"
+                              : kind === "in_kitchen"
+                                ? "text-sky-400"
+                                : "text-amber-400";
                         return (
-                          <li key={item.id} className={`flex justify-between items-start py-2 border-b border-slate-700/50 ${delivered ? "text-emerald-200" : isOverdue ? "text-red-200" : sent ? "text-slate-200" : "text-amber-200"}`}>
+                          <li key={item.id} className={`flex justify-between items-start py-2 border-b border-slate-700/50 ${rowClass}`}>
                             <div>
                               <span className="font-medium">{item.product_name}</span>
                               {item.quantity > 1 && <span className="text-slate-400 ml-1">×{item.quantity}</span>}
                               {item.notes && <span className="text-slate-500 text-sm block">{item.notes}</span>}
                             </div>
                             <div className="text-right text-sm">
-                              {delivered ? (
-                                <span className="text-emerald-400 font-medium">
-                                  {deliveredAgoEn ? `${deliveredAgoEn} to table` : "To table"}
-                                </span>
-                              ) : sent ? (
-                                <span className={isOverdue ? "text-red-400 font-medium" : "text-sky-400"}>In Kitchen {sentAgoEn}{isOverdue ? " (delayed)" : ""}</span>
-                              ) : (
-                                <span className="text-amber-400">On Hold</span>
-                              )}
+                              <span className={badgeClass}>{statusText}</span>
                             </div>
                           </li>
                         );

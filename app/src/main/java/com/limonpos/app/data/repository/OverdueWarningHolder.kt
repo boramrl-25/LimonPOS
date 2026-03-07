@@ -1,6 +1,5 @@
 package com.limonpos.app.data.repository
 
-import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -18,7 +17,6 @@ class OverdueWarningHolder @Inject constructor() {
     private val NOTIFICATION_COOLDOWN_MS = 2 * 60 * 1000L
 
     fun update(list: List<OverdueUndelivered>?) {
-        Log.d("OverdueVerify", "step8 holder.update list.size=${list?.size ?: 0}")
         _overdue.value = list
     }
 
