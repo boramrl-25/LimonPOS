@@ -166,12 +166,13 @@ export default function FloorPlanPage() {
     }
   }
 
-  function minsAgo(sentAt: number | null): string {
-    if (sentAt == null) return "";
-    const mins = Math.floor((Date.now() - sentAt) / 60000);
-    if (mins < 1) return "Just now";
-    if (mins === 1) return "1 min ago";
-    return `${mins} min ago`;
+  /** "X dk önce" veya "Az önce" — mutfağa gönderilme / masaya gitme için ortak. */
+  function minsAgo(ts: number | null): string {
+    if (ts == null) return "";
+    const mins = Math.floor((Date.now() - ts) / 60000);
+    if (mins < 1) return "Az önce";
+    if (mins === 1) return "1 dk önce";
+    return `${mins} dk önce`;
   }
 
   return (
@@ -295,7 +296,7 @@ export default function FloorPlanPage() {
                 {(selectedTableOrder.order.items || []).map((item) => {
                   const sent = item.status !== "pending" && item.sent_at != null;
                   const delivered = item.delivered_at != null || item.status === "delivered";
-                  const ago = minsAgo(item.sent_at ?? null);
+                  const sentAgo = sent ? minsAgo(item.sent_at ?? null) : "";
                   const deliveredAgo = item.delivered_at ? minsAgo(item.delivered_at) : null;
                   return (
                     <li key={item.id} className={`flex justify-between items-start py-2 border-b border-slate-700/50 ${delivered ? "text-emerald-200" : sent ? "text-slate-200" : "text-amber-200"}`}>
@@ -306,9 +307,11 @@ export default function FloorPlanPage() {
                       </div>
                       <div className="text-right text-sm">
                         {delivered ? (
-                          <span className="text-emerald-400 font-medium">Masaya gitti{deliveredAgo != null ? ` — ${deliveredAgo}` : ""}</span>
+                          <span className="text-emerald-400 font-medium">
+                            {deliveredAgo != null ? `${deliveredAgo} masaya gitti` : "Masaya gitti"}
+                          </span>
                         ) : sent ? (
-                          <span className="text-sky-400">Mutfakta — {ago}</span>
+                          <span className="text-sky-400">{sentAgo ? `${sentAgo} gönderildi` : "Gönderildi"}</span>
                         ) : (
                           <span className="text-amber-400">Henüz gönderilmedi</span>
                         )}
