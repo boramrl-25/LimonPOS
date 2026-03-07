@@ -311,7 +311,7 @@ export default function FloorPlanPage() {
                             {deliveredAgo != null ? `${deliveredAgo} masaya gitti` : "Masaya gitti"}
                           </span>
                         ) : sent ? (
-                          <span className="text-sky-400">{sentAgo ? `${sentAgo} gönderildi` : "Gönderildi"}</span>
+                          <span className="text-sky-400">{sentAgo} yapıldı</span>
                         ) : (
                           <span className="text-amber-400">Henüz gönderilmedi</span>
                         )}
