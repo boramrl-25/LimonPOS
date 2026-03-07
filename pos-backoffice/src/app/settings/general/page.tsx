@@ -21,12 +21,9 @@ const TIMEZONE_OPTIONS = [
 export default function GeneralSettingsPage() {
   const [timezoneOffsetMinutes, setTimezoneOffsetMinutes] = useState(180);
   const [manualOffset, setManualOffset] = useState("");
-  const [overdueUndeliveredMinutes, setOverdueUndeliveredMinutes] = useState(0);
   const [loading, setLoading] = useState(true);
   const [savingTimezone, setSavingTimezone] = useState(false);
   const [savedTimezone, setSavedTimezone] = useState(false);
-  const [savingOverdue, setSavingOverdue] = useState(false);
-  const [savedOverdue, setSavedOverdue] = useState(false);
 
   useEffect(() => {
     load();
@@ -36,7 +33,6 @@ export default function GeneralSettingsPage() {
     try {
       const s = await getSettings();
       setTimezoneOffsetMinutes(s.timezone_offset_minutes ?? 0);
-      setOverdueUndeliveredMinutes(s.overdue_undelivered_minutes != null ? Math.min(1440, Math.max(1, s.overdue_undelivered_minutes)) : 0);
       setManualOffset("");
     } catch {
       window.location.href = "/login";
@@ -65,26 +61,6 @@ export default function GeneralSettingsPage() {
       alert((err as Error).message);
     } finally {
       setSavingTimezone(false);
-    }
-  }
-
-  /** Sadece masaya gitmeyen ürün uyarı süresini kaydeder. Saat dilimini etkilemez. */
-  async function saveOverdue(e?: React.MouseEvent) {
-    e?.preventDefault();
-    if (overdueUndeliveredMinutes < 1 || overdueUndeliveredMinutes > 1440) {
-      alert("Lütfen 1–1440 arası bir değer girin.");
-      return;
-    }
-    setSavingOverdue(true);
-    setSavedOverdue(false);
-    try {
-      await updateSettings({ overdue_undelivered_minutes: overdueUndeliveredMinutes });
-      setSavedOverdue(true);
-      setTimeout(() => setSavedOverdue(false), 3000);
-    } catch (err) {
-      alert((err as Error).message);
-    } finally {
-      setSavingOverdue(false);
     }
   }
 
@@ -158,40 +134,6 @@ export default function GeneralSettingsPage() {
           {savedTimezone && <span className="ml-3 text-green-400">Kaydedildi.</span>}
         </div>
 
-        <div className="rounded-xl bg-slate-800/50 border border-slate-700 p-6 mt-6">
-          <h2 className="text-lg font-semibold text-white mb-2">Products not delivered to table warning</h2>
-          <p className="text-slate-400 text-sm mb-4">
-            Mutfağa gidip belirtilen süre (dakika) içinde masaya ulaşmayan ürünler için uygulama uyarı verir. Garson &quot;Delivered&quot; (masaya geldi) işaretlemedikçe uyarı gösterilir.
-          </p>
-          <label className="block text-sm text-slate-300 mb-2">Duration (minutes) — your entered value is used</label>
-          <input
-            type="number"
-            min={1}
-            max={1440}
-            placeholder="e.g. 5"
-            value={overdueUndeliveredMinutes === 0 ? "" : overdueUndeliveredMinutes}
-            onChange={(e) => {
-              const v = e.target.value;
-              if (v === "") {
-                setOverdueUndeliveredMinutes(0);
-                return;
-              }
-              const n = parseInt(v, 10);
-              if (!isNaN(n)) setOverdueUndeliveredMinutes(Math.min(1440, Math.max(0, n)));
-            }}
-            className="w-full max-w-[120px] bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white mb-4"
-          />
-          <p className="text-slate-500 text-xs mb-4">1–1440 dakika. Mutfağa gittikten bu kadar dakika sonra uyarı verilir.</p>
-          <button
-            type="button"
-            onClick={saveOverdue}
-            disabled={savingOverdue || overdueUndeliveredMinutes < 1}
-            className="px-4 py-2 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 rounded-lg text-white font-medium"
-          >
-            {savingOverdue ? "Kaydediliyor..." : "Kaydet"}
-          </button>
-          {savedOverdue && <span className="ml-3 text-green-400">Kaydedildi.</span>}
-        </div>
       </main>
     </div>
   );

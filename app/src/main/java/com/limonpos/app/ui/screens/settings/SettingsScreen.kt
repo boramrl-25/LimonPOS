@@ -30,7 +30,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.core.content.ContextCompat
-import com.limonpos.app.data.prefs.AppSettingsPreferences
 import com.limonpos.app.ui.theme.*
 import kotlinx.coroutines.delay
 import android.Manifest
@@ -52,8 +51,6 @@ fun SettingsScreen(
     val context = LocalContext.current
     val userRole by viewModel.userRole.collectAsState(null)
     val isManager by viewModel.isManager.collectAsState(false)
-    val overdueDefaultMinutes by viewModel.overdueUndeliveredDefaultMinutes.collectAsState(AppSettingsPreferences.DEFAULT_MINUTES)
-    var overdueMinutesInput by remember(overdueDefaultMinutes) { mutableStateOf(overdueDefaultMinutes.toString()) }
     val isKdsOnly = userRole == "kds"
     val message by viewModel.message.collectAsState()
     val needsNotificationPermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
@@ -152,43 +149,6 @@ fun SettingsScreen(
                             Icon(Icons.Default.Notifications, contentDescription = null, modifier = Modifier.size(20.dp))
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("Ayarlara git / Open Settings", color = LimonText)
-                        }
-                    }
-                }
-                Spacer(modifier = Modifier.height(24.dp))
-            }
-            if (!isKdsOnly) {
-                Text("Products not delivered to table warning", fontWeight = FontWeight.Bold, color = LimonText, fontSize = 16.sp, modifier = Modifier.padding(bottom = 12.dp))
-                Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = LimonSurface)) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Default minutes after send before warning (1–1440). Product/category overrides apply when set.", color = LimonTextSecondary, fontSize = 12.sp, modifier = Modifier.padding(bottom = 8.dp))
-                        OutlinedTextField(
-                            value = overdueMinutesInput,
-                            onValueChange = { s -> overdueMinutesInput = s.filter { c -> c.isDigit() }.take(4) },
-                            label = { Text("Minutes", color = LimonTextSecondary) },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = LimonText,
-                                unfocusedTextColor = LimonText,
-                                focusedBorderColor = LimonPrimary,
-                                unfocusedBorderColor = LimonTextSecondary.copy(alpha = 0.5f),
-                                focusedLabelColor = LimonPrimary,
-                                unfocusedLabelColor = LimonTextSecondary
-                            )
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Button(
-                            onClick = {
-                                val n = overdueMinutesInput.toIntOrNull() ?: AppSettingsPreferences.DEFAULT_MINUTES
-                                val v = n.coerceIn(AppSettingsPreferences.MIN_MINUTES, AppSettingsPreferences.MAX_MINUTES)
-                                viewModel.setOverdueUndeliveredDefaultMinutes(v)
-                                overdueMinutesInput = v.toString()
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = LimonPrimary)
-                        ) {
-                            Text("Save default minutes", color = Color.White)
                         }
                     }
                 }

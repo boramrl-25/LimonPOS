@@ -1,11 +1,15 @@
 package com.limonpos.app.data.repository
 
+import androidx.room.withTransaction
+import com.limonpos.app.data.local.AppDatabase
+import com.limonpos.app.data.local.dao.AppliedClientActionDao
 import com.limonpos.app.data.local.dao.CategoryDao
 import com.limonpos.app.data.local.dao.OrderDao
 import com.limonpos.app.data.local.dao.OrderItemDao
 import com.limonpos.app.data.local.dao.PaymentDao
 import com.limonpos.app.data.local.dao.ProductDao
 import com.limonpos.app.data.local.dao.VoidLogDao
+import com.limonpos.app.data.local.entity.AppliedClientActionEntity
 import com.limonpos.app.data.local.entity.OrderEntity
 import com.limonpos.app.data.local.entity.VoidLogEntity
 import com.limonpos.app.data.local.entity.OrderItemEntity
@@ -30,8 +34,10 @@ data class OverdueUndelivered(
 )
 
 class OrderRepository @Inject constructor(
+    private val database: AppDatabase,
     private val orderDao: OrderDao,
     private val orderItemDao: OrderItemDao,
+    private val appliedClientActionDao: AppliedClientActionDao,
     private val paymentDao: PaymentDao,
     private val tableRepository: TableRepository,
     private val voidLogDao: VoidLogDao,
@@ -67,32 +73,64 @@ class OrderRepository @Inject constructor(
         return order
     }
 
+    /**
+     * Add item to order. If [clientActionId] is provided and was already applied, this is a no-op (idempotent).
+     * Returns the created/updated item when [clientActionId] is null (e.g. server/KDS); null when idempotent skip.
+     */
     suspend fun addItem(
         orderId: String,
         productId: String,
         productName: String,
         price: Double,
         quantity: Int,
-        notes: String = ""
-    ): OrderItemEntity {
-        val order = orderDao.getOrderById(orderId) ?: throw Exception("Order not found")
-        val itemId = UUID.randomUUID().toString()
-        val item = OrderItemEntity(
-            id = itemId,
-            orderId = orderId,
-            productId = productId,
-            productName = productName,
-            quantity = quantity,
-            price = price,
-            notes = notes,
-            status = "pending",
-            sentAt = null,
-            apiId = null,
-            syncStatus = "PENDING"
-        )
-        orderItemDao.insertOrderItem(item)
-        updateOrderTotals(orderId)
-        return item
+        notes: String = "",
+        clientActionId: String? = null
+    ): OrderItemEntity? {
+        if (clientActionId != null) {
+            database.withTransaction {
+                if (appliedClientActionDao.countById(clientActionId) > 0) return@withTransaction
+                doAddOrMergeItem(orderId, productId, productName, price, quantity, notes)
+                appliedClientActionDao.insert(AppliedClientActionEntity(clientActionId))
+            }
+            return null
+        }
+        return doAddOrMergeItem(orderId, productId, productName, price, quantity, notes)
+    }
+
+    private suspend fun doAddOrMergeItem(
+        orderId: String,
+        productId: String,
+        productName: String,
+        price: Double,
+        quantity: Int,
+        notes: String
+    ): OrderItemEntity? {
+        orderDao.getOrderById(orderId) ?: throw Exception("Order not found")
+        val existing = orderItemDao.getOrderItems(orderId).first()
+            .firstOrNull { it.status == "pending" && it.productId == productId && it.price == price && it.notes == notes }
+        return if (existing != null) {
+            val safeQty = quantity.coerceAtLeast(1)
+            updateItemQuantityAndNotes(existing.id, existing.quantity + safeQty, existing.notes)
+            orderItemDao.getOrderItemById(existing.id)
+        } else {
+            val itemId = UUID.randomUUID().toString()
+            val item = OrderItemEntity(
+                id = itemId,
+                orderId = orderId,
+                productId = productId,
+                productName = productName,
+                quantity = quantity.coerceAtLeast(1),
+                price = price,
+                notes = notes,
+                status = "pending",
+                sentAt = null,
+                apiId = null,
+                syncStatus = "PENDING"
+            )
+            orderItemDao.insertOrderItem(item)
+            updateOrderTotals(orderId)
+            item
+        }
     }
 
     private suspend fun updateOrderTotals(orderId: String) {
@@ -152,28 +190,26 @@ class OrderRepository @Inject constructor(
     }
 
     /**
-     * Ürün/kategori bazlı süre: product.overdueUndeliveredMinutes ?: category.overdueUndeliveredMinutes ?: defaultMinutes
+     * Masaya gitmeyen ürün uyarısı. Sadece product.overdueUndeliveredMinutes kullanılır (1..1440).
+     * sentAt != null, deliveredAt == null ve ürün dakikası aşılmış item'lar overdue sayılır.
+     * Üründe overdueUndeliveredMinutes yoksa veya geçersizse o item uyarıya dahil edilmez.
      */
-    suspend fun getOverdueUndelivered(defaultMinutes: Int): List<OverdueUndelivered> {
+    suspend fun getOverdueUndelivered(): List<OverdueUndelivered> {
         val orders = orderDao.getOpenAndSentOrders()
         val result = mutableListOf<OverdueUndelivered>()
         val now = System.currentTimeMillis()
         for (order in orders) {
-            // Kapanmış/ödeme alınmış masalarda "ürün masaya gitmedi" uyarısı gösterme
             if (order.status == "paid" || order.status == "closed") continue
             val table = tableRepository.getTableById(order.tableId)
             if (table == null || table.status == "free") continue
-            // Masa kapatıldıysa veya masanın mevcut siparişi bu sipariş değilse uyarı gösterme (saatler önce kapanan masa uyarı vermesin)
             if (table.currentOrderId == null || table.currentOrderId != order.id) continue
-            // Ödeme alındıysa (toplam ödeme >= sipariş tutarı) uyarı gösterme
             val totalPaid = paymentDao.getPaymentsSumByOrder(order.id)
             if (totalPaid >= order.total - 0.01) continue
             val items = orderItemDao.getOrderItems(order.id).first()
             val overdue = items.filter { item ->
                 if (item.sentAt == null || item.deliveredAt != null) return@filter false
-                val product = productDao.getProductById(item.productId)
-                val category = product?.categoryId?.let { categoryDao.getCategoryById(it) }
-                val minutes = (product?.overdueUndeliveredMinutes ?: category?.overdueUndeliveredMinutes ?: defaultMinutes).coerceIn(1, 1440)
+                val product = productDao.getProductById(item.productId) ?: return@filter false
+                val minutes = product.overdueUndeliveredMinutes?.takeIf { it in 1..1440 } ?: return@filter false
                 val cutoff = now - minutes * 60 * 1000L
                 item.sentAt < cutoff
             }

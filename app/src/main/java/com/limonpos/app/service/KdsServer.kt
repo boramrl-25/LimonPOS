@@ -386,7 +386,7 @@ class KdsServer @Inject constructor(
                                     val result = runBlocking {
                                         try {
                                             val item = orderRepository.addItem(orderId, req.productId, req.productName, req.price, req.quantity.coerceAtLeast(1), req.notes)
-                                            Pair(Response.Status.OK, """{"ok":true,"itemId":"${item.id}"}""")
+                                            Pair(Response.Status.OK, """{"ok":true,"itemId":"${item?.id ?: ""}"}""")
                                         } catch (e: Exception) {
                                             Pair(Response.Status.INTERNAL_ERROR, """{"ok":false,"error":"${e.message?.replace("\"", "'") ?: "Unknown"}"}""")
                                         }

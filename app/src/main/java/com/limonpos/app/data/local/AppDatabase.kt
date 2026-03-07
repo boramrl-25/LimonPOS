@@ -58,6 +58,14 @@ val MIGRATION_13_14 = object : Migration(13, 14) {
     }
 }
 
+val MIGRATION_14_15 = object : Migration(14, 15) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS applied_client_actions (id TEXT PRIMARY KEY NOT NULL)"
+        )
+    }
+}
+
 @Database(
     entities = [
         TableEntity::class,
@@ -74,9 +82,10 @@ val MIGRATION_13_14 = object : Migration(13, 14) {
         VoidLogEntity::class,
         UserEntity::class,
         VoidRequestEntity::class,
-        ClosedBillAccessRequestEntity::class
+        ClosedBillAccessRequestEntity::class,
+        AppliedClientActionEntity::class
     ],
-    version = 14,
+    version = 15,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -95,4 +104,5 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun userDao(): UserDao
     abstract fun voidRequestDao(): VoidRequestDao
     abstract fun closedBillAccessRequestDao(): ClosedBillAccessRequestDao
+    abstract fun appliedClientActionDao(): AppliedClientActionDao
 }

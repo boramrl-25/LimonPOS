@@ -1,4 +1,4 @@
-package com.limonpos.app.ui.screens.floorplan
+﻿package com.limonpos.app.ui.screens.floorplan
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -115,19 +115,6 @@ class FloorPlanViewModel @Inject constructor(
                 if (apiSyncRepository.isOnline()) {
                     apiSyncRepository.syncFromApi()
                 }
-            }
-        }
-    }
-
-    @Suppress("UNUSED")
-    private fun _removedOverdueLoop() {
-        viewModelScope.launch {
-            apiSyncRepository.clearOverdueMinutesCache() // ilk döngüde web’deki 1 dk ayarı hemen kullanılsın
-            while (true) {
-                val minutes = apiSyncRepository.getOverdueUndeliveredMinutes()
-                val list = orderRepository.getOverdueUndelivered(minutes)
-                overdueWarningHolder.update(if (list.isNotEmpty()) list else null)
-                delay(30 * 1000L) // 30 sn: 1 dk uyarı çalışsın, API/DB yükü makul kalsın
             }
         }
     }

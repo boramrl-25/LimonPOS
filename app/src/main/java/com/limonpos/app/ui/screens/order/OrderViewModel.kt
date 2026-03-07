@@ -331,10 +331,11 @@ class OrderViewModel @Inject constructor(
     private val _showRefundFullConfirm = MutableStateFlow(false)
     val showRefundFullConfirm: StateFlow<Boolean> = _showRefundFullConfirm.asStateFlow()
 
-    /** addToCart debounce: aynı ürün (id+fiyat+not) kısa sürede tekrar eklenirse sadece 1 kez işlenir (2x/4x tetiklenmeyi önler). */
+    /** Reuse same clientActionId for duplicate add (same key within window) so DB idempotency applies. */
     private var lastAddToCartKey: String? = null
     private var lastAddToCartTimeMs: Long = 0L
-    private val addToCartDebounceMs = 180L
+    private var lastAddToCartClientActionId: String? = null
+    private val addToCartDebounceMs = 500L
     private var isAddingProduct = false
     private val addProductMutex = Mutex()
 
@@ -385,15 +386,18 @@ class OrderViewModel @Inject constructor(
             }
             val key = "${product.id}|$totalPrice|$notes|$quantity"
             val now = System.currentTimeMillis()
-            val shouldSkip = withContext(Dispatchers.IO) {
-                addToCartMutex.withLock {
-                    if (key == lastAddToCartKey && (now - lastAddToCartTimeMs) < addToCartDebounceMs) return@withContext true
+            val clientActionId = addToCartMutex.withLock {
+                val reuse = key == lastAddToCartKey && (now - lastAddToCartTimeMs) < addToCartDebounceMs
+                if (reuse && lastAddToCartClientActionId != null) {
+                    lastAddToCartClientActionId!!
+                } else {
+                    val newId = java.util.UUID.randomUUID().toString()
                     lastAddToCartKey = key
                     lastAddToCartTimeMs = now
-                    false
+                    lastAddToCartClientActionId = newId
+                    newId
                 }
             }
-            if (shouldSkip) return@launch
             dismissModifierDialog()
             dismissNotesDialog()
             _uiState.update { it.copy(addToCartError = null) }
@@ -424,32 +428,15 @@ class OrderViewModel @Inject constructor(
                 val safeQuantity = quantity.coerceAtLeast(1)
                 val productName = if (modifierNames.isNotEmpty()) "${product.name} ($modifierNames)" else product.name
                 withContext(Dispatchers.IO) {
-                    addToCartMutex.withLock {
-                        val existing = orderRepository.getOrderWithItems(finalOrderId).first()
-                            ?.items
-                            ?.firstOrNull {
-                                it.status == "pending" &&
-                                    it.productId == product.id &&
-                                    it.price == totalPrice &&
-                                    it.notes == notes
-                            }
-                        if (existing != null) {
-                            orderRepository.updateItemQuantityAndNotes(
-                                itemId = existing.id,
-                                quantity = existing.quantity + safeQuantity,
-                                notes = existing.notes
-                            )
-                        } else {
-                            orderRepository.addItem(
-                                orderId = finalOrderId,
-                                productId = product.id,
-                                productName = productName,
-                                price = totalPrice,
-                                quantity = safeQuantity,
-                                notes = notes
-                            )
-                        }
-                    }
+                    orderRepository.addItem(
+                        orderId = finalOrderId,
+                        productId = product.id,
+                        productName = productName,
+                        price = totalPrice,
+                        quantity = safeQuantity,
+                        notes = notes,
+                        clientActionId = clientActionId
+                    )
                 }
                 val updated = withContext(Dispatchers.IO) {
                     orderRepository.getOrderWithItems(finalOrderId).first()
@@ -564,26 +551,51 @@ class OrderViewModel @Inject constructor(
         _uiState.update { it.copy(printerWarning = null) }
     }
 
-    fun dismissPrinterWarningAndMarkAsSent() {
+    /** Retry print for failed items. Uses warning state (pendingItemIds); does not re-send pending items. */
+    fun retryKitchenPrint() {
         viewModelScope.launch {
-            val ow = _uiState.value.orderWithItems ?: return@launch
-            val pendingItems = ow.items.filter { it.status == "pending" }
-            if (pendingItems.isNotEmpty()) {
-                orderRepository.markItemsAsSent(ow.order.id, pendingItems.map { it.id })
-            }
+            val s = printerWarningHolder.state.value ?: return@launch
+            printerWarningHolder.clear()
             _uiState.update { it.copy(printerWarning = null) }
+            val result = if (s.pendingItemIds.isNotEmpty()) {
+                kitchenPrintHelper.retryPrint(s.orderId, s.pendingItemIds)
+            } else {
+                kitchenPrintHelper.sendToKitchen(s.orderId)
+            }
+            when (result) {
+                is KitchenPrintResult.Success -> {
+                    val updated = withContext(Dispatchers.IO) {
+                        orderRepository.getOrderWithItems(s.orderId).first()
+                    }
+                    if (updated != null) {
+                        _uiState.update { it.copy(orderWithItems = updated) }
+                    }
+                }
+                is KitchenPrintResult.Failure -> {
+                    val msg = if (result.tableNumber.isNotBlank()) "Table ${result.tableNumber}: ${result.message}" else result.message
+                    printerWarningHolder.setWarning(PrinterWarningState(msg, result.orderId, result.tableId, result.pendingItemIds))
+                }
+            }
         }
     }
 
-    @Suppress("REMOVED_OVERDUE_LOOP")
-    private fun _removedOverdueLoop() {
+    /** Dismiss warning and mark items as sent (user accepts print failure). Uses warning state so correct orderId/itemIds are marked; then clears holder (and next queued warning may show). */
+    fun dismissPrinterWarningAndMarkAsSent() {
         viewModelScope.launch {
-            apiSyncRepository.clearOverdueMinutesCache() // ilk döngüde web’deki 1 dk ayarı hemen kullanılsın
-            while (true) {
-                val minutes = apiSyncRepository.getOverdueUndeliveredMinutes()
-                val list = orderRepository.getOverdueUndelivered(minutes)
-                overdueWarningHolder.update(if (list.isNotEmpty()) list else null)
-                delay(30 * 1000L) // 30 sn: 1 dk uyarı çalışsın, API/DB yükü makul kalsın
+            val s = printerWarningHolder.state.value ?: return@launch
+            if (s.pendingItemIds.isNotEmpty()) {
+                withContext(Dispatchers.IO) {
+                    orderRepository.markItemsAsSent(s.orderId, s.pendingItemIds)
+                }
+            }
+            printerWarningHolder.clear()
+            _uiState.update { it.copy(printerWarning = null) }
+            // Refresh UI in case we're still on this order
+            _orderId.value?.let { orderId ->
+                val updated = withContext(Dispatchers.IO) {
+                    orderRepository.getOrderWithItems(orderId).first()
+                }
+                if (updated != null) _uiState.update { it.copy(orderWithItems = updated) }
             }
         }
     }

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
@@ -21,7 +21,7 @@ type Product = {
   modifier_groups: string[];
   active: boolean;
   pos_enabled?: boolean;
-  /** Masaya gitmeyen ürün uyarı süresi (dakika). Varsa kategorideki/ayarlardaki süre yok sayılır. */
+  /** Masaya gitmeyen ürün uyarı süresi (dakika). Zorunlu, 1–1440. */
   overdue_undelivered_minutes?: number | null;
   /** API'dan gelen Sellable kolonu (true/false/string vb.) */
   sellable_from_api?: unknown;
@@ -185,6 +185,12 @@ export default function ProductsPage() {
       alert("Product name is required");
       return;
     }
+    const odRaw = form.overdue_undelivered_minutes;
+    const od = odRaw === "" ? null : Number(odRaw);
+    if (od == null || isNaN(od) || od < 1 || od > 1440) {
+      alert("Masaya gitmeyen ürün uyarı süresi (dakika) zorunludur ve 1–1440 arasında olmalıdır.");
+      return;
+    }
     try {
       const payload = {
         name: trimmedName,
@@ -198,7 +204,7 @@ export default function ProductsPage() {
         printers: form.printers,
         modifier_groups: form.modifier_groups,
         pos_enabled: form.pos_enabled,
-        overdue_undelivered_minutes: form.overdue_undelivered_minutes === "" ? undefined : (Number(form.overdue_undelivered_minutes) || undefined),
+        overdue_undelivered_minutes: od,
       };
       if (editing) {
         await updateProduct(editing.id, payload);
@@ -1205,17 +1211,18 @@ export default function ProductsPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm text-slate-400 mb-1">Masaya gitmeyen ürün uyarı süresi (dakika)</label>
+                <label className="block text-sm text-slate-400 mb-1">Masaya gitmeyen ürün uyarı süresi (dakika) *</label>
                 <input
                   type="number"
                   min={1}
                   max={1440}
-                  placeholder="Boş = kategori / varsayılan"
+                  required
+                  placeholder="1–1440 (zorunlu)"
                   value={form.overdue_undelivered_minutes === "" ? "" : form.overdue_undelivered_minutes}
                   onChange={(e) => setForm((f) => ({ ...f, overdue_undelivered_minutes: e.target.value === "" ? "" : (parseInt(e.target.value, 10) || 0) }))}
                   className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white"
                 />
-                <p className="text-slate-500 text-xs mt-1">Varsa kategorideki ve varsayılan süre yok sayılır; sadece bu ürün için bu dakika kullanılır. Boş = kategorideki süre, o da yoksa Ayarlar’daki varsayılan (10 dk).</p>
+                <p className="text-slate-500 text-xs mt-1">Zorunlu. Mutfağa gittikten bu dakika sonra masaya ulaşmazsa uyarı verilir. 1–1440 arası girin.</p>
               </div>
               <div>
                 <label className="block text-sm text-slate-400 mb-1">Printers</label>
