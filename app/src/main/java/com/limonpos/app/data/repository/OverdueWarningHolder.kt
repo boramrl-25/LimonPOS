@@ -12,7 +12,27 @@ class OverdueWarningHolder @Inject constructor() {
     private val _overdue = MutableStateFlow<List<OverdueUndelivered>?>(null)
     val overdue: StateFlow<List<OverdueUndelivered>?> = _overdue.asStateFlow()
 
+    private var lastNotifiedItemIds: Set<String> = emptySet()
+    private var lastNotifiedAt: Long = 0L
+    private val NOTIFICATION_COOLDOWN_MS = 2 * 60 * 1000L
+
     fun update(list: List<OverdueUndelivered>?) {
         _overdue.value = list
+    }
+
+    /**
+     * Returns true if we should show notification/sound for this list (avoids repeating for same items within cooldown).
+     * Call this before showing notification; when it returns true, the holder updates internal cooldown state.
+     */
+    fun shouldShowNotification(list: List<OverdueUndelivered>): Boolean {
+        if (list.isEmpty()) return false
+        val itemIds = list.flatMap { it.items }.map { it.id }.toSet()
+        val now = System.currentTimeMillis()
+        if (itemIds == lastNotifiedItemIds && (now - lastNotifiedAt) < NOTIFICATION_COOLDOWN_MS) {
+            return false
+        }
+        lastNotifiedItemIds = itemIds
+        lastNotifiedAt = now
+        return true
     }
 }

@@ -41,6 +41,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.limonpos.app.data.local.entity.TableEntity
 import com.limonpos.app.data.repository.OverdueUndelivered
 import com.limonpos.app.ui.theme.*
+import com.limonpos.app.ui.components.PrinterWarningDialog
 import kotlinx.coroutines.flow.StateFlow
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -171,9 +172,9 @@ fun FloorPlanScreen(
         if (overdueWarning.isNullOrEmpty()) return@LaunchedEffect
         val tg = ToneGenerator(AudioManager.STREAM_ALARM, 80)
         try {
-            while (true) {
+            repeat(3) {
                 tg.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 400)
-                delay(1500)
+                delay(500)
             }
         } finally {
             tg.release()
@@ -436,39 +437,16 @@ fun FloorPlanScreen(
             }
         }
         }
-            printerWarningState?.let { warning ->
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .align(Alignment.TopCenter),
-                    color = LimonError.copy(alpha = 0.15f),
-                    shadowElevation = 2.dp
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            warning.message,
-                            color = LimonError,
-                            fontSize = 13.sp,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            TextButton(onClick = { viewModel.retryKitchenPrint() }) {
-                                Text("Retry", color = LimonPrimary, fontWeight = FontWeight.SemiBold)
-                            }
-                            TextButton(onClick = { viewModel.dismissPrinterWarning() }) {
-                                Text("Dismiss", color = LimonTextSecondary)
-                            }
-                        }
-                    }
-                }
-            }
         }
+    }
+
+    printerWarningState?.let { warning ->
+        PrinterWarningDialog(
+            message = warning.message,
+            onRetry = { viewModel.retryKitchenPrint() },
+            onDismiss = { viewModel.dismissPrinterWarning() },
+            dismissLabel = "Kapat"
+        )
     }
 
     if (uiState.showLockDialog) {

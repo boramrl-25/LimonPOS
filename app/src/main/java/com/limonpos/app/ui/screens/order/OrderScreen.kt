@@ -58,6 +58,7 @@ import com.limonpos.app.data.local.entity.OrderItemEntity
 import com.limonpos.app.data.local.entity.ProductEntity
 import com.limonpos.app.data.local.entity.TableEntity
 import com.limonpos.app.ui.theme.*
+import com.limonpos.app.ui.components.PrinterWarningDialog
 import kotlinx.coroutines.flow.StateFlow
 import com.limonpos.app.util.CurrencyUtils
 import com.limonpos.app.data.repository.OverdueUndelivered
@@ -285,22 +286,6 @@ fun OrderScreen(
                         focusedLeadingIconColor = LimonPrimary
                     )
                 )
-                uiState.printerWarning?.let { warning ->
-                    if (warning.contains("Print failed")) {
-                        Row(
-                            modifier = Modifier.padding(top = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(warning, color = LimonError, fontSize = 12.sp, modifier = Modifier.weight(1f))
-                            TextButton(onClick = { viewModel.sendToKitchen() }) {
-                                Text("Retry", color = LimonPrimary, fontSize = 12.sp)
-                            }
-                            TextButton(onClick = { viewModel.dismissPrinterWarningAndMarkAsSent() }) {
-                                Text("Dismiss", color = LimonTextSecondary, fontSize = 12.sp)
-                            }
-                        }
-                    }
-                }
                 Spacer(modifier = Modifier.height(8.dp))
                 CategoryChipsRow(
                     categoriesWithProducts = uiState.categoriesWithProducts,
@@ -331,9 +316,9 @@ fun OrderScreen(
         if (overdueWarning.isNullOrEmpty()) return@LaunchedEffect
         val tg = ToneGenerator(AudioManager.STREAM_ALARM, 80)
         try {
-            while (true) {
+            repeat(3) {
                 tg.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 400)
-                delay(1500)
+                delay(500)
             }
         } finally {
             tg.release()
@@ -359,7 +344,7 @@ fun OrderScreen(
             onRefundFull = if (isRecalled) { { viewModel.showRefundFullConfirm() } } else null,
             isRecalledOrder = isRecalled,
             onSendToKitchen = { viewModel.sendToKitchen() },
-            onRetrySendToKitchen = { viewModel.sendToKitchen() },
+            onRetrySendToKitchen = { viewModel.retryKitchenPrint() },
             onDismissPrinterWarning = { viewModel.dismissPrinterWarningAndMarkAsSent() },
             onPayment = {
                 viewModel.dismissCart()
@@ -368,6 +353,14 @@ fun OrderScreen(
             canTakePayment = viewModel.canTakePayment.collectAsState(false).value,
             hasPrinterWarning = viewModel.hasPrinterWarningForTable.collectAsState(false).value,
             printerWarning = uiState.printerWarning
+        )
+    }
+    uiState.printerWarning?.let { warning ->
+        PrinterWarningDialog(
+            message = warning,
+            onRetry = { viewModel.retryKitchenPrint() },
+            onDismiss = { viewModel.dismissPrinterWarningAndMarkAsSent() },
+            dismissLabel = "Kapat"
         )
     }
     viewModel.itemToRefund.collectAsState(null).value?.let { item ->
@@ -649,22 +642,6 @@ private fun CartBottomSheet(
                         Icon(Icons.Default.Close, contentDescription = "Close", tint = LimonText)
                     }
                 }
-                printerWarning?.let { warning ->
-                    if (warning.contains("Print failed")) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(warning, color = LimonError, fontSize = 12.sp, modifier = Modifier.weight(1f))
-                            TextButton(onClick = onRetrySendToKitchen) { Text("Retry", color = LimonPrimary) }
-                            TextButton(onClick = onDismissPrinterWarning) { Text("Dismiss", color = LimonTextSecondary) }
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                    }
-                }
                 Spacer(modifier = Modifier.height(16.dp))
                 if (orderWithItems == null || orderWithItems.items.isEmpty()) {
                     Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
@@ -728,17 +705,6 @@ private fun CartBottomSheet(
                         }
                     }
                     Spacer(modifier = Modifier.height(16.dp))
-                    printerWarning?.let { warning ->
-                        if (!warning.contains("Print failed")) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(warning, color = LimonError, fontSize = 12.sp)
-                            }
-                            Spacer(modifier = Modifier.height(8.dp))
-                        }
-                    }
                     Text("Total: ${CurrencyUtils.format(orderWithItems.order.total)}", fontWeight = FontWeight.Bold, color = LimonPrimary, fontSize = 18.sp)
                     if (onRefundFull != null) {
                         Spacer(modifier = Modifier.height(8.dp))
@@ -906,13 +872,13 @@ private fun AddProductModifiersDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("${product.name} - Select Modifier", fontWeight = FontWeight.Bold) },
+        title = { },
         text = {
             Column {
                 if (loading) {
-                    Text("Yükleniyor...", color = LimonTextSecondary)
+                    Text("Yükleniyor...", color = LimonTextSecondary, fontSize = 16.sp)
                 } else if (groups.isEmpty()) {
-                    Text("Modifier grubu bulunamadı. Sync yapıp tekrar deneyin.", color = LimonTextSecondary, fontSize = 14.sp)
+                    Text("Modifier grubu bulunamadı. Sync yapıp tekrar deneyin.", color = LimonTextSecondary, fontSize = 16.sp)
                 }
                 groups.forEach { gwo ->
                     val minMax = if (gwo.group.minSelect == gwo.group.maxSelect) {
@@ -923,7 +889,8 @@ private fun AddProductModifiersDialog(
                     Text(
                         "${gwo.group.name} $minMax",
                         fontWeight = FontWeight.Medium,
-                        color = LimonText
+                        color = LimonText,
+                        fontSize = 18.sp
                     )
                     gwo.options.forEach { opt ->
                         val countFreeInGroup = countFreeInGroup(gwo, selectedOptions)
@@ -944,7 +911,8 @@ private fun AddProductModifiersDialog(
                                     Text(
                                         opt.name,
                                         color = LimonText,
-                                        maxLines = 2
+                                        maxLines = 2,
+                                        fontSize = 17.sp
                                     )
                                 }
                                 Row(
@@ -987,6 +955,7 @@ private fun AddProductModifiersDialog(
                                     opt.name,
                                     color = LimonText,
                                     maxLines = 2,
+                                    fontSize = 17.sp,
                                     modifier = Modifier.weight(1f)
                                 )
                             }

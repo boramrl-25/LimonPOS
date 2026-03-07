@@ -118,7 +118,7 @@ fun NavGraph(
         val context = LocalContext.current
         LaunchedEffect(Unit) {
             overdueWarningHolder.overdue.collect { list ->
-                if (!list.isNullOrEmpty()) {
+                if (!list.isNullOrEmpty() && overdueWarningHolder.shouldShowNotification(list)) {
                     showOverdueNotification(context, list)
                 }
             }

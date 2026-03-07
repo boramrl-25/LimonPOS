@@ -2,6 +2,7 @@ package com.limonpos.app.ui.screens.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.limonpos.app.data.prefs.AppSettingsPreferences
 import com.limonpos.app.data.repository.ApiSyncRepository
 import com.limonpos.app.data.repository.AuthRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -17,7 +18,8 @@ import javax.inject.Inject
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val authRepository: AuthRepository,
-    private val apiSyncRepository: ApiSyncRepository
+    private val apiSyncRepository: ApiSyncRepository,
+    private val appSettingsPreferences: AppSettingsPreferences
 ) : ViewModel() {
 
     val userRole: StateFlow<String?> = authRepository.getCurrentUserRole()
@@ -27,10 +29,22 @@ class SettingsViewModel @Inject constructor(
         .map { it in listOf("manager", "admin", "supervisor") }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    val overdueUndeliveredDefaultMinutes: StateFlow<Int> = appSettingsPreferences.overdueUndeliveredDefaultMinutes
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AppSettingsPreferences.DEFAULT_MINUTES)
+
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
 
     fun clearMessage() { _message.value = null }
+
+    fun setOverdueUndeliveredDefaultMinutes(minutes: Int) {
+        viewModelScope.launch {
+            val value = minutes.coerceIn(AppSettingsPreferences.MIN_MINUTES, AppSettingsPreferences.MAX_MINUTES)
+            appSettingsPreferences.setOverdueUndeliveredDefaultMinutes(value)
+            apiSyncRepository.clearOverdueMinutesCache()
+            _message.value = "Saved"
+        }
+    }
 
     fun clearLocalSales() {
         viewModelScope.launch {

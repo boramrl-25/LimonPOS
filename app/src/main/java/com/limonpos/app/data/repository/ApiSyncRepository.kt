@@ -6,6 +6,7 @@ import android.util.Log
 import com.google.gson.Gson
 import com.limonpos.app.data.local.dao.*
 import com.limonpos.app.data.local.entity.*
+import com.limonpos.app.data.prefs.AppSettingsPreferences
 import com.limonpos.app.data.prefs.FloorPlanSectionsPreferences
 import com.limonpos.app.data.prefs.ServerPreferences
 import com.limonpos.app.data.remote.ApiService
@@ -37,6 +38,7 @@ class ApiSyncRepository @Inject constructor(
     private val closedBillAccessRequestDao: ClosedBillAccessRequestDao,
     private val transferLogDao: TransferLogDao,
     private val floorPlanSectionsPreferences: FloorPlanSectionsPreferences,
+    private val appSettingsPreferences: AppSettingsPreferences,
     private val serverPreferences: ServerPreferences,
     private val sessionManager: SessionManager,
     private val authTokenProvider: AuthTokenProvider
@@ -53,36 +55,45 @@ class ApiSyncRepository @Inject constructor(
         cachedOverdueMinutes = null
     }
 
-    /** Web’deki Ayarlar’da tanımlı “masaya gitmeyen ürün uyarı süresi” (dakika). Offline veya hata durumunda 10. */
+    /**
+     * Global default for "products not delivered to table" warning (minutes).
+     * Single source of truth: AppSettingsPreferences (DataStore). When online, API value is
+     * fetched and persisted so offline/error fallback uses last known value (or 10 if never set).
+     */
     suspend fun getOverdueUndeliveredMinutes(): Int {
         val now = System.currentTimeMillis()
         if (cachedOverdueMinutes != null && (now - cachedOverdueMinutesAt) < OVERDUE_CACHE_MS) {
             return cachedOverdueMinutes!!
         }
         if (!isOnline()) {
-            cachedOverdueMinutes = 10
+            val local = appSettingsPreferences.getOverdueUndeliveredDefaultMinutes()
+            cachedOverdueMinutes = local
             cachedOverdueMinutesAt = now
-            return 10
+            return local
         }
         restoreAuthTokenIfNeeded()
         return try {
             val res = apiService.getSettings()
             if (res.isSuccessful) {
                 val body = res.body()
-                val minutes = (body?.overdueUndeliveredMinutes ?: 10).coerceIn(1, 1440)
+                val minutes = (body?.overdueUndeliveredMinutes ?: AppSettingsPreferences.DEFAULT_MINUTES)
+                    .coerceIn(AppSettingsPreferences.MIN_MINUTES, AppSettingsPreferences.MAX_MINUTES)
+                appSettingsPreferences.setOverdueUndeliveredDefaultMinutesFromApi(minutes)
                 cachedOverdueMinutes = minutes
                 cachedOverdueMinutesAt = now
                 minutes
             } else {
-                cachedOverdueMinutes = 10
+                val local = appSettingsPreferences.getOverdueUndeliveredDefaultMinutes()
+                cachedOverdueMinutes = local
                 cachedOverdueMinutesAt = now
-                10
+                local
             }
         } catch (e: Exception) {
             Log.e("ApiSync", "getSettings error: ${e.message}")
-            cachedOverdueMinutes = 10
+            val local = appSettingsPreferences.getOverdueUndeliveredDefaultMinutes()
+            cachedOverdueMinutes = local
             cachedOverdueMinutesAt = now
-            10
+            local
         }
     }
 
