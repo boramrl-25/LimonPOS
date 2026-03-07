@@ -66,7 +66,7 @@ import android.media.ToneGenerator
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun OrderScreen(
     viewModel: OrderViewModel = hiltViewModel(),
@@ -492,7 +492,7 @@ fun OrderScreen(
             product = product,
             getModifierGroups = { viewModel.getModifierGroupsForProduct(product) },
             onDismiss = { viewModel.dismissModifierDialog() },
-            onAddWithModifiers = { opts, notes, qty -> viewModel.addToCart(product, opts, notes, qty) }
+            onAddWithModifiers = { selections, notes -> viewModel.addToCart(product, selections, notes) }
         )
     }
     viewModel.productToAddWithNotes.collectAsState(null).value?.let { product ->
@@ -851,19 +851,57 @@ private fun AddProductModifiersDialog(
     product: ProductEntity,
     getModifierGroups: suspend () -> List<ModifierGroupWithOptions>,
     onDismiss: () -> Unit,
-    onAddWithModifiers: (List<ModifierOptionEntity>, String, Int) -> Unit
+    onAddWithModifiers: (List<Pair<ModifierOptionEntity, Int>>, String) -> Unit
 ) {
     var groups by remember { mutableStateOf<List<ModifierGroupWithOptions>>(emptyList()) }
     var selectedOptions by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var optionQuantities by remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
     var loading by remember { mutableStateOf(true) }
-    var quantity by remember { mutableStateOf(0) }
 
     LaunchedEffect(product) {
         loading = true
         groups = getModifierGroups()
         selectedOptions = emptySet()
-        quantity = 0
+        optionQuantities = emptyMap()
         loading = false
+    }
+
+    fun updateQty(optId: String, delta: Int) {
+        val current = optionQuantities[optId] ?: 0
+        optionQuantities = optionQuantities + (optId to (current + delta).coerceIn(0, 99))
+    }
+
+    fun setQty(optId: String, v: Int) {
+        optionQuantities = optionQuantities + (optId to v.coerceIn(0, 99))
+    }
+
+    fun countFreeInGroup(gwo: ModifierGroupWithOptions, ids: Set<String>) =
+        gwo.options.count { it.id in ids && it.price == 0.0 }
+
+    fun toggleOption(gwo: ModifierGroupWithOptions, optId: String) {
+        val set = selectedOptions.toMutableSet()
+        val opt = gwo.options.find { it.id == optId }!!
+        val isPaid = opt.price > 0
+        if (optId in set) {
+            set.remove(optId)
+            optionQuantities = optionQuantities - optId
+        } else {
+            if (isPaid) {
+                set.add(optId)
+                optionQuantities = optionQuantities + (optId to 1)
+            } else {
+                val countFree = countFreeInGroup(gwo, set)
+                if (gwo.group.maxSelect == 1) {
+                    gwo.options.filter { it.price == 0.0 }.forEach { o ->
+                        set.remove(o.id)
+                    }
+                } else if (countFree >= gwo.group.maxSelect) {
+                    return
+                }
+                set.add(optId)
+            }
+        }
+        selectedOptions = set
     }
 
     AlertDialog(
@@ -877,39 +915,81 @@ private fun AddProductModifiersDialog(
                     Text("Modifier grubu bulunamadı. Sync yapıp tekrar deneyin.", color = LimonTextSecondary, fontSize = 14.sp)
                 }
                 groups.forEach { gwo ->
-                    Text(gwo.group.name, fontWeight = FontWeight.Medium, color = LimonText)
+                    val minMax = if (gwo.group.minSelect == gwo.group.maxSelect) {
+                        "(${gwo.group.minSelect})"
+                    } else {
+                        "(${gwo.group.minSelect}-${gwo.group.maxSelect})"
+                    }
+                    Text(
+                        "${gwo.group.name} $minMax",
+                        fontWeight = FontWeight.Medium,
+                        color = LimonText
+                    )
                     gwo.options.forEach { opt ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.Top
-                        ) {
-                            Checkbox(
-                                checked = opt.id in selectedOptions,
-                                onCheckedChange = { checked ->
-                                    val set = selectedOptions.toMutableSet()
-                                    if (checked) {
-                                        if (gwo.group.maxSelect == 1) set.removeAll(gwo.options.map { it.id })
-                                        set.add(opt.id)
-                                    } else set.remove(opt.id)
-                                    selectedOptions = set
-                                }
-                            )
-                            Text(
-                                "${opt.name} (+${CurrencyUtils.format(opt.price)})",
-                                color = LimonText,
-                                maxLines = 2,
+                        val countFreeInGroup = countFreeInGroup(gwo, selectedOptions)
+                        val canSelect = opt.price > 0 || opt.id in selectedOptions || countFreeInGroup < gwo.group.maxSelect
+                        if (opt.price > 0) {
+                            Row(
                                 modifier = Modifier
-                                    .weight(1f)
-                                    .clickable {
-                                        val set = selectedOptions.toMutableSet()
-                                        if (opt.id in set) set.remove(opt.id)
-                                        else if (gwo.group.maxSelect == 1) {
-                                            set.removeAll(gwo.options.map { it.id })
-                                            set.add(opt.id)
-                                        } else set.add(opt.id)
-                                        selectedOptions = set
+                                    .fillMaxWidth()
+                                    .clickable { if (canSelect) toggleOption(gwo, opt.id) },
+                                verticalAlignment = Alignment.Top
+                            ) {
+                                Checkbox(
+                                    checked = opt.id in selectedOptions,
+                                    onCheckedChange = { if (canSelect) toggleOption(gwo, opt.id) },
+                                    enabled = canSelect
+                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        opt.name,
+                                        color = LimonText,
+                                        maxLines = 2
+                                    )
+                                }
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                ) {
+                                    IconButton(onClick = { if (opt.id in selectedOptions) updateQty(opt.id, -1) }) {
+                                        Icon(Icons.Default.Remove, "Azalt", tint = LimonText, modifier = Modifier.size(20.dp))
                                     }
-                            )
+                                    OutlinedTextField(
+                                        value = if (opt.id in selectedOptions) "${optionQuantities[opt.id] ?: 1}" else "0",
+                                        onValueChange = { v ->
+                                            if (opt.id in selectedOptions) {
+                                                if (v.isEmpty()) setQty(opt.id, 0)
+                                                else v.toIntOrNull()?.let { setQty(opt.id, it) }
+                                            }
+                                        },
+                                        modifier = Modifier.width(48.dp),
+                                        singleLine = true,
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                                    )
+                                    IconButton(onClick = { if (opt.id in selectedOptions) updateQty(opt.id, 1) }) {
+                                        Icon(Icons.Default.Add, "Artır", tint = LimonText, modifier = Modifier.size(20.dp))
+                                    }
+                                }
+                            }
+                        } else {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { if (canSelect) toggleOption(gwo, opt.id) },
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Checkbox(
+                                    checked = opt.id in selectedOptions,
+                                    onCheckedChange = { if (canSelect) toggleOption(gwo, opt.id) },
+                                    enabled = canSelect
+                                )
+                                Text(
+                                    opt.name,
+                                    color = LimonText,
+                                    maxLines = 2,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
                         }
                     }
                 }
@@ -917,40 +997,22 @@ private fun AddProductModifiersDialog(
         },
         confirmButton = {
             val opts = groups.flatMap { it.options }.filter { it.id in selectedOptions }
-            val hasPaidModifier = opts.any { it.price > 0 }
-            val canAdd = if (hasPaidModifier) quantity >= 1 else selectedOptions.isNotEmpty()
-            val qtyToAdd = if (hasPaidModifier) quantity.coerceAtLeast(1) else 1
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (hasPaidModifier) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Text("Adet", color = LimonText, modifier = Modifier.padding(end = 4.dp))
-                        IconButton(onClick = { if (quantity > 0) quantity-- }) {
-                            Icon(Icons.Default.Remove, contentDescription = "Azalt", tint = LimonText)
-                        }
-                        Text(
-                            "$quantity",
-                            color = LimonText,
-                            modifier = Modifier.widthIn(min = 24.dp),
-                            textAlign = TextAlign.Center
-                        )
-                        IconButton(onClick = { quantity++ }) {
-                            Icon(Icons.Default.Add, contentDescription = "Artır", tint = LimonText)
-                        }
-                    }
-                }
-                Button(
-                    onClick = {
-                        onAddWithModifiers(opts, "", qtyToAdd)
-                    },
-                    enabled = canAdd
-                ) { Text("Add") }
+            val selections = opts.map { opt ->
+                opt to (if (opt.price > 0) (optionQuantities[opt.id] ?: 1).coerceAtLeast(1) else 1)
             }
+            val hasValidPaidQty = selections.none { (opt, qty) -> opt.price > 0 && qty < 1 }
+            val meetsMinSelect = groups.all { gwo ->
+                val countFree = countFreeInGroup(gwo, selectedOptions)
+                countFree >= gwo.group.minSelect
+            }
+            val meetsMaxSelect = groups.all { gwo ->
+                val countFree = countFreeInGroup(gwo, selectedOptions)
+                countFree <= gwo.group.maxSelect
+            }
+            Button(
+                onClick = { onAddWithModifiers(selections, "") },
+                enabled = selections.isNotEmpty() && hasValidPaidQty && meetsMinSelect && meetsMaxSelect
+            ) { Text("Add") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = LimonTextSecondary) } },
         containerColor = LimonSurface
@@ -1211,17 +1273,18 @@ private fun OrderItemRow(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CategoryChipsRow(
     categoriesWithProducts: List<Pair<com.limonpos.app.data.local.entity.CategoryEntity, List<ProductEntity>>>,
     selectedCategoryId: String,
     onSelectCategory: (String) -> Unit
 ) {
-    FlowRow(
+    var categoriesMenuExpanded by remember { mutableStateOf(false) }
+    Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        verticalAlignment = Alignment.CenterVertically
     ) {
         FilterChip(
             selected = selectedCategoryId == "all",
@@ -1235,19 +1298,59 @@ private fun CategoryChipsRow(
                 labelColor = LimonText
             )
         )
-        categoriesWithProducts.forEach { (category, _) ->
+        Box {
             FilterChip(
-                selected = selectedCategoryId == category.id,
-                onClick = { onSelectCategory(category.id) },
-                label = { Text(category.name, fontSize = 15.sp, maxLines = 2) },
+                selected = selectedCategoryId != "all",
+                onClick = { categoriesMenuExpanded = true },
+                label = { Text("Kategoriler", fontSize = 15.sp, maxLines = 2) },
                 modifier = Modifier.heightIn(min = 44.dp),
                 colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = try { Color(android.graphics.Color.parseColor(category.color)) } catch (_: Exception) { LimonPrimary },
+                    selectedContainerColor = LimonPrimary,
                     selectedLabelColor = Color.Black,
                     containerColor = LimonSurface,
                     labelColor = LimonText
                 )
             )
+            DropdownMenu(
+                expanded = categoriesMenuExpanded,
+                onDismissRequest = { categoriesMenuExpanded = false },
+                modifier = Modifier
+                    .widthIn(min = 300.dp)
+                    .heightIn(max = 560.dp)
+            ) {
+                categoriesWithProducts.forEach { (category, _) ->
+                    DropdownMenuItem(
+                        text = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(16.dp)
+                                        .background(
+                                            try { Color(android.graphics.Color.parseColor(category.color)) } catch (_: Exception) { LimonPrimary },
+                                            RoundedCornerShape(4.dp)
+                                        )
+                                )
+                                Spacer(Modifier.width(14.dp))
+                                Text(
+                                    category.name,
+                                    color = LimonText,
+                                    fontSize = 18.sp,
+                                    maxLines = 2
+                                )
+                            }
+                        },
+                        onClick = {
+                            onSelectCategory(category.id)
+                            categoriesMenuExpanded = false
+                        }
+                    )
+                }
+            }
         }
     }
 }

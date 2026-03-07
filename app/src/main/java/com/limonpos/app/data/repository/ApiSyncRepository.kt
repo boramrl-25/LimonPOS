@@ -697,17 +697,9 @@ class ApiSyncRepository @Inject constructor(
         }
     }
 
-    private fun normalizeModifierGroupIds(raw: List<Any>?): List<String> {
+    private fun normalizeModifierGroupIds(raw: List<String>?): List<String> {
         if (raw.isNullOrEmpty()) return emptyList()
-        return raw.mapNotNull { item ->
-            val id = when (item) {
-                is String -> item.trim().takeIf { it.isNotEmpty() }
-                is Number -> item.toString().trim().takeIf { it.isNotEmpty() }
-                is Map<*, *> -> (item["id"] ?: item["Id"])?.toString()?.trim()?.takeIf { it.isNotEmpty() }
-                else -> null
-            }
-            id
-        }.distinct()
+        return raw.mapNotNull { it.trim().takeIf { t -> t.isNotEmpty() } }.distinct()
     }
 
     private suspend fun syncProducts(): Boolean {

@@ -373,13 +373,16 @@ class OrderViewModel @Inject constructor(
 
     fun addToCart(
         product: ProductEntity,
-        selectedOptions: List<ModifierOptionEntity>,
+        selections: List<Pair<ModifierOptionEntity, Int>>,
         notes: String,
         quantity: Int = 1
     ) {
         viewModelScope.launch {
-            val modifierPrice = selectedOptions.sumOf { it.price }
+            val modifierPrice = selections.sumOf { (opt, qty) -> opt.price * qty }
             val totalPrice = product.price + modifierPrice
+            val modifierNames = selections.joinToString(", ") { (opt, qty) ->
+                if (qty > 1) "${qty}x ${opt.name}" else opt.name
+            }
             val key = "${product.id}|$totalPrice|$notes|$quantity"
             val now = System.currentTimeMillis()
             val shouldSkip = withContext(Dispatchers.IO) {
@@ -419,7 +422,6 @@ class OrderViewModel @Inject constructor(
                 }
                 val finalOrderId = orderId ?: return@launch
                 val safeQuantity = quantity.coerceAtLeast(1)
-                val modifierNames = selectedOptions.joinToString(", ") { it.name }
                 val productName = if (modifierNames.isNotEmpty()) "${product.name} ($modifierNames)" else product.name
                 withContext(Dispatchers.IO) {
                     addToCartMutex.withLock {
