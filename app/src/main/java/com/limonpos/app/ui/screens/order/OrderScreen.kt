@@ -28,7 +28,9 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -42,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -63,7 +66,7 @@ import android.media.ToneGenerator
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
 fun OrderScreen(
     viewModel: OrderViewModel = hiltViewModel(),
@@ -853,13 +856,13 @@ private fun AddProductModifiersDialog(
     var groups by remember { mutableStateOf<List<ModifierGroupWithOptions>>(emptyList()) }
     var selectedOptions by remember { mutableStateOf<Set<String>>(emptySet()) }
     var loading by remember { mutableStateOf(true) }
-    var quantityText by remember { mutableStateOf("1") }
+    var quantity by remember { mutableStateOf(0) }
 
     LaunchedEffect(product) {
         loading = true
         groups = getModifierGroups()
         selectedOptions = emptySet()
-        quantityText = "1"
+        quantity = 0
         loading = false
     }
 
@@ -878,7 +881,7 @@ private fun AddProductModifiersDialog(
                     gwo.options.forEach { opt ->
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.Top
                         ) {
                             Checkbox(
                                 checked = opt.id in selectedOptions,
@@ -894,6 +897,7 @@ private fun AddProductModifiersDialog(
                             Text(
                                 "${opt.name} (+${CurrencyUtils.format(opt.price)})",
                                 color = LimonText,
+                                maxLines = 2,
                                 modifier = Modifier
                                     .weight(1f)
                                     .clickable {
@@ -912,27 +916,39 @@ private fun AddProductModifiersDialog(
             }
         },
         confirmButton = {
+            val opts = groups.flatMap { it.options }.filter { it.id in selectedOptions }
+            val hasPaidModifier = opts.any { it.price > 0 }
+            val canAdd = if (hasPaidModifier) quantity >= 1 else selectedOptions.isNotEmpty()
+            val qtyToAdd = if (hasPaidModifier) quantity.coerceAtLeast(1) else 1
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                OutlinedTextField(
-                    value = quantityText,
-                    onValueChange = { v ->
-                        if (v.isEmpty()) quantityText = v
-                        else v.toIntOrNull()?.takeIf { it >= 0 }?.let { quantityText = v }
-                    },
-                    label = { Text("Adet") },
-                    modifier = Modifier.width(80.dp),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                )
+                if (hasPaidModifier) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text("Adet", color = LimonText, modifier = Modifier.padding(end = 4.dp))
+                        IconButton(onClick = { if (quantity > 0) quantity-- }) {
+                            Icon(Icons.Default.Remove, contentDescription = "Azalt", tint = LimonText)
+                        }
+                        Text(
+                            "$quantity",
+                            color = LimonText,
+                            modifier = Modifier.widthIn(min = 24.dp),
+                            textAlign = TextAlign.Center
+                        )
+                        IconButton(onClick = { quantity++ }) {
+                            Icon(Icons.Default.Add, contentDescription = "Artır", tint = LimonText)
+                        }
+                    }
+                }
                 Button(
                     onClick = {
-                        val opts = groups.flatMap { it.options }.filter { it.id in selectedOptions }
-                        val qty = quantityText.toIntOrNull()?.coerceAtLeast(1) ?: 1
-                        onAddWithModifiers(opts, "", qty)
-                    }
+                        onAddWithModifiers(opts, "", qtyToAdd)
+                    },
+                    enabled = canAdd
                 ) { Text("Add") }
             }
         },
@@ -1195,37 +1211,35 @@ private fun OrderItemRow(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun CategoryChipsRow(
     categoriesWithProducts: List<Pair<com.limonpos.app.data.local.entity.CategoryEntity, List<ProductEntity>>>,
     selectedCategoryId: String,
     onSelectCategory: (String) -> Unit
 ) {
-    LazyRow(
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
-        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp),
-        modifier = Modifier.fillMaxWidth()
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        item(key = "all") {
-            FilterChip(
-                selected = selectedCategoryId == "all",
-                onClick = { onSelectCategory("all") },
-                label = { Text("Tümü", fontSize = 15.sp) },
-                modifier = Modifier.heightIn(min = 44.dp),
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = LimonPrimary,
-                    selectedLabelColor = Color.Black,
-                    containerColor = LimonSurface,
-                    labelColor = LimonText
-                )
+        FilterChip(
+            selected = selectedCategoryId == "all",
+            onClick = { onSelectCategory("all") },
+            label = { Text("Tümü", fontSize = 15.sp, maxLines = 2) },
+            modifier = Modifier.heightIn(min = 44.dp),
+            colors = FilterChipDefaults.filterChipColors(
+                selectedContainerColor = LimonPrimary,
+                selectedLabelColor = Color.Black,
+                containerColor = LimonSurface,
+                labelColor = LimonText
             )
-        }
-        items(categoriesWithProducts, key = { it.first.id }) { (category, _) ->
+        )
+        categoriesWithProducts.forEach { (category, _) ->
             FilterChip(
                 selected = selectedCategoryId == category.id,
                 onClick = { onSelectCategory(category.id) },
-                label = { Text(category.name, fontSize = 15.sp) },
+                label = { Text(category.name, fontSize = 15.sp, maxLines = 2) },
                 modifier = Modifier.heightIn(min = 44.dp),
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = try { Color(android.graphics.Color.parseColor(category.color)) } catch (_: Exception) { LimonPrimary },

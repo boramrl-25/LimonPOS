@@ -43,7 +43,7 @@ import com.limonpos.app.data.repository.OverdueUndelivered
 import com.limonpos.app.ui.theme.*
 import kotlinx.coroutines.flow.StateFlow
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun FloorPlanScreen(
     viewModel: FloorPlanViewModel = hiltViewModel(),
@@ -338,17 +338,18 @@ fun FloorPlanScreen(
                 )
             )
             if (uiState.floors.size > 1) {
-                Row(
+                FlowRow(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     uiState.floors.forEach { floor ->
                         FilterChip(
                             selected = floor == uiState.selectedFloor,
                             onClick = { viewModel.selectFloor(floor) },
-                            label = { Text(floor) },
+                            label = { Text(floor, maxLines = 2) },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = LimonPrimary,
                                 selectedLabelColor = Color.Black,
@@ -359,17 +360,18 @@ fun FloorPlanScreen(
                     }
                 }
             }
-            Row(
+            FlowRow(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 for (sec in listOf("Main", "A", "B", "C", "D", "E")) {
                     FilterChip(
                         selected = sec == uiState.selectedSection,
                         onClick = { viewModel.selectSection(sec) },
-                        label = { Text(sec) },
+                        label = { Text(sec, maxLines = 2) },
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = LimonPrimary,
                             selectedLabelColor = Color.Black,
