@@ -300,36 +300,6 @@ fun FloorPlanScreen(
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             if (!uiState.isLocked) {
             Column(modifier = Modifier.fillMaxSize()) {
-            printerWarningState?.let { warning ->
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    color = LimonError.copy(alpha = 0.15f),
-                    shadowElevation = 2.dp
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            warning.message,
-                            color = LimonError,
-                            fontSize = 13.sp,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            TextButton(onClick = { viewModel.retryKitchenPrint() }) {
-                                Text("Retry", color = LimonPrimary, fontWeight = FontWeight.SemiBold)
-                            }
-                            TextButton(onClick = { viewModel.dismissPrinterWarning() }) {
-                                Text("Dismiss", color = LimonTextSecondary)
-                            }
-                        }
-                    }
-                }
-            }
             uiState.closeTableError?.let { err ->
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
@@ -464,6 +434,39 @@ fun FloorPlanScreen(
             }
         }
         }
+            printerWarningState?.let { warning ->
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.TopCenter),
+                    color = LimonError.copy(alpha = 0.15f),
+                    shadowElevation = 2.dp
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            warning.message,
+                            color = LimonError,
+                            fontSize = 13.sp,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButton(onClick = { viewModel.retryKitchenPrint() }) {
+                                Text("Retry", color = LimonPrimary, fontWeight = FontWeight.SemiBold)
+                            }
+                            TextButton(onClick = { viewModel.dismissPrinterWarning() }) {
+                                Text("Dismiss", color = LimonTextSecondary)
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     if (uiState.showLockDialog) {
@@ -540,7 +543,6 @@ fun FloorPlanScreen(
             onDismiss = { viewModel.closeTransferTableDialog() },
             onTransfer = { src, tgt -> viewModel.transferTable(src, tgt) }
         )
-    }
     }
 }
 

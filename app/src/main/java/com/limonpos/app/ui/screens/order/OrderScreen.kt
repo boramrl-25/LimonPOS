@@ -1226,7 +1226,7 @@ private fun CategoryChipsRow(
 
 private sealed class OrderProductRow {
     data class CategoryHeader(val category: com.limonpos.app.data.local.entity.CategoryEntity) : OrderProductRow()
-    data class ProductRow(val product: ProductEntity) : OrderProductRow()
+    data class ProductRow(val product: ProductEntity, val categoryId: String) : OrderProductRow()
 }
 
 @Composable
@@ -1242,7 +1242,7 @@ private fun ProductsByCategoryList(
                     else products.filter { it.name.lowercase().contains(searchQuery) }
                 if (filtered.isEmpty()) continue
                 add(OrderProductRow.CategoryHeader(category))
-                filtered.forEach { add(OrderProductRow.ProductRow(it)) }
+                filtered.forEach { add(OrderProductRow.ProductRow(it, category.id)) }
             }
         }
     }
@@ -1254,7 +1254,7 @@ private fun ProductsByCategoryList(
         items(rows.size, key = { index ->
             when (val r = rows[index]) {
                 is OrderProductRow.CategoryHeader -> "cat_${r.category.id}"
-                is OrderProductRow.ProductRow -> "p_${r.product.id}"
+                is OrderProductRow.ProductRow -> "p_${r.product.id}_${r.categoryId}"
             }
         }) { index ->
             when (val r = rows[index]) {
@@ -1275,23 +1275,34 @@ private fun ProductsByCategoryList(
                     Spacer(modifier = Modifier.height(4.dp))
                 }
                 is OrderProductRow.ProductRow -> {
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onProductClick(r.product) },
-                        color = LimonSurface,
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Text(
-                            r.product.name,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-                            color = LimonText,
-                            fontSize = 16.sp
-                        )
-                    }
+                    ProductListRow(
+                        product = r.product,
+                        onClick = { onProductClick(r.product) }
+                    )
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ProductListRow(
+    product: ProductEntity,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
+        color = LimonSurface,
+        shape = RoundedCornerShape(8.dp)
+    ) {
+        Text(
+            product.name,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            color = LimonText,
+            fontSize = 16.sp
+        )
     }
 }
 
@@ -1362,22 +1373,11 @@ private fun ProductCard(
     product: ProductEntity,
     onClick: () -> Unit
 ) {
-    var clickEnabled by remember { mutableStateOf(true) }
-    val scope = rememberCoroutineScope()
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(0.8f)
-            .clickable(enabled = clickEnabled) {
-                if (clickEnabled) {
-                    clickEnabled = false
-                    onClick()
-                    scope.launch {
-                        delay(800L)
-                        clickEnabled = true
-                    }
-                }
-            },
+            .clickable { onClick() },
         colors = CardDefaults.cardColors(containerColor = LimonSurface),
         shape = RoundedCornerShape(12.dp)
     ) {

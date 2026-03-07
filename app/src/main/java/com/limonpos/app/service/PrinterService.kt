@@ -25,14 +25,14 @@ class PrinterService @Inject constructor() {
         ipAddress: String,
         port: Int = 9100,
         data: ByteArray,
-        timeoutMs: Long = 3500
+        timeoutMs: Long = 2200
     ): Result<String> = withContext(Dispatchers.IO) {
         try {
             withTimeout(timeoutMs) {
                 val socket = Socket()
                 try {
-                    socket.connect(InetSocketAddress(ipAddress, port), 1500)
-                    socket.soTimeout = 1500
+                    socket.connect(InetSocketAddress(ipAddress, port), 1000)
+                    socket.soTimeout = 1000
 
                     // Send data
                     val output: OutputStream = socket.getOutputStream()

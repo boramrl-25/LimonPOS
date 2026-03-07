@@ -334,13 +334,19 @@ class OrderViewModel @Inject constructor(
     /** addToCart debounce: aynı ürün (id+fiyat+not) kısa sürede tekrar eklenirse sadece 1 kez işlenir (2x/4x tetiklenmeyi önler). */
     private var lastAddToCartKey: String? = null
     private var lastAddToCartTimeMs: Long = 0L
-    private val addToCartDebounceMs = 1000L
+    private val addToCartDebounceMs = 180L
     private var isAddingProduct = false
+    private val addProductMutex = Mutex()
 
     fun addProduct(product: ProductEntity) {
-        if (isAddingProduct) return
-        isAddingProduct = true
         viewModelScope.launch {
+            val canProceed = addProductMutex.withLock {
+                if (isAddingProduct) false else {
+                    isAddingProduct = true
+                    true
+                }
+            }
+            if (!canProceed) return@launch
             try {
                 val groupIds = parseModifierGroupIds(product.modifierGroups)
                 if (groupIds.isNotEmpty()) {
@@ -349,8 +355,8 @@ class OrderViewModel @Inject constructor(
                     addToCart(product, emptyList(), "")
                 }
             } finally {
-                delay(500L)
-                isAddingProduct = false
+                delay(120L)
+                addProductMutex.withLock { isAddingProduct = false }
             }
         }
     }
@@ -376,10 +382,15 @@ class OrderViewModel @Inject constructor(
             val totalPrice = product.price + modifierPrice
             val key = "${product.id}|$totalPrice|$notes|$quantity"
             val now = System.currentTimeMillis()
-            if (key == lastAddToCartKey && (now - lastAddToCartTimeMs) < addToCartDebounceMs) return@launch
-            lastAddToCartKey = key
-            lastAddToCartTimeMs = now
-
+            val shouldSkip = withContext(Dispatchers.IO) {
+                addToCartMutex.withLock {
+                    if (key == lastAddToCartKey && (now - lastAddToCartTimeMs) < addToCartDebounceMs) return@withContext true
+                    lastAddToCartKey = key
+                    lastAddToCartTimeMs = now
+                    false
+                }
+            }
+            if (shouldSkip) return@launch
             dismissModifierDialog()
             dismissNotesDialog()
             _uiState.update { it.copy(addToCartError = null) }
@@ -523,17 +534,25 @@ class OrderViewModel @Inject constructor(
 
             // In background: push to API, then print (no need to mark again)
             applicationScope.launch {
-                if (apiSyncRepository.isOnline()) {
-                    apiSyncRepository.ensureOrderAndSendToKitchen(orderId)
-                }
-                when (val result = kitchenPrintHelper.printItemsAlreadyMarkedSent(orderId, pendingItemIds)) {
-                    is KitchenPrintResult.Success -> {
-                        if (apiSyncRepository.isOnline()) apiSyncRepository.syncFromApi()
+                try {
+                    if (apiSyncRepository.isOnline()) {
+                        apiSyncRepository.ensureOrderAndSendToKitchen(orderId)
                     }
-                    is KitchenPrintResult.Failure -> {
-                        val msg = if (result.tableNumber.isNotBlank()) "Table ${result.tableNumber}: ${result.message}" else result.message
-                        printerWarningHolder.setWarning(PrinterWarningState(msg, result.orderId, result.tableId, result.pendingItemIds))
+                    when (val result = kitchenPrintHelper.printItemsAlreadyMarkedSent(orderId, pendingItemIds)) {
+                        is KitchenPrintResult.Success -> {
+                            if (apiSyncRepository.isOnline()) apiSyncRepository.syncFromApi()
+                        }
+                        is KitchenPrintResult.Failure -> {
+                            val msg = if (result.tableNumber.isNotBlank()) "Table ${result.tableNumber}: ${result.message}" else result.message
+                            printerWarningHolder.setWarning(PrinterWarningState(msg, result.orderId, result.tableId, result.pendingItemIds))
+                        }
                     }
+                } catch (e: Exception) {
+                    Log.e(TAG, "sendToKitchen print error", e)
+                    printerWarningHolder.setWarning(PrinterWarningState(
+                        "Print failed: ${e.message ?: "Error"}. Tap Retry to send again.",
+                        orderId, tableId, pendingItemIds
+                    ))
                 }
             }
         }
