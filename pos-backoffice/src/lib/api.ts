@@ -336,9 +336,16 @@ export async function deletePaymentMethod(id: string) {
   if (!res.ok) throw new Error("Failed to delete payment method");
 }
 
-export async function getSettings(): Promise<{ timezone_offset_minutes: number }> {
+export async function getSettings(): Promise<{ timezone_offset_minutes: number; overdue_undelivered_minutes?: number }> {
   const res = await fetchWithTimeout(`${API_URL}/settings`, { headers: headers() });
   if (!res.ok) throw new Error("Failed to fetch settings");
+  return res.json();
+}
+
+/** Masalarda gecikmiş (masaya gitmeyen) ürünü olan masa id'leri. Web floor'da yanıp sönsün. */
+export async function getOverdueTableIds(): Promise<{ tableIds: string[]; overdueMinutes: number }> {
+  const res = await fetchWithTimeout(`${API_URL}/dashboard/overdue-table-ids`, { headers: headers() });
+  if (!res.ok) throw new Error("Failed to fetch overdue table ids");
   return res.json();
 }
 

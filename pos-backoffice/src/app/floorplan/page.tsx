@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { ArrowLeft, Search, RefreshCw, Settings2, X, Calendar } from "lucide-react";
-import { getTables, getFloorPlanSections, updateFloorPlanSections, getOrder, reserveTable, cancelTableReservation, type FloorPlanSections, type Order, type TableReservation } from "@/lib/api";
+import { getTables, getFloorPlanSections, updateFloorPlanSections, getOrder, getOverdueTableIds, reserveTable, cancelTableReservation, type FloorPlanSections, type Order, type TableReservation } from "@/lib/api";
 
 type Table = {
   id: string;
@@ -34,6 +34,8 @@ export default function FloorPlanPage() {
   const [reservationInfoModal, setReservationInfoModal] = useState<Table | null>(null);
   const [reserveLoading, setReserveLoading] = useState(false);
   const [reserveError, setReserveError] = useState<string | null>(null);
+  const [tableIdsWithOverdue, setTableIdsWithOverdue] = useState<string[]>([]);
+  const [overdueMinutes, setOverdueMinutes] = useState(10);
 
   useEffect(() => {
     load();
@@ -46,9 +48,11 @@ export default function FloorPlanPage() {
 
   async function load() {
     try {
-      const [tbls, secs] = await Promise.all([getTables(), getFloorPlanSections()]);
+      const [tbls, secs, overdue] = await Promise.all([getTables(), getFloorPlanSections(), getOverdueTableIds()]);
       setTables(tbls);
       setSections(secs);
+      setTableIdsWithOverdue(overdue.tableIds);
+      setOverdueMinutes(overdue.overdueMinutes);
     } catch {
       window.location.href = "/login";
     } finally {
@@ -225,23 +229,26 @@ export default function FloorPlanPage() {
         </button>
       </div>
 
-      <div className="flex gap-4 mb-4 text-sm text-slate-400">
+      <div className="flex gap-4 mb-4 text-sm text-slate-400 flex-wrap">
         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500" /> Free</span>
         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500" /> Occupied</span>
         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-slate-500" /> Reserved</span>
         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500" /> Bill</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" /> Gecikmiş ürün (yanıp söner)</span>
       </div>
 
       {loading ? (
         <div className="text-slate-400 py-12 text-center">Loading...</div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-4">
-          {filtered.map((t) => (
+          {filtered.map((t) => {
+            const hasOverdue = tableIdsWithOverdue.includes(t.id);
+            return (
             <button
               key={t.id}
               type="button"
               onClick={() => onTableClick(t)}
-              className={`aspect-[0.9] rounded-xl border-2 flex flex-col items-center justify-center p-3 text-left ${statusColors[t.status] || "bg-slate-800 border-slate-600"} hover:ring-2 hover:ring-sky-400 transition-all`}
+              className={`aspect-[0.9] rounded-xl border-2 flex flex-col items-center justify-center p-3 text-left ${statusColors[t.status] || "bg-slate-800 border-slate-600"} hover:ring-2 hover:ring-sky-400 transition-all ${hasOverdue ? "ring-2 ring-red-500 animate-pulse" : ""}`}
             >
               <span className="font-bold text-white text-lg">{t.number}</span>
               {t.status === "reserved" ? (
@@ -265,7 +272,8 @@ export default function FloorPlanPage() {
                 </>
               )}
             </button>
-          ))}
+          );
+          })}
         </div>
       )}
       {!loading && filtered.length === 0 && (
@@ -291,38 +299,67 @@ export default function FloorPlanPage() {
               </button>
             </div>
             <div className="p-4 overflow-y-auto flex-1">
-              <p className="text-slate-400 text-sm mb-3">Mutfakta = mutfağa gitti; Masaya gitti = garson teslim etti</p>
-              <ul className="space-y-3">
-                {(selectedTableOrder.order.items || []).map((item) => {
-                  const sent = item.status !== "pending" && item.sent_at != null;
-                  const delivered = item.delivered_at != null || item.status === "delivered";
-                  const sentAgo = sent ? minsAgo(item.sent_at ?? null) : "";
-                  const deliveredAgo = item.delivered_at ? minsAgo(item.delivered_at) : null;
-                  return (
-                    <li key={item.id} className={`flex justify-between items-start py-2 border-b border-slate-700/50 ${delivered ? "text-emerald-200" : sent ? "text-slate-200" : "text-amber-200"}`}>
-                      <div>
-                        <span className="font-medium">{item.product_name}</span>
-                        {item.quantity > 1 && <span className="text-slate-400 ml-1">×{item.quantity}</span>}
-                        {item.notes && <span className="text-slate-500 text-sm block">{item.notes}</span>}
+              {(() => {
+                const items = selectedTableOrder.order.items || [];
+                const thresholdMs = overdueMinutes * 60 * 1000;
+                const overdueItems = items.filter(
+                  (i) => i.sent_at != null && (i.delivered_at == null || i.delivered_at === undefined) && Date.now() - (i.sent_at ?? 0) > thresholdMs
+                );
+                return (
+                  <>
+                    {overdueItems.length > 0 && (
+                      <div className="mb-4 p-3 rounded-lg bg-red-900/40 border border-red-500/60">
+                        <p className="font-medium text-red-200 text-sm mb-2">Gecikmiş ürünler</p>
+                        <ul className="space-y-1 text-sm">
+                          {overdueItems.map((item) => {
+                            const minsOverdue = Math.floor((Date.now() - (item.sent_at ?? 0)) / 60000) - overdueMinutes;
+                            return (
+                              <li key={item.id} className="text-red-100">
+                                {item.product_name}
+                                {item.quantity > 1 && ` ×${item.quantity}`}
+                                <span className="text-red-300 ml-1">— {minsOverdue > 0 ? `${minsOverdue} dk gecikti` : "gecikme süresi aşıldı"}</span>
+                              </li>
+                            );
+                          })}
+                        </ul>
                       </div>
-                      <div className="text-right text-sm">
-                        {delivered ? (
-                          <span className="text-emerald-400 font-medium">
-                            {deliveredAgo != null ? `${deliveredAgo} masaya gitti` : "Masaya gitti"}
-                          </span>
-                        ) : sent ? (
-                          <span className="text-sky-400">{sentAgo} yapıldı</span>
-                        ) : (
-                          <span className="text-amber-400">Henüz gönderilmedi</span>
-                        )}
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-              {(selectedTableOrder.order.items || []).length === 0 && (
-                <p className="text-slate-500 text-center py-4">No items in this order yet.</p>
-              )}
+                    )}
+                    <p className="text-slate-400 text-sm mb-3">Mutfakta = mutfağa gitti; Masaya gitti = garson teslim etti</p>
+                    <ul className="space-y-3">
+                      {items.map((item) => {
+                        const sent = item.status !== "pending" && item.sent_at != null;
+                        const delivered = item.delivered_at != null || item.status === "delivered";
+                        const sentAgo = sent ? minsAgo(item.sent_at ?? null) : "";
+                        const deliveredAgo = item.delivered_at ? minsAgo(item.delivered_at) : null;
+                        const isOverdue = sent && !delivered && item.sent_at != null && Date.now() - (item.sent_at ?? 0) > thresholdMs;
+                        return (
+                          <li key={item.id} className={`flex justify-between items-start py-2 border-b border-slate-700/50 ${delivered ? "text-emerald-200" : isOverdue ? "text-red-200" : sent ? "text-slate-200" : "text-amber-200"}`}>
+                            <div>
+                              <span className="font-medium">{item.product_name}</span>
+                              {item.quantity > 1 && <span className="text-slate-400 ml-1">×{item.quantity}</span>}
+                              {item.notes && <span className="text-slate-500 text-sm block">{item.notes}</span>}
+                            </div>
+                            <div className="text-right text-sm">
+                              {delivered ? (
+                                <span className="text-emerald-400 font-medium">
+                                  {deliveredAgo != null ? `${deliveredAgo} masaya gitti` : "Masaya gitti"}
+                                </span>
+                              ) : sent ? (
+                                <span className={isOverdue ? "text-red-400 font-medium" : "text-sky-400"}>{sentAgo} yapıldı{isOverdue ? " (gecikmiş)" : ""}</span>
+                              ) : (
+                                <span className="text-amber-400">Henüz gönderilmedi</span>
+                              )}
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                    {items.length === 0 && (
+                      <p className="text-slate-500 text-center py-4">No items in this order yet.</p>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           </div>
         </div>

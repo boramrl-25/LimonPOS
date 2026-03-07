@@ -979,6 +979,32 @@ app.get("/api/dashboard/open-orders", authMiddleware, async (req, res) => {
   res.json(list);
 });
 
+// Masalarda gecikmiş ürünü olan masa id'leri (mutfağa gitti, masaya gitmedi, süre aşıldı). Web floor'da yanıp sönsün.
+app.get("/api/dashboard/overdue-table-ids", authMiddleware, async (req, res) => {
+  await ensureData();
+  const settings = db.data.settings || {};
+  const overdueMinutes = Math.min(1440, Math.max(1, (settings.overdue_undelivered_minutes ?? 10) | 0));
+  const tables = db.data.tables || [];
+  const orders = db.data.orders || [];
+  const orderItems = db.data.order_items || [];
+  const orderIdsLinkedToTable = new Set(tables.filter((t) => t.current_order_id).map((t) => t.current_order_id));
+  const openOrders = orders.filter((o) => (o.status === "open" || o.status === "sent") && orderIdsLinkedToTable.has(o.id));
+  const now = Date.now();
+  const thresholdMs = overdueMinutes * 60 * 1000;
+  const tableIds = new Set();
+  for (const order of openOrders) {
+    const hasOverdue = orderItems.some(
+      (i) =>
+        i.order_id === order.id &&
+        i.sent_at != null &&
+        (i.delivered_at == null || i.delivered_at === undefined) &&
+        now - i.sent_at > thresholdMs
+    );
+    if (hasOverdue) tableIds.add(order.table_id);
+  }
+  res.json({ tableIds: [...tableIds], overdueMinutes });
+});
+
 // Daily Sales: ?date=YYYY-MM-DD (tek gün) veya ?dateFrom=YYYY-MM-DD&dateTo=YYYY-MM-DD (aralık); yoksa bugün.
 app.get("/api/dashboard/daily-sales", authMiddleware, async (req, res) => {
   await ensureData();
