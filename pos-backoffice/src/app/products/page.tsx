@@ -370,6 +370,7 @@ export default function ProductsPage() {
   }
 
   const PRODUCT_EXPORT_COLUMNS = [
+    "ID",
     "Name",
     "NameArabic",
     "NameTurkish",
@@ -378,6 +379,7 @@ export default function ProductsPage() {
     "Price",
     "VATPercent",
     "Till",
+    "Active",
     "Printers",
     "Modifiers",
     "OverdueMinutes",
@@ -387,6 +389,7 @@ export default function ProductsPage() {
   function downloadProductsTemplate() {
     const rows = [
       {
+        ID: "",
         Name: "Örnek Ürün",
         NameArabic: "",
         NameTurkish: "",
@@ -395,12 +398,14 @@ export default function ProductsPage() {
         Price: 25.5,
         VATPercent: 5,
         Till: "On",
+        Active: "Yes",
         Printers: "Kitchen, Bar",
         Modifiers: "Size, Breakfast extra",
         OverdueMinutes: 10,
         ImageURL: "",
       },
       {
+        ID: "",
         Name: "İkinci Ürün",
         NameArabic: "",
         NameTurkish: "",
@@ -409,6 +414,7 @@ export default function ProductsPage() {
         Price: 15,
         VATPercent: 5,
         Till: "On",
+        Active: "Yes",
         Printers: "Kitchen",
         Modifiers: "",
         OverdueMinutes: "",
@@ -436,6 +442,7 @@ export default function ProductsPage() {
       const printerNames = printerIds.map((id) => printerById.get(id)).filter(Boolean) as string[];
       const modifierNames = modifierIds.map((id) => modifierById.get(id)).filter(Boolean) as string[];
       return {
+        ID: p.id ?? "",
         Name: p.name ?? "",
         NameArabic: p.name_arabic ?? "",
         NameTurkish: p.name_turkish ?? "",
@@ -444,6 +451,7 @@ export default function ProductsPage() {
         Price: p.price ?? 0,
         VATPercent: (p.tax_rate ?? 0) * 100,
         Till: Boolean(p.pos_enabled) ? "On" : "Off",
+        Active: Boolean(p.active !== false) ? "Yes" : "No",
         Printers: printerNames.join(", "),
         Modifiers: modifierNames.join(", "),
         OverdueMinutes: p.overdue_undelivered_minutes ?? "",
@@ -465,6 +473,7 @@ export default function ProductsPage() {
     const taxRaw = row.VATPercent ?? row.tax_rate ?? 0;
     const categoryName = String(row.Category ?? row.category ?? "").trim();
     const tillRaw = String(row.Till ?? row.pos_enabled ?? "").toLowerCase();
+    const activeRaw = String(row.Active ?? row.active ?? "").toLowerCase();
     const printerStr = String(row.Printers ?? row.printers ?? "").trim();
     const modifierStr = String(row.Modifiers ?? row.Modifierler ?? row.modifiers ?? row.modifier_groups ?? "").trim();
     const overdueRaw = row.OverdueMinutes ?? row.overdue_undelivered_minutes ?? row.dk ?? "";
@@ -473,6 +482,7 @@ export default function ProductsPage() {
     const price = Math.max(0, Number(priceRaw) || 0);
     const tax_rate = (Number(taxRaw) || 0) / 100;
     const pos_enabled = tillRaw === "on" || tillRaw === "1" || tillRaw === "true" || tillRaw === "yes";
+    const active = activeRaw === "" || activeRaw === "yes" || activeRaw === "1" || activeRaw === "on" || activeRaw === "true";
     const overdue_undelivered_minutes =
       overdueRaw === "" || overdueRaw === null || overdueRaw === undefined
         ? undefined
@@ -505,6 +515,7 @@ export default function ProductsPage() {
       printers: printerIds.length > 0 ? printerIds : (existing?.printers ?? []),
       modifier_groups: modifierIds.length > 0 ? modifierIds : (existing?.modifier_groups ?? []),
       pos_enabled,
+      active,
       overdue_undelivered_minutes,
     };
   }
@@ -518,6 +529,7 @@ export default function ProductsPage() {
       Math.abs((payload.tax_rate ?? 0) - (p.tax_rate ?? 0)) > 0.001 ||
       payload.category_id !== (p.category_id ?? undefined) ||
       payload.pos_enabled !== Boolean(p.pos_enabled) ||
+      payload.active !== Boolean(p.active !== false) ||
       payload.image_url !== (p.image_url ?? "") ||
       !same(payload.printers, p.printers ?? []) ||
       !same(payload.modifier_groups, toModifierIds(p.modifier_groups)) ||
@@ -530,18 +542,21 @@ export default function ProductsPage() {
     for (const row of rows) {
       const name = String(row.Name ?? row.name ?? "").trim();
       if (!name) continue;
-      const existing =
-        products.find((p) => p.name.trim().toLowerCase() === name.toLowerCase()) ||
-        (() => {
-          const sku = String(row.SKU ?? row.sku ?? "").trim();
-          return sku ? products.find((p) => (p.sku || "").toLowerCase() === sku.toLowerCase()) : undefined;
-        })();
+      const rowId = String(row.ID ?? row.id ?? "").trim();
+      const existing = rowId
+        ? products.find((p) => p.id === rowId)
+        : products.find((p) => p.name.trim().toLowerCase() === name.toLowerCase()) ||
+          (() => {
+            const sku = String(row.SKU ?? row.sku ?? "").trim();
+            return sku ? products.find((p) => (p.sku || "").toLowerCase() === sku.toLowerCase()) : undefined;
+          })();
       const fullPayload = parseRowToPayload(row, existing);
       if (existing && payloadDiffersFromProduct(fullPayload, existing) && !applyUpdates) continue;
       if (existing) {
         await updateProduct(existing.id, fullPayload);
       } else {
-        await createProduct(fullPayload);
+        const payload = rowId ? { ...fullPayload, id: rowId } : fullPayload;
+        await createProduct(payload);
       }
     }
     await load(true);
@@ -570,12 +585,14 @@ export default function ProductsPage() {
       for (const row of rows) {
         const name = String(row.Name ?? row.name ?? "").trim();
         if (!name) continue;
-        const existing =
-          products.find((p) => p.name.trim().toLowerCase() === name.toLowerCase()) ||
-          (() => {
-            const sku = String(row.SKU ?? row.sku ?? "").trim();
-            return sku ? products.find((p) => (p.sku || "").toLowerCase() === sku.toLowerCase()) : undefined;
-          })();
+        const rowId = String(row.ID ?? row.id ?? "").trim();
+        const existing = rowId
+          ? products.find((p) => p.id === rowId)
+          : products.find((p) => p.name.trim().toLowerCase() === name.toLowerCase()) ||
+            (() => {
+              const sku = String(row.SKU ?? row.sku ?? "").trim();
+              return sku ? products.find((p) => (p.sku || "").toLowerCase() === sku.toLowerCase()) : undefined;
+            })();
         if (existing) {
           const fullPayload = parseRowToPayload(row, existing);
           if (payloadDiffersFromProduct(fullPayload, existing)) {
