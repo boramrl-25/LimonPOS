@@ -197,9 +197,14 @@ class ApiSyncRepository @Inject constructor(
         )
         orderDao.insertOrder(orderEntity)
         val localByApiId = localItems.associateBy { it.apiId ?: it.id }
+        val localSentAtByLine = localItems.filter { it.sentAt != null }
+            .groupBy { "${it.productId}|${it.productName}|${it.price}|${it.notes}" }
+            .mapValues { (_, items) -> items.minOf { it.sentAt!! } }
         orderItemDao.deleteOrderItems(dto.id)
         val itemEntities = mergedItems.map { item ->
             val local = localByApiId[item.id]
+            val lineKey = "${item.productId}|${item.productName}|${item.price}|${item.notes}"
+            val preservedSentAt = local?.sentAt ?: localSentAtByLine[lineKey]
             OrderItemEntity(
                 id = item.id,
                 orderId = dto.id,
@@ -209,7 +214,7 @@ class ApiSyncRepository @Inject constructor(
                 price = item.price,
                 notes = item.notes,
                 status = item.status,
-                sentAt = local?.sentAt ?: item.sentAt,
+                sentAt = preservedSentAt ?: item.sentAt,
                 deliveredAt = local?.deliveredAt,
                 apiId = item.id,
                 syncStatus = "SYNCED"
@@ -572,9 +577,14 @@ class ApiSyncRepository @Inject constructor(
                 orderDao.insertOrder(orderEntity)
                 // Keep local deliveredAt and sentAt when pulling from API (sentAt immutable - prefer local first-send time)
                 val localByApiId = localItems.associateBy { it.apiId ?: it.id }
+                val localSentAtByLine = localItems.filter { it.sentAt != null }
+                    .groupBy { "${it.productId}|${it.productName}|${it.price}|${it.notes}" }
+                    .mapValues { (_, items) -> items.minOf { it.sentAt!! } }
                 orderItemDao.deleteOrderItems(dto.id)
                 val itemEntities = mergedItems.map { item ->
                     val local = localByApiId[item.id]
+                    val lineKey = "${item.productId}|${item.productName}|${item.price}|${item.notes}"
+                    val preservedSentAt = local?.sentAt ?: localSentAtByLine[lineKey]
                     OrderItemEntity(
                         id = item.id,
                         orderId = dto.id,
@@ -584,7 +594,7 @@ class ApiSyncRepository @Inject constructor(
                         price = item.price,
                         notes = item.notes,
                         status = item.status,
-                        sentAt = local?.sentAt ?: item.sentAt,
+                        sentAt = preservedSentAt ?: item.sentAt,
                         deliveredAt = local?.deliveredAt,
                         apiId = item.id,
                         syncStatus = "SYNCED"
