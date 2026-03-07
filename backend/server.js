@@ -1514,6 +1514,28 @@ app.post("/api/orders/:orderId/discount-request/:requestId/approve", authMiddlew
   res.json({ request: db.data.discount_requests[reqIdx], order: { ...order, items } });
 });
 
+// İndirim talebini iptal et (web). Aynı yetki: web_approve_discount.
+app.post("/api/orders/:orderId/discount-request/:requestId/cancel", authMiddleware, async (req, res) => {
+  await ensureData();
+  const perms = JSON.parse(req.user?.permissions || "[]");
+  if (!perms.includes("web_approve_discount") && req.user?.role !== "admin" && req.user?.role !== "manager") {
+    return res.status(403).json({ error: "Permission denied" });
+  }
+  const { orderId, requestId } = req.params;
+  const reqIdx = (db.data.discount_requests || []).findIndex((r) => r.id === requestId && r.order_id === orderId && r.status === "pending");
+  if (reqIdx < 0) return res.status(404).json({ error: "Request not found or already processed" });
+  db.data.discount_requests[reqIdx] = {
+    ...db.data.discount_requests[reqIdx],
+    status: "cancelled",
+    approved_by_user_id: req.user?.id || "",
+    approved_by_user_name: req.user?.name || "",
+    approved_at: Date.now(),
+    approved_note: (req.body && req.body.note) ? String(req.body.note) : "",
+  };
+  await db.write();
+  res.json({ request: db.data.discount_requests[reqIdx] });
+});
+
 app.get("/api/dashboard/discounts-today", authMiddleware, async (req, res) => {
   await ensureData();
   const date = req.query.date ? String(req.query.date) : new Date().toISOString().slice(0, 10);

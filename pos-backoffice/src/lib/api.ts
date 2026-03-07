@@ -484,6 +484,18 @@ export async function approveDiscountRequest(
   return res.json();
 }
 
+export async function cancelDiscountRequest(orderId: string, requestId: string, body?: { note?: string }) {
+  const res = await fetchWithTimeout(
+    `${API_URL}/orders/${encodeURIComponent(orderId)}/discount-request/${encodeURIComponent(requestId)}/cancel`,
+    { method: "POST", headers: headers(), body: JSON.stringify(body || {}) }
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(err?.error || "Failed to cancel discount request");
+  }
+  return res.json();
+}
+
 export type DiscountTodayRow = {
   id: string;
   order_id: string;

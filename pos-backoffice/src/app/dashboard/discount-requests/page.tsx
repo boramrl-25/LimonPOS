@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
-import { ArrowLeft, Percent, Check } from "lucide-react";
-import { getDiscountRequestsPending, approveDiscountRequest } from "@/lib/api";
+import { ArrowLeft, Percent, Check, X } from "lucide-react";
+import { getDiscountRequestsPending, approveDiscountRequest, cancelDiscountRequest } from "@/lib/api";
 import type { DiscountRequestRow } from "@/lib/api";
 
 function fmt(n: number) {
@@ -57,6 +57,20 @@ export default function DiscountRequestsPage() {
         discount_amount: discountAmount != null && !isNaN(discountAmount) ? discountAmount : 0,
         note: note.trim() || undefined,
       });
+      setApproveForm(null);
+      await load();
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setActing(null);
+    }
+  }
+
+  async function submitCancel(orderId: string, requestId: string) {
+    if (!confirm("Bu indirim talebini iptal etmek istediğinize emin misiniz?")) return;
+    setActing(requestId);
+    try {
+      await cancelDiscountRequest(orderId, requestId);
       setApproveForm(null);
       await load();
     } catch (e) {
@@ -152,18 +166,29 @@ export default function DiscountRequestsPage() {
                           onClick={() => setApproveForm(null)}
                           className="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm"
                         >
-                          İptal
+                          Vazgeç
                         </button>
                       </div>
                     </div>
                   ) : (
-                    <button
-                      type="button"
-                      onClick={() => setApproveForm({ requestId: r.id, orderId: r.order_id, percent: "", amount: "", note: "" })}
-                      className="flex-shrink-0 px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium"
-                    >
-                      Onayla
-                    </button>
+                    <div className="flex flex-shrink-0 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setApproveForm({ requestId: r.id, orderId: r.order_id, percent: "", amount: "", note: "" })}
+                        className="px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium"
+                      >
+                        Onayla
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => submitCancel(r.order_id, r.id)}
+                        disabled={acting === r.id}
+                        className="px-4 py-2 rounded-lg bg-red-900/70 hover:bg-red-800 text-red-200 text-sm font-medium disabled:opacity-50 flex items-center gap-1"
+                      >
+                        <X className="w-4 h-4" />
+                        İptal
+                      </button>
+                    </div>
                   )}
                 </div>
                 <Link
