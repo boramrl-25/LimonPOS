@@ -170,13 +170,13 @@ export default function FloorPlanPage() {
     }
   }
 
-  /** "X dk önce" veya "Az önce" — mutfağa gönderilme / masaya gitme için ortak. */
-  function minsAgo(ts: number | null): string {
+  /** English: "Just now", "1 min ago", "X min ago" for modal. */
+  function minsAgoEn(ts: number | null): string {
     if (ts == null) return "";
     const mins = Math.floor((Date.now() - ts) / 60000);
-    if (mins < 1) return "Az önce";
-    if (mins === 1) return "1 dk önce";
-    return `${mins} dk önce`;
+    if (mins < 1) return "Just now";
+    if (mins === 1) return "1 min ago";
+    return `${mins} min ago`;
   }
 
   return (
@@ -309,7 +309,7 @@ export default function FloorPlanPage() {
                   <>
                     {overdueItems.length > 0 && (
                       <div className="mb-4 p-3 rounded-lg bg-red-900/40 border border-red-500/60">
-                        <p className="font-medium text-red-200 text-sm mb-2">Gecikmiş ürünler</p>
+                        <p className="font-medium text-red-200 text-sm mb-2">Delayed items</p>
                         <ul className="space-y-1 text-sm">
                           {overdueItems.map((item) => {
                             const minsOverdue = Math.floor((Date.now() - (item.sent_at ?? 0)) / 60000) - overdueMinutes;
@@ -317,20 +317,20 @@ export default function FloorPlanPage() {
                               <li key={item.id} className="text-red-100">
                                 {item.product_name}
                                 {item.quantity > 1 && ` ×${item.quantity}`}
-                                <span className="text-red-300 ml-1">— {minsOverdue > 0 ? `${minsOverdue} dk gecikti` : "gecikme süresi aşıldı"}</span>
+                                <span className="text-red-300 ml-1">— {minsOverdue > 0 ? `${minsOverdue} min delayed` : "past due"}</span>
                               </li>
                             );
                           })}
                         </ul>
                       </div>
                     )}
-                    <p className="text-slate-400 text-sm mb-3">Mutfakta = mutfağa gitti; Masaya gitti = garson teslim etti</p>
+                    <p className="text-slate-400 text-sm mb-3">In Kitchen = sent to kitchen; Delivered = waiter delivered to table</p>
                     <ul className="space-y-3">
                       {items.map((item) => {
                         const sent = item.status !== "pending" && item.sent_at != null;
                         const delivered = item.delivered_at != null || item.status === "delivered";
-                        const sentAgo = sent ? minsAgo(item.sent_at ?? null) : "";
-                        const deliveredAgo = item.delivered_at ? minsAgo(item.delivered_at) : null;
+                        const sentAgoEn = sent ? minsAgoEn(item.sent_at ?? null) : "";
+                        const deliveredAgoEn = item.delivered_at ? minsAgoEn(item.delivered_at) : null;
                         const isOverdue = sent && !delivered && item.sent_at != null && Date.now() - (item.sent_at ?? 0) > thresholdMs;
                         return (
                           <li key={item.id} className={`flex justify-between items-start py-2 border-b border-slate-700/50 ${delivered ? "text-emerald-200" : isOverdue ? "text-red-200" : sent ? "text-slate-200" : "text-amber-200"}`}>
@@ -342,12 +342,12 @@ export default function FloorPlanPage() {
                             <div className="text-right text-sm">
                               {delivered ? (
                                 <span className="text-emerald-400 font-medium">
-                                  {deliveredAgo != null ? `${deliveredAgo} masaya gitti` : "Masaya gitti"}
+                                  {deliveredAgoEn ? `${deliveredAgoEn} to table` : "To table"}
                                 </span>
                               ) : sent ? (
-                                <span className={isOverdue ? "text-red-400 font-medium" : "text-sky-400"}>{sentAgo} yapıldı{isOverdue ? " (gecikmiş)" : ""}</span>
+                                <span className={isOverdue ? "text-red-400 font-medium" : "text-sky-400"}>In Kitchen {sentAgoEn}{isOverdue ? " (delayed)" : ""}</span>
                               ) : (
-                                <span className="text-amber-400">Henüz gönderilmedi</span>
+                                <span className="text-amber-400">On Hold</span>
                               )}
                             </div>
                           </li>
