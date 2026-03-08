@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.*
@@ -104,6 +105,14 @@ fun SettingsScreen(
                             },
                             leadingIcon = { Icon(Icons.Default.Restaurant, contentDescription = null, tint = LimonPrimary) }
                         )
+                        DropdownMenuItem(
+                            text = { Text("Sync", color = LimonText) },
+                            onClick = {
+                                menuExpanded = false
+                                onSync()
+                            },
+                            leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null, tint = LimonPrimary) }
+                        )
                         Divider(color = LimonTextSecondary.copy(alpha = 0.3f))
                         DropdownMenuItem(
                             text = { Text("Logout", color = LimonError) },
@@ -167,6 +176,15 @@ fun SettingsScreen(
                     Icon(Icons.Default.Restaurant, contentDescription = null, modifier = Modifier.size(24.dp))
                     Spacer(modifier = Modifier.width(12.dp))
                     Text("Open Kitchen Display (KDS)", color = LimonText, fontSize = 16.sp)
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                OutlinedButton(
+                    onClick = onSync,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Sync", color = LimonText, fontSize = 16.sp)
                 }
                 Spacer(modifier = Modifier.height(24.dp))
                 Button(

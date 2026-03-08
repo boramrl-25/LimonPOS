@@ -351,8 +351,7 @@ fun OrderScreen(
             orderWithItems = uiState.orderWithItems,
             optimisticallyDeliveredIds = optimisticallyDeliveredIds,
             onDismiss = { viewModel.dismissCart() },
-            onItemClick = { /* click = select only; no status change */ },
-            onMarkDelivered = { item ->
+            onItemClick = { item ->
                 if (item.status != "pending" && item.deliveredAt == null) {
                     viewModel.markItemDelivered(item.id)
                 }
@@ -636,7 +635,6 @@ private fun CartBottomSheet(
     optimisticallyDeliveredIds: Set<String> = emptySet(),
     onDismiss: () -> Unit,
     onItemClick: (OrderItemEntity) -> Unit,
-    onMarkDelivered: ((OrderItemEntity) -> Unit)? = null,
     onEditNote: (OrderItemEntity) -> Unit,
     onRemoveItem: (OrderItemEntity) -> Unit,
     onVoidItem: (OrderItemEntity) -> Unit,
@@ -705,7 +703,6 @@ private fun CartBottomSheet(
                                     isSent = true,
                                     isDelivered = item.deliveredAt != null || item.id in optimisticallyDeliveredIds,
                                     onClick = { onItemClick(item) },
-                                    onMarkDelivered = if (item.deliveredAt == null && item.id !in optimisticallyDeliveredIds) { { onMarkDelivered?.invoke(item) } } else null,
                                     onRemove = null,
                                     onVoid = if (isRecalledOrder) null else { { onVoidItem(item) } },
                                     onRefund = if (isRecalledOrder) { { onRefundItem(item) } } else null,
@@ -1183,7 +1180,6 @@ private fun OrderItemRow(
     isSent: Boolean = false,
     isDelivered: Boolean = false,
     onClick: (() -> Unit)? = null,
-    onMarkDelivered: (() -> Unit)? = null,
     onRemove: (() -> Unit)? = null,
     onVoid: (() -> Unit)? = null,
     onRefund: (() -> Unit)? = null,
@@ -1234,14 +1230,6 @@ private fun OrderItemRow(
                 color = LimonTextSecondary,
                 fontSize = 14.sp
             )
-            if (onMarkDelivered != null) {
-                TextButton(
-                    onClick = onMarkDelivered,
-                    colors = ButtonDefaults.textButtonColors(contentColor = LimonSuccess)
-                ) {
-                    Text("✓ Delivered", fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                }
-            }
             if (onNote != null) {
                 TextButton(
                     onClick = onNote,
