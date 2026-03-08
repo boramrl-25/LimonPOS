@@ -342,7 +342,7 @@ class OrderRepository @Inject constructor(
     suspend fun markOrderPreparing(orderId: String) {
         val items = orderItemDao.getOrderItems(orderId).first()
         for (item in items) {
-            if (item.status == "sent") {
+            if (item.status == "sent" || item.status == "delivered") {
                 orderItemDao.updateOrderItem(item.copy(status = "preparing", syncStatus = "PENDING"))
             }
         }
