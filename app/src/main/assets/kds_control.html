@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title></title>
+<style>
+*{box-sizing:border-box}
+body{font-family:system-ui,-apple-system,sans-serif;margin:0;background:#000;color:#e2e8f0;min-height:100vh}
+.site-header{background:#0a0a0a;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;border-bottom:1px solid #262626}
+.site-header h1{margin:0;font-size:1.4rem;color:#f59e0b}
+.site-header .info{font-size:0.85rem;color:#94a3b8}
+.site-nav{background:#0a0a0a;padding:0 24px;display:flex;gap:4px;flex-wrap:wrap;align-items:center;border-bottom:1px solid #262626}
+.site-nav a{padding:12px 16px;color:#94a3b8;text-decoration:none;font-weight:500;border-bottom:3px solid transparent}
+.site-nav a:hover{color:#f59e0b}
+.site-nav a.active{color:#f59e0b;border-bottom-color:#f59e0b}
+.main{max-width:1200px;margin:0 auto;padding:24px}
+.panel{display:none}
+.panel.active{display:block}
+.section-title{font-size:1.25rem;color:#f59e0b;margin:0 0 16px;padding-bottom:8px;border-bottom:1px solid #262626}
+.card{background:#0f0f0f;border-radius:12px;padding:16px;margin-bottom:12px;border:1px solid #262626}
+#kitchen-orders{display:flex;flex-direction:row;flex-wrap:wrap;gap:16px;align-items:flex-start}
+.kds-header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid #262626}
+.kds-title{display:flex;align-items:center;gap:8px;color:#e2e8f0;font-size:1.3rem;font-weight:700}
+.kds-printer-btns{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.kds-printer-btns span{color:#94a3b8;font-size:13px;margin-right:6px}
+.kds-printer-btn{padding:8px 14px;border-radius:8px;border:1px solid #262626;background:#0f0f0f;color:#e2e8f0;cursor:pointer;font-size:13px;font-weight:500}
+.kds-printer-btn:hover{background:#1a1a1a;border-color:#f59e0b}
+.kds-printer-btn.active{background:#f59e0b;color:#000;border-color:#f59e0b}
+.kds-status{display:flex;align-items:center;gap:16px}
+.kds-status-item{display:flex;align-items:center;gap:6px;color:#e2e8f0;font-size:14px;font-weight:600}
+.kds-status-item .icon{font-size:18px}
+.kds-status-pending{color:#3b82f6}
+.kds-status-preparing{color:#f59e0b}
+.kds-status-delayed{color:#ef4444}
+.kds-speaker{font-size:20px;cursor:pointer;color:#94a3b8;margin-left:8px}
+.kds-speaker:hover{color:#f59e0b}
+.card{background:#0f0f0f;border-radius:12px;padding:16px;margin-bottom:12px;border:1px solid #262626;min-width:220px;max-width:280px}
+.card.sent{border-left:4px solid #f59e0b}
+.card.preparing{border-left:4px solid #f59e0b}
+.card.late{border-left:4px solid #ef4444;animation:pulse-late 1.5s ease-in-out infinite}
+@keyframes pulse-late{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.4)}50%{box-shadow:0 0 0 8px rgba(239,68,68,0)}}
+.card-header{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.card-header .table-num{font-weight:700;color:#e2e8f0;font-size:1.1rem}
+.kds-delayed-tag{background:#ef4444;color:#fff;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700}
+.kds-elapsed{color:#94a3b8;font-size:12px;display:flex;align-items:center;gap:4px}
+.kds-item-line{background:#1a1a2e;padding:10px 12px;border-radius:8px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.kds-item-line:last-of-type{margin-bottom:12px}
+.kds-item-name{color:#e2e8f0;font-size:14px;line-height:1.3}
+.kds-card-actions{margin-top:12px}
+.kds-btn-order-ready{width:100%;padding:12px;background:#22c55e;color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;gap:8px}
+.kds-btn-order-ready:hover{opacity:.9}
+.kds-btn-start-all{width:100%;padding:12px;background:#f59e0b;color:#000;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:14px}
+.kds-btn-start-all:hover{opacity:.9}
+.item{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #262626}
+.item:last-child{border:none}
+.item .product-name{display:inline-block;line-height:1.3;max-width:100%}
+.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;z-index:9999}
+.modal-box{background:#0f0f0f;border:2px solid #f59e0b;border-radius:16px;padding:24px;max-width:400px;width:90%;max-height:80vh;overflow:auto}
+.modal-box.late{border-color:#f59e0b}
+.modal-box h3{margin:0 0 12px;color:#f59e0b;font-size:1.25rem}
+.modal-box.late h3{color:#f59e0b}
+.modal-box ul{margin:0 0 16px;padding-left:20px;color:#e2e8f0}
+.modal-box .btn-close{margin-top:12px;padding:10px 20px;background:#262626;color:#e2e8f0;border:none;border-radius:8px;cursor:pointer;font-weight:600}
+.modal-box .btn-close:hover{background:#404040}
+.btn{padding:8px 14px;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600}
+.btn-start{background:#f59e0b;color:#000}
+.btn-ready{background:#22c55e;color:#fff}
+.btn-kasa{background:#22c55e;color:#fff;padding:10px 20px}
+.btn-refresh{background:#f59e0b;color:#000;padding:8px 16px}
+.btn-sale{background:#10b981;color:#fff}
+.btn:hover{opacity:.9}
+.report-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px}
+.report-cards .stat{background:linear-gradient(135deg,#0f0f0f,#1a1a1a);border-radius:12px;padding:20px;border:1px solid #262626;text-align:center}
+.report-cards .stat .val{font-size:1.75rem;font-weight:700;color:#f59e0b}
+.report-cards .stat .lbl{font-size:0.8rem;color:#94a3b8;margin-top:4px}
+.sales-row{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px;align-items:flex-end}
+.sales-row label{display:flex;flex-direction:column;gap:4px;color:#94a3b8;font-size:13px}
+.sales-row select,.sales-row input{min-width:140px;padding:8px 12px;border-radius:8px;border:1px solid #262626;background:#0f0f0f;color:#e2e8f0}
+.product-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+.product-grid .prod-btn{padding:12px;background:#0f0f0f;border:1px solid #262626;border-radius:8px;color:#e2e8f0;cursor:pointer;text-align:center;font-size:13px}
+.product-grid .prod-btn:hover{background:#1a1a1a;border-color:#f59e0b}
+.cart-list{background:#0f0f0f;border-radius:12px;padding:16px;margin-top:16px;border:1px solid #262626;max-height:280px;overflow:auto}
+.cart-list .cart-item{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #262626}
+.settings-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
+.settings-block{background:#0f0f0f;border-radius:12px;padding:20px;border:1px solid #262626}
+.settings-block h3{color:#f59e0b;margin:0 0 12px;font-size:1rem}
+table{width:100%;border-collapse:collapse}
+th,td{padding:10px 12px;text-align:left;border-bottom:1px solid #262626}
+th{color:#f59e0b;font-weight:600}
+pre{background:#0a0a0a;padding:16px;border-radius:8px;overflow:auto;font-size:13px;border:1px solid #262626}
+.msg{padding:8px 12px;border-radius:8px;margin-top:8px;font-size:13px}
+.msg.ok{background:#166534;color:#bbf7d0}
+.msg.err{background:#991b1b;color:#fecaca}
+.tbl-scroll{overflow-x:auto;max-height:320px}
+.kds-printer-filter{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.kds-printer-chk{display:inline-flex;align-items:center;gap:4px;color:#e2e8f0;font-size:13px;cursor:pointer}
+.kds-printer-chk input{margin:0;cursor:pointer}
+.printer-card{background:#0f0f0f;border:1px solid #262626;border-radius:12px;padding:20px;margin-bottom:16px}
+.printer-card h4{margin:0 0 12px;color:#e2e8f0;font-size:1.1rem}
+.printer-card .info{color:#94a3b8;font-size:13px;margin:4px 0}
+.printer-card .status{display:inline-block;padding:4px 10px;border-radius:6px;font-size:12px;font-weight:600;margin:8px 0}
+.printer-card .status.online{background:#166534;color:#bbf7d0}
+.printer-card .status.offline{background:#444;color:#94a3b8}
+.printer-card .actions{margin-top:12px;display:flex;gap:8px;flex-wrap:wrap}
+.printer-card .btn-small{padding:6px 12px;font-size:12px}
+</style>
+</head>
+<body>
+<main class="main">
+  <div id="kds" class="panel active">
+    <div class="kds-header">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <div class="kds-printer-btns">
+          <span>Printer:</span>
+          <button type="button" class="kds-printer-btn active" id="kds-printer-all" data-id="all" onclick="toggleKdsPrinterBtn('all')">All</button>
+          <div id="kds-printer-list" style="display:inline-flex;flex-wrap:wrap;gap:6px"></div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:16px">
+        <div class="kds-status">
+          <span class="kds-status-item kds-status-pending"><span class="icon">🔔</span> <span id="kds-pending-count">0</span> Pending</span>
+          <span class="kds-status-item kds-status-preparing"><span class="icon">⏱</span> <span id="kds-preparing-count">0</span> Preparing</span>
+          <span class="kds-status-item kds-status-delayed"><span class="icon">⚠</span> <span id="kds-delayed-count">0</span> Delayed</span>
+        </div>
+        <span class="kds-speaker" title="Sound on">🔊</span>
+        <button class="btn btn-refresh" onclick="loadKitchen()">Refresh</button>
+      </div>
+    </div>
+    <div id="kitchen-orders"></div>
+    <div id="late-modal" class="modal-overlay" style="display:none">
+      <div class="modal-box late">
+        <h3>Delayed (Late)</h3>
+        <p style="color:#94a3b8;margin:0 0 12px">Items not prepared for 10 minutes or not removed from display:</p>
+        <ul id="late-list"></ul>
+        <button class="btn-close" onclick="closeLateModal()">OK</button>
+      </div>
+    </div>
+  </div>
+  <div id="settings" class="panel">
+    <div style="margin-bottom:20px">
+      <a href="/floor-plan" class="btn btn-refresh" style="display:inline-block;text-decoration:none">Floor Plan</a>
+    </div>
+    <h2 class="section-title">Reports</h2>
+    <div class="report-cards" id="report-summary"></div>
+    <h3 style="color:#94a3b8;margin:24px 0 8px">Paid Orders</h3>
+    <div class="tbl-scroll"><table><thead><tr><th>Table</th><th>Total</th><th>Payment</th></tr></thead><tbody id="orders-paid-tbody"></tbody></table></div>
+    <h3 style="color:#94a3b8;margin:24px 0 8px">Payments</h3>
+    <div class="tbl-scroll"><table><thead><tr><th>Amount</th><th>Method</th><th>Date</th></tr></thead><tbody id="payments-tbody"></tbody></table></div>
+  </div>
+</main>
+<script>
+const base = location.origin;
+let currentOrderId = null, currentTableNumber = null, products = [], tables = [], waiters = [], orderItems = [];
+var lastSeenItemIds = {};
+var kdsKitchenPrinters = [];
+var kdsSelectedPrinterIds = null;
+var KDS_STORAGE_KEY = 'kds_selected_printers';
+function loadStoredPrinterSelection() {
+  try {
+    var s = localStorage.getItem(KDS_STORAGE_KEY);
+    if (!s || s === 'null') return null;
+    var arr = JSON.parse(s);
+    return Array.isArray(arr) && arr.length > 0 ? arr : null;
+  } catch (e) { return null; }
+}
+function savePrinterSelection() {
+  try {
+    if (kdsSelectedPrinterIds == null || kdsSelectedPrinterIds.length === 0) localStorage.removeItem(KDS_STORAGE_KEY);
+    else localStorage.setItem(KDS_STORAGE_KEY, JSON.stringify(kdsSelectedPrinterIds));
+  } catch (e) {}
+}
+function escapeHtml(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+function formatProductNameLines(name) {
+  if (!name) return ''; var words = name.trim().split(/\s+/);
+  if (words.length <= 2) return escapeHtml(name);
+  return escapeHtml(words.slice(0, 2).join(' ')) + '<br>' + escapeHtml(words.slice(2).join(' '));
+}
+function playNewOrderSound() {
+  try {
+    var ctx = new (window.AudioContext || window.webkitAudioContext)();
+    var osc = ctx.createOscillator(); var gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.frequency.value = 880; osc.type = 'sine';
+    gain.gain.setValueAtTime(0.3, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
+    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.15);
+    setTimeout(function() {
+      osc = ctx.createOscillator(); osc.connect(gain);
+      gain.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
+      osc.frequency.value = 880; osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.15);
+    }, 200);
+  } catch (e) {}
+}
+function playLateSound() {
+  try {
+    var ctx = new (window.AudioContext || window.webkitAudioContext)();
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.value = 400;
+    osc.type = 'sawtooth';
+    gain.gain.setValueAtTime(0.2, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.4);
+  } catch (e) {}
+}
+
+document.querySelectorAll('.nav-link').forEach(function(a) {
+  a.addEventListener('click', function(e) { e.preventDefault(); showPage(a.getAttribute('data-page')); });
+});
+function showPage(id) {
+  document.querySelectorAll('.panel').forEach(function(p) { p.classList.remove('active'); });
+  document.querySelectorAll('.nav-link').forEach(function(b) { b.classList.remove('active'); });
+  document.getElementById(id).classList.add('active');
+  var lnk = document.querySelector('[data-page="' + id + '"]');
+  if (lnk) lnk.classList.add('active');
+  if (id === 'kds') { loadKdsPrinters(); }
+  else if (id === 'settings') loadReports();
+}
+var LATE_MS = 10 * 60 * 1000;
+function isLate(it) {
+  if (!it.sentAt || it.status === 'ready') return false;
+  return (Date.now() - it.sentAt) >= LATE_MS;
+}
+function closeLateModal() { document.getElementById('late-modal').style.display = 'none'; }
+function loadKdsPrinters() {
+  kdsSelectedPrinterIds = loadStoredPrinterSelection();
+  console.log('KDS selected printers:', kdsSelectedPrinterIds);
+  fetch(base + '/printers').then(function(r) { return r.json(); }).then(function(list) {
+    kdsKitchenPrinters = (list || []).filter(function(p) { return (p.printerType || '').toLowerCase() === 'kitchen' && p.kdsEnabled !== false; });
+    console.log('KDS printers loaded:', kdsKitchenPrinters);
+    var container = document.getElementById('kds-printer-list');
+    if (!container) return;
+    var selected = kdsSelectedPrinterIds || [];
+    var allActive = selected.length === 0;
+    if (document.getElementById('kds-printer-all')) document.getElementById('kds-printer-all').classList.toggle('active', allActive);
+    container.innerHTML = kdsKitchenPrinters.map(function(p) {
+      var pid = p.id || '';
+      var isActive = !allActive && selected.indexOf(pid) >= 0;
+      return '<button type="button" class="kds-printer-btn kds-printer-id' + (isActive ? ' active' : '') + '" data-id="' + pid.replace(/"/g, '&quot;') + '" onclick="toggleKdsPrinterBtn(\'' + pid.replace(/'/g, "\\\\'") + '\')">' + (p.name || p.id) + '</button>';
+    }).join('');
+    loadKitchen();
+  });
+}
+function toggleKdsPrinterBtn(id) {
+  if (id === 'all') {
+    var allBtn = document.getElementById('kds-printer-all');
+    if (allBtn && allBtn.classList.contains('active')) return;
+    document.querySelectorAll('.kds-printer-btn').forEach(function(b) { b.classList.remove('active'); });
+    if (allBtn) allBtn.classList.add('active');
+    kdsSelectedPrinterIds = null;
+    savePrinterSelection();
+  } else {
+    var allBtn = document.getElementById('kds-printer-all');
+    if (allBtn) allBtn.classList.remove('active');
+    var btn = document.querySelector('.kds-printer-id[data-id="' + id.replace(/"/g, '&quot;') + '"]');
+    if (!btn) return;
+    btn.classList.toggle('active');
+    var activeIds = [];
+    document.querySelectorAll('.kds-printer-id.active').forEach(function(b) {
+      var did = b.getAttribute('data-id');
+      if (did) activeIds.push(did);
+    });
+    kdsSelectedPrinterIds = activeIds.length === 0 ? null : activeIds;
+    if (activeIds.length === 0 && allBtn) allBtn.classList.add('active');
+    savePrinterSelection();
+  }
+  loadKitchen();
+}
+function updateKdsPrinterSelection() {
+  var allBtn = document.getElementById('kds-printer-all');
+  if (allBtn && allBtn.classList.contains('active')) { kdsSelectedPrinterIds = null; return; }
+  var activeIds = [];
+  document.querySelectorAll('.kds-printer-id.active').forEach(function(b) {
+    var id = b.getAttribute('data-id');
+    if (id) activeIds.push(id);
+  });
+  kdsSelectedPrinterIds = activeIds.length === 0 ? null : activeIds;
+}
+async function loadKitchen() {
+  try {
+  var container = document.getElementById('kds-printer-list');
+  if (container && container.children.length > 0) updateKdsPrinterSelection();
+  var url = base + '/kitchen-orders';
+  if (kdsSelectedPrinterIds && kdsSelectedPrinterIds.length > 0) url += '?printers=' + encodeURIComponent(kdsSelectedPrinterIds.join(','));
+  console.log('KDS request URL:', url);
+  var r = await fetch(url);
+  var orders = await r.json();
+  if (!Array.isArray(orders)) orders = [];
+  var allPending = [];
+  for (var i = 0; i < orders.length; i++) {
+    var o = orders[i];
+    var items = (o.items || []).filter(function(x) { return x.status === 'sent' || x.status === 'preparing'; });
+    for (var j = 0; j < items.length; j++) { allPending.push({ order: o, item: items[j] }); }
+  }
+  for (var k = 0; k < allPending.length; k++) {
+    if (!lastSeenItemIds[allPending[k].item.id]) { lastSeenItemIds[allPending[k].item.id] = true; playNewOrderSound(); break; }
+  }
+  for (var k = 0; k < allPending.length; k++) { lastSeenItemIds[allPending[k].item.id] = true; }
+  var pendingCount = 0, preparingCount = 0, delayedCount = 0;
+  var html = '';
+  for (var i = 0; i < orders.length; i++) {
+    var o = orders[i];
+    var items = (o.items || []).filter(function(x) { return x.status === 'sent' || x.status === 'preparing'; });
+    if (items.length === 0) continue;
+    var hasLate = items.some(isLate);
+    var hasSent = items.some(function(x) { return x.status === 'sent'; });
+    var hasPreparing = items.some(function(x) { return x.status === 'preparing'; });
+    for (var j = 0; j < items.length; j++) {
+      if (items[j].status === 'sent') pendingCount++;
+      if (items[j].status === 'preparing') preparingCount++;
+      if (isLate(items[j])) delayedCount++;
+    }
+    var cardClass = (hasPreparing ? 'preparing' : 'sent');
+    if (hasLate) cardClass += ' late';
+    var orderElapsed = 0;
+    for (var j = 0; j < items.length; j++) {
+      if (items[j].sentAt) orderElapsed = Math.max(orderElapsed, Date.now() - items[j].sentAt);
+    }
+    var elapsedStr = orderElapsed >= 3600000 ? Math.floor(orderElapsed/3600000) + 'h ' + Math.floor((orderElapsed%3600000)/60000) + 'm' : Math.floor(orderElapsed/60000) + 'm';
+    html += '<div class="card ' + cardClass + '">';
+    html += '<div class="card-header">';
+    html += '<span class="table-num">Table ' + o.tableNumber + '</span>';
+    if (hasLate) html += '<span class="kds-delayed-tag">DELAYED</span>';
+    html += '<span class="kds-elapsed">⏱ ' + elapsedStr + '</span>';
+    html += '</div>';
+    for (var j = 0; j < items.length; j++) {
+      var it = items[j];
+      html += '<div class="kds-item-line"><span class="kds-item-name">' + (it.quantity > 1 ? it.quantity + 'x ' : '') + formatProductNameLines(it.productName) + (it.notes ? ' — ' + escapeHtml(it.notes) : '') + '</span><span>';
+      if (it.status === 'sent') html += '<button class="btn btn-start" onclick="startItem(\'' + it.id + '\')">Start</button>';
+      if (it.status === 'preparing') html += '<button class="btn btn-ready" onclick="readyItem(\'' + it.id + '\')">✓ Ready</button>';
+      html += '</span></div>';
+    }
+    if (hasSent && hasPreparing) {
+      html += '<div class="kds-card-actions"><button class="kds-btn-order-ready" onclick="orderReady(\'' + o.id + '\')">✓ Order Ready</button></div>';
+    } else if (hasSent) {
+      html += '<div class="kds-card-actions"><button class="kds-btn-start-all" onclick="startAll(\'' + o.id + '\')">Start All</button></div>';
+    } else if (hasPreparing) {
+      html += '<div class="kds-card-actions"><button class="kds-btn-order-ready" onclick="orderReady(\'' + o.id + '\')">✓ Order Ready</button></div>';
+    }
+    html += '</div>';
+  }
+  document.getElementById('kitchen-orders').innerHTML = html || '<p style="color:#94a3b8">No pending orders</p>';
+  var pendEl = document.getElementById('kds-pending-count');
+  var prepEl = document.getElementById('kds-preparing-count');
+  var delEl = document.getElementById('kds-delayed-count');
+  if (pendEl) pendEl.textContent = pendingCount;
+  if (prepEl) prepEl.textContent = preparingCount;
+  if (delEl) delEl.textContent = delayedCount;
+  } catch (e) {
+    var el = document.getElementById('kitchen-orders');
+    if (el) el.innerHTML = '<p style="color:#94a3b8">No pending orders</p>';
+  }
+}
+function startAll(orderId) {
+  fetch(base + '/kitchen-orders/orders/' + encodeURIComponent(orderId) + '/start-all', { method: 'POST' }).then(function() { loadKitchen(); });
+}
+function orderReady(orderId) {
+  fetch(base + '/kitchen-orders/orders/' + encodeURIComponent(orderId) + '/ready', { method: 'POST' }).then(function() { loadKitchen(); });
+}
+function checkLateAndShowPopup() {
+  var url = base + '/kitchen-orders';
+  if (kdsSelectedPrinterIds && kdsSelectedPrinterIds.length > 0) url += '?printers=' + encodeURIComponent(kdsSelectedPrinterIds.join(','));
+  fetch(url).then(function(r) { return r.json(); }).then(function(orders) {
+    if (!Array.isArray(orders)) return;
+    var lateItems = [];
+    for (var i = 0; i < orders.length; i++) {
+      var o = orders[i];
+      var items = (o.items || []).filter(function(x) { return (x.status === 'sent' || x.status === 'preparing') && isLate(x); });
+      for (var j = 0; j < items.length; j++) {
+        lateItems.push({ order: o, item: items[j] });
+      }
+    }
+    if (lateItems.length > 0) {
+      var listHtml = lateItems.map(function(x) {
+        var it = x.item;
+        return '<li><strong>Table ' + x.order.tableNumber + '</strong> — ' + it.productName + (it.quantity > 1 ? ' x' + it.quantity : '') + '</li>';
+      }).join('');
+      document.getElementById('late-list').innerHTML = listHtml;
+      document.getElementById('late-modal').style.display = 'flex';
+      playLateSound();
+    }
+  });
+}
+function startItem(id) { fetch(base + '/kitchen-orders/items/' + encodeURIComponent(id) + '/preparing', { method: 'POST' }).then(function() { loadKitchen(); }); }
+function readyItem(id) { fetch(base + '/kitchen-orders/items/' + encodeURIComponent(id) + '/ready', { method: 'POST' }).then(function() { loadKitchen(); }); }
+async function loadReports() {
+  try {
+    var sum = await fetch(base + '/reports/summary').then(function(r) { return r.json(); });
+    var orders = await fetch(base + '/reports/orders-paid').then(function(r) { return r.json(); });
+    var payments = await fetch(base + '/reports/payments').then(function(r) { return r.json(); });
+    document.getElementById('report-summary').innerHTML =
+      '<div class="stat"><div class="val">' + (sum.todayRevenue != null ? sum.todayRevenue.toFixed(2) : '0') + ' AED</div><div class="lbl">Today\'s Revenue</div></div>' +
+      '<div class="stat"><div class="val">' + (sum.todayOrderCount != null ? sum.todayOrderCount : 0) + '</div><div class="lbl">Orders Today</div></div>' +
+      '<div class="stat"><div class="val">' + (sum.totalPaidOrdersCount != null ? sum.totalPaidOrdersCount : 0) + '</div><div class="lbl">Total Closed</div></div>';
+    var ord = '';
+    (orders || []).slice(0, 50).forEach(function(o) { ord += '<tr><td>' + (o.tableNumber || '-') + '</td><td>' + (o.total != null ? o.total.toFixed(2) : '') + ' AED</td><td>' + (o.paidAt ? new Date(o.paidAt).toLocaleString() : '-') + '</td></tr>'; });
+    document.getElementById('orders-paid-tbody').innerHTML = ord || '<tr><td colspan="3">No records</td></tr>';
+    var pay = '';
+    (payments || []).slice(0, 80).forEach(function(p) { pay += '<tr><td>' + (p.amount != null ? p.amount.toFixed(2) : '') + ' AED</td><td>' + (p.method || '-') + '</td><td>' + (p.createdAt ? new Date(p.createdAt).toLocaleString() : '-') + '</td></tr>'; });
+    document.getElementById('payments-tbody').innerHTML = pay || '<tr><td colspan="3">No records</td></tr>';
+  } catch (e) { document.getElementById('report-summary').innerHTML = '<p class="msg err">' + e.message + '</p>'; }
+}
+async function loadSalesData() {
+  try {
+    var tRes = await fetch(base + '/tables');
+    var pRes = await fetch(base + '/products');
+    var uRes = await fetch(base + '/users');
+    tables = await tRes.json();
+    products = await pRes.json();
+    waiters = await uRes.json();
+    var selT = document.getElementById('sel-table');
+    var selW = document.getElementById('sel-waiter');
+    selT.innerHTML = '<option value="">— Select table —</option>' + (tables || []).map(function(t) { return '<option value="' + t.id + '">' + (t.number || t.name || t.id) + (t.status === 'occupied' ? ' (occupied)' : '') + '</option>'; }).join('');
+    selW.innerHTML = '<option value="">— Select waiter —</option>' + (waiters || []).filter(function(u) { return u.name; }).map(function(u) { return '<option value="' + u.id + '">' + u.name + '</option>'; }).join('');
+    var grid = document.getElementById('product-grid');
+    grid.innerHTML = (products || []).filter(function(p) { return p.active !== false; }).map(function(p) { return '<button type="button" class="prod-btn" onclick="addToCart(\'' + p.id + '\',\'' + (p.name || '').replace(/'/g, "\\\\'") + '\',' + (p.price != null ? p.price : 0) + ')">' + (p.name || '') + '<br><small>' + (p.price != null ? p.price.toFixed(2) : '') + ' AED</small></button>'; }).join('');
+  } catch (e) { document.getElementById('sales-msg').innerHTML = '<p class="msg err">' + e.message + '</p>'; }
+}
+function addToCart(pid, name, price) {
+  if (!currentOrderId) { document.getElementById('sales-msg').innerHTML = '<p class="msg err">Open an order first.</p>'; return; }
+  orderItems.push({ productId: pid, productName: name, price: price, quantity: 1 });
+  renderCart();
+}
+function renderCart() {
+  var el = document.getElementById('cart-list');
+  if (!orderItems.length) { el.innerHTML = '<p style="color:#94a3b8">Cart is empty.</p>'; return; }
+  var html = '';
+  var total = 0;
+  for (var i = 0; i < orderItems.length; i++) {
+    var it = orderItems[i];
+    total += it.price * it.quantity;
+    html += '<div class="cart-item"><span>' + it.productName + ' x ' + it.quantity + ' — ' + (it.price * it.quantity).toFixed(2) + ' AED</span><span><button class="btn" style="padding:4px 8px;font-size:11px" onclick="removeCartItem(' + i + ')">Remove</button></span></div>';
+  }
+  html += '<div class="cart-item" style="border:none;font-weight:600">Total: ' + total.toFixed(2) + ' AED</div>';
+  el.innerHTML = html;
+}
+function removeCartItem(i) { orderItems.splice(i, 1); renderCart(); }
+async function createOrGetOrder() {
+  var tableId = document.getElementById('sel-table').value;
+  var waiterId = document.getElementById('sel-waiter').value;
+  var waiterName = document.getElementById('sel-waiter').selectedOptions[0] ? document.getElementById('sel-waiter').selectedOptions[0].text : '';
+  var guestCount = parseInt(document.getElementById('guest-count').value, 10) || 1;
+  if (!tableId || !waiterId) { document.getElementById('sales-msg').innerHTML = '<p class="msg err">Select table and waiter.</p>'; return; }
+  try {
+    var r = await fetch(base + '/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tableId: tableId, guestCount: guestCount, waiterId: waiterId, waiterName: waiterName }) });
+    var j = await r.json();
+    if (j.ok && j.orderId) { currentOrderId = j.orderId; currentTableNumber = j.tableNumber || tableId; orderItems = []; document.getElementById('sales-order-info').textContent = 'Order: ' + currentTableNumber + ' (ID: ' + currentOrderId + ')'; renderCart(); document.getElementById('sales-msg').innerHTML = '<p class="msg ok">Order opened / selected.</p>'; }
+    else document.getElementById('sales-msg').innerHTML = '<p class="msg err">' + (j.error || 'Error') + '</p>';
+  } catch (e) { document.getElementById('sales-msg').innerHTML = '<p class="msg err">' + e.message + '</p>'; }
+}
+async function sendOrderToKitchen() {
+  if (!currentOrderId) { document.getElementById('sales-msg').innerHTML = '<p class="msg err">Open an order and add products first.</p>'; return; }
+  for (var i = 0; i < orderItems.length; i++) {
+    var it = orderItems[i];
+    await fetch(base + '/orders/' + encodeURIComponent(currentOrderId) + '/items', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ productId: it.productId, productName: it.productName, price: it.price, quantity: it.quantity, notes: '' }) });
+  }
+  var r = await fetch(base + '/orders/' + encodeURIComponent(currentOrderId) + '/send', { method: 'POST' });
+  var j = await r.json();
+  document.getElementById('sales-msg').innerHTML = j.ok ? '<p class="msg ok">Sent to kitchen.</p>' : '<p class="msg err">' + (j.error || 'Error') + '</p>';
+  if (j.ok) orderItems = [];
+  renderCart();
+}
+async function loadTables() { var r = await fetch(base + '/tables'); var d = await r.json(); document.getElementById('tables-data').textContent = JSON.stringify(d, null, 2); }
+async function loadProducts() { var r = await fetch(base + '/products'); var d = await r.json(); document.getElementById('products-data').textContent = JSON.stringify(d, null, 2); }
+async function loadCategories() { var r = await fetch(base + '/categories'); var d = await r.json(); document.getElementById('categories-data').textContent = JSON.stringify(d, null, 2); }
+async function loadPrinters() {
+  var r = await fetch(base + '/printers');
+  var list = await r.json();
+  var html = '<table><tr><th>Name</th><th>Type</th><th>IP</th><th>Cash</th></tr>';
+  var cashier = (list || []).filter(function(p) { return p.printerType === 'cashier' && p.ipAddress; });
+  (list || []).forEach(function(p) {
+    html += '<tr><td>' + (p.name || '') + '</td><td>' + (p.printerType || '') + '</td><td>' + (p.ipAddress || '-') + '</td><td>';
+    if (p.printerType === 'cashier' && p.ipAddress) html += '<button class="btn btn-kasa" data-id="' + p.id + '" data-name="' + (p.name || '').replace(/"/g, '&quot;') + '" onclick="openDrawer(this)">Open Drawer</button>';
+    else html += '-';
+    html += '</td></tr>';
+  });
+  html += '</table>';
+  document.getElementById('printers-list').innerHTML = html;
+  var kasaHtml = '';
+  cashier.forEach(function(p) { kasaHtml += '<button class="btn btn-kasa" data-id="' + p.id + '" data-name="' + (p.name || '').replace(/"/g, '&quot;') + '" onclick="openDrawer(this)" style="margin-right:8px;margin-bottom:8px">' + (p.name || '') + ' — Open Drawer</button>'; });
+  document.getElementById('kasa-buttons').innerHTML = kasaHtml || '<span style="color:#94a3b8">No cashier printer defined</span>';
+}
+function openDrawer(btn) {
+  var printerId = btn.getAttribute('data-id');
+  var name = btn.getAttribute('data-name') || 'Printer';
+  var msgEl = document.getElementById('kasa-msg');
+  msgEl.innerHTML = '';
+  fetch(base + '/printers/' + encodeURIComponent(printerId) + '/open-drawer', { method: 'POST' }).then(function(r) { return r.json(); }).then(function(j) {
+    msgEl.className = 'msg ' + (j.ok ? 'ok' : 'err');
+    msgEl.textContent = j.ok ? (name + ' — Drawer opened') : (j.message || 'Error');
+  }).catch(function(e) { msgEl.className = 'msg err'; msgEl.textContent = e.message; });
+}
+async function loadModifiers() { var r = await fetch(base + '/modifier-groups'); var d = await r.json(); document.getElementById('modifiers-data').textContent = JSON.stringify(d, null, 2); }
+var urlParams = new URLSearchParams(window.location.search);
+if (urlParams.get('page') === 'settings') { showPage('settings'); } else { loadKdsPrinters(); }
+setInterval(function() { if (document.getElementById('kds').classList.contains('active')) loadKitchen(); }, 2000);
+setInterval(function() { if (document.getElementById('kds').classList.contains('active')) checkLateAndShowPopup(); }, 10 * 60 * 1000);
+</script>
+</body>
+</html>
