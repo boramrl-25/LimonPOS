@@ -546,11 +546,13 @@ function updateKdsPrinterSelection() {
   kdsSelectedPrinterIds = activeIds.length === 0 ? null : activeIds;
 }
 function loadKdsPrinters() {
+  console.log('loadKdsPrinters start');
   kdsSelectedPrinterIds = loadStoredPrinterSelection();
+  console.log('KDS selected printers:', kdsSelectedPrinterIds);
   fetch(base + '/printers').then(function(r) { return r.json(); }).then(function(list) {
     kdsKitchenPrinters = (list || []).filter(function(p) { return (p.printerType || '').toLowerCase() === 'kitchen' && p.kdsEnabled !== false; });
     var container = document.getElementById('kds-printer-list');
-    if (!container) return;
+    if (!container) { console.log('loadKdsPrinters end (no container)'); return; }
     var selected = kdsSelectedPrinterIds || [];
     var allActive = selected.length === 0;
     if (document.getElementById('kds-printer-all')) document.getElementById('kds-printer-all').classList.toggle('active', allActive);
@@ -559,6 +561,7 @@ function loadKdsPrinters() {
       var isActive = !allActive && selected.indexOf(pid) >= 0;
       return '<button type="button" class="kds-printer-btn kds-printer-id' + (isActive ? ' active' : '') + '" data-id="' + pid.replace(/"/g, '&quot;') + '" onclick="toggleKdsPrinterBtn(\'' + pid.replace(/'/g, "\\\\'") + '\')">' + (p.name || p.id) + '</button>';
     }).join('');
+    console.log('loadKdsPrinters end, calling loadKitchen');
     loadKitchen();
   });
 }
@@ -596,9 +599,11 @@ function isLate(it) {
 }
 function closeLateModal() { document.getElementById('late-modal').style.display = 'none'; }
 async function loadKitchen() {
+  console.log('loadKitchen called');
   try {
     var container = document.getElementById('kds-printer-list');
     if (container && container.children.length > 0) updateKdsPrinterSelection();
+    console.log('KDS selected printers:', kdsSelectedPrinterIds);
     var url = base + '/kitchen-orders';
     if (kdsSelectedPrinterIds && kdsSelectedPrinterIds.length > 0) url += '?printers=' + encodeURIComponent(kdsSelectedPrinterIds.join(','));
     var r = await fetch(url);
@@ -668,7 +673,7 @@ async function loadReports() {
 function showPage(id) {
   document.querySelectorAll('.panel').forEach(function(p) { p.classList.remove('active'); });
   document.getElementById(id).classList.add('active');
-  if (id === 'kds') loadKdsPrinters();
+  if (id === 'kds') { console.log('showPage(kds)'); loadKdsPrinters(); }
   else if (id === 'settings') loadReports();
 }
 var urlParams = new URLSearchParams(window.location.search);
