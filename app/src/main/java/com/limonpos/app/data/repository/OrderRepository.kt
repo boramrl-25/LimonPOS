@@ -1,5 +1,6 @@
 package com.limonpos.app.data.repository
 
+import android.util.Log
 import androidx.room.withTransaction
 import com.limonpos.app.data.local.AppDatabase
 import com.limonpos.app.data.local.dao.AppliedClientActionDao
@@ -178,17 +179,20 @@ class OrderRepository @Inject constructor(
 
     suspend fun markItemPreparing(itemId: String) {
         val item = orderItemDao.getOrderItemById(itemId) ?: return
+        Log.d("OrderRepo", "markItemPreparing: itemId=$itemId orderId=${item.orderId} oldStatus=${item.status} -> preparing (source=kds)")
         orderItemDao.updateOrderItem(item.copy(status = "preparing", syncStatus = "PENDING"))
     }
 
     suspend fun markItemReady(itemId: String) {
         val item = orderItemDao.getOrderItemById(itemId) ?: return
+        Log.d("OrderRepo", "markItemReady: itemId=$itemId orderId=${item.orderId} oldStatus=${item.status} -> ready (source=kds)")
         orderItemDao.updateOrderItem(item.copy(status = "ready", syncStatus = "PENDING"))
     }
 
     suspend fun markItemDelivered(itemId: String): Boolean {
         val item = orderItemDao.getOrderItemById(itemId) ?: return false
         if (item.sentAt == null) return false
+        Log.d("OrderRepo", "markItemDelivered: itemId=$itemId orderId=${item.orderId} oldStatus=${item.status} deliveredAt set (source=waiter/table)")
         val now = System.currentTimeMillis()
         orderItemDao.markDelivered(itemId, now)
         return true
@@ -348,6 +352,7 @@ class OrderRepository @Inject constructor(
         val items = orderItemDao.getOrderItems(orderId).first()
         for (item in items) {
             if (item.status == "sent" || item.status == "preparing") {
+                Log.d("OrderRepo", "markOrderReady: itemId=${item.id} orderId=$orderId oldStatus=${item.status} -> ready (source=kds)")
                 orderItemDao.updateOrderItem(item.copy(status = "ready", syncStatus = "PENDING"))
             }
         }

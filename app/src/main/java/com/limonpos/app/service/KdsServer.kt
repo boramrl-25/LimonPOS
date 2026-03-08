@@ -34,7 +34,8 @@ data class KdsItemDto(
     val quantity: Int,
     val notes: String,
     val status: String,
-    val sentAt: Long?
+    val sentAt: Long?,
+    val deliveredAt: Long? = null
 )
 
 private data class CreateOrderRequest(
@@ -145,7 +146,7 @@ class KdsServer @Inject constructor(
                                         }
                                         if (items.isEmpty()) null
                                         else KdsOrderDto(order.id, order.tableNumber, order.waiterName, order.status, order.createdAt,
-                                            items.map { KdsItemDto(it.id, it.productName, it.quantity, it.notes, it.status, it.sentAt) })
+                                            items.map { KdsItemDto(it.id, it.productName, it.quantity, it.notes, it.status, it.sentAt, it.deliveredAt) })
                                     }
                                 }
                             } catch (_: Exception) { emptyList<Any>() }
@@ -163,6 +164,13 @@ class KdsServer @Inject constructor(
                             if (itemId != null) {
                                 runBlocking { orderRepository.markItemReady(itemId) }
                                 newFixedLengthResponse(Response.Status.OK, "application/json", """{"ok":true}""")
+                            } else newFixedLengthResponse(Response.Status.BAD_REQUEST, "application/json", """{"ok":false}""")
+                        }
+                        uri.matches(Regex("^/kitchen-orders/items/([^/]+)/delivered$")) && session.method == Method.POST -> {
+                            val itemId = Regex("^/kitchen-orders/items/([^/]+)/delivered$").find(uri)?.groupValues?.get(1)
+                            if (itemId != null) {
+                                val ok = runBlocking { orderRepository.markItemDelivered(itemId) }
+                                newFixedLengthResponse(Response.Status.OK, "application/json", if (ok) """{"ok":true}""" else """{"ok":false}""")
                             } else newFixedLengthResponse(Response.Status.BAD_REQUEST, "application/json", """{"ok":false}""")
                         }
                         uri.matches(Regex("^/kitchen-orders/orders/([^/]+)/start-all$")) && session.method == Method.POST -> {
@@ -451,12 +459,18 @@ body{font-family:system-ui,-apple-system,sans-serif;margin:0;background:#000;col
 .kds-status-item{display:flex;align-items:center;gap:6px;color:#e2e8f0;font-size:14px;font-weight:600}
 .kds-status-pending{color:#3b82f6}
 .kds-status-preparing{color:#f59e0b}
+.kds-status-ready{color:#22c55e}
 .kds-status-delayed{color:#ef4444}
 .btn-refresh{background:#f59e0b;color:#000;padding:8px 16px;border:none;border-radius:8px;cursor:pointer;font-weight:600}
 .card{background:#0f0f0f;border-radius:12px;padding:16px;margin-bottom:12px;border:1px solid #262626;min-width:220px;max-width:280px}
 .card.sent{border-left:4px solid #f59e0b}
 .card.preparing{border-left:4px solid #f59e0b}
+.card.ready{border-left:4px solid #22c55e}
 .card.late{border-left:4px solid #ef4444;animation:pulse-late 1.5s ease-in-out infinite}
+.kds-ready-tag{background:#22c55e;color:#fff;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700;margin-left:6px}
+.kds-ready-badge{color:#22c55e;font-size:12px;font-weight:600}
+.kds-item-ready{background:rgba(34,197,94,.15)}
+.btn-delivered{background:#16a34a;color:#fff}
 @keyframes pulse-late{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.4)}50%{box-shadow:0 0 0 8px rgba(239,68,68,0)}}
 .card-header{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px}
 .card-header .table-num{font-weight:700;color:#e2e8f0;font-size:1.1rem}
@@ -498,6 +512,7 @@ th{color:#f59e0b}
 <div class="kds-status">
 <span class="kds-status-item kds-status-pending"><span>🔔</span> <span id="kds-pending-count">0</span> Pending</span>
 <span class="kds-status-item kds-status-preparing"><span>⏱</span> <span id="kds-preparing-count">0</span> Preparing</span>
+<span class="kds-status-item kds-status-ready"><span>✓</span> <span id="kds-ready-count">0</span> Ready</span>
 <span class="kds-status-item kds-status-delayed"><span>⚠</span> <span id="kds-delayed-count">0</span> Delayed</span>
 </div>
 <button class="btn btn-refresh" onclick="loadKitchen()">Refresh</button>
@@ -594,8 +609,11 @@ function formatProductNameLines(name) {
 }
 var LATE_MS = 10 * 60 * 1000;
 function isLate(it) {
-  if (!it.sentAt || it.status === 'ready') return false;
+  if (!it.sentAt || it.status === 'ready' || it.deliveredAt) return false;
   return (Date.now() - it.sentAt) >= LATE_MS;
+}
+function isVisibleInKds(it) {
+  return (it.status === 'sent' || it.status === 'preparing' || it.status === 'ready') && !it.deliveredAt;
 }
 function closeLateModal() { document.getElementById('late-modal').style.display = 'none'; }
 async function loadKitchen() {
@@ -609,33 +627,37 @@ async function loadKitchen() {
     var r = await fetch(url);
     var orders = await r.json();
     if (!Array.isArray(orders)) orders = [];
-    var pendingCount = 0, preparingCount = 0, delayedCount = 0;
+    var pendingCount = 0, preparingCount = 0, readyCount = 0, delayedCount = 0;
     var html = '';
     for (var i = 0; i < orders.length; i++) {
       var o = orders[i];
-      var items = (o.items || []).filter(function(x) { return x.status === 'sent' || x.status === 'preparing'; });
+      var items = (o.items || []).filter(isVisibleInKds);
       if (items.length === 0) continue;
       for (var j = 0; j < items.length; j++) {
         if (items[j].status === 'sent') pendingCount++;
         if (items[j].status === 'preparing') preparingCount++;
+        if (items[j].status === 'ready') readyCount++;
         if (isLate(items[j])) delayedCount++;
       }
       var hasLate = items.some(isLate);
       var hasSent = items.some(function(x) { return x.status === 'sent'; });
       var hasPreparing = items.some(function(x) { return x.status === 'preparing'; });
-      var cardClass = (hasPreparing ? 'preparing' : 'sent');
+      var hasReady = items.some(function(x) { return x.status === 'ready'; });
+      var cardClass = (hasPreparing ? 'preparing' : hasReady ? 'ready' : 'sent');
       if (hasLate) cardClass += ' late';
       var orderElapsed = 0;
       for (var j = 0; j < items.length; j++) { if (items[j].sentAt) orderElapsed = Math.max(orderElapsed, Date.now() - items[j].sentAt); }
       var elapsedStr = orderElapsed >= 3600000 ? Math.floor(orderElapsed/3600000) + 'h ' + Math.floor((orderElapsed%3600000)/60000) + 'm' : Math.floor(orderElapsed/60000) + 'm';
       html += '<div class="card ' + cardClass + '"><div class="card-header"><span class="table-num">Table ' + o.tableNumber + '</span>';
       if (hasLate) html += '<span class="kds-delayed-tag">DELAYED</span>';
+      if (hasReady) html += '<span class="kds-ready-tag">READY</span>';
       html += '<span style="color:#94a3b8;font-size:12px">⏱ ' + elapsedStr + '</span></div>';
       for (var j = 0; j < items.length; j++) {
         var it = items[j];
-        html += '<div class="kds-item-line"><span class="kds-item-name">' + (it.quantity > 1 ? it.quantity + 'x ' : '') + formatProductNameLines(it.productName) + (it.notes ? ' — ' + escapeHtml(it.notes) : '') + '</span><span>';
+        html += '<div class="kds-item-line' + (it.status === 'ready' ? ' kds-item-ready' : '') + '"><span class="kds-item-name">' + (it.quantity > 1 ? it.quantity + 'x ' : '') + formatProductNameLines(it.productName) + (it.notes ? ' — ' + escapeHtml(it.notes) : '') + (it.status === 'ready' ? ' <span class="kds-ready-badge">— Ready for service</span>' : '') + '</span><span>';
         if (it.status === 'sent') html += '<button class="btn btn-start" onclick="startItem(\'' + it.id + '\')">Start</button>';
         if (it.status === 'preparing') html += '<button class="btn btn-ready" onclick="readyItem(\'' + it.id + '\')">✓ Ready</button>';
+        if (it.status === 'ready') html += '<button class="btn btn-delivered" onclick="deliveredItem(\'' + it.id + '\')">✓ Delivered</button>';
         html += '</span></div>';
       }
       if (hasSent && hasPreparing) html += '<div style="margin-top:12px"><button class="kds-btn-order-ready" onclick="orderReady(\'' + o.id + '\')">✓ Order Ready</button></div>';
@@ -646,9 +668,11 @@ async function loadKitchen() {
     document.getElementById('kitchen-orders').innerHTML = html || '<p style="color:#94a3b8">No pending orders</p>';
     var pendEl = document.getElementById('kds-pending-count');
     var prepEl = document.getElementById('kds-preparing-count');
+    var readyEl = document.getElementById('kds-ready-count');
     var delEl = document.getElementById('kds-delayed-count');
     if (pendEl) pendEl.textContent = pendingCount;
     if (prepEl) prepEl.textContent = preparingCount;
+    if (readyEl) readyEl.textContent = readyCount;
     if (delEl) delEl.textContent = delayedCount;
   } catch (e) {
     var el = document.getElementById('kitchen-orders');
@@ -659,6 +683,7 @@ function startAll(orderId) { fetch(base + '/kitchen-orders/orders/' + encodeURIC
 function orderReady(orderId) { fetch(base + '/kitchen-orders/orders/' + encodeURIComponent(orderId) + '/ready', { method: 'POST' }).then(function() { loadKitchen(); }); }
 function startItem(id) { fetch(base + '/kitchen-orders/items/' + encodeURIComponent(id) + '/preparing', { method: 'POST' }).then(function() { loadKitchen(); }); }
 function readyItem(id) { fetch(base + '/kitchen-orders/items/' + encodeURIComponent(id) + '/ready', { method: 'POST' }).then(function() { loadKitchen(); }); }
+function deliveredItem(id) { fetch(base + '/kitchen-orders/items/' + encodeURIComponent(id) + '/delivered', { method: 'POST' }).then(function() { loadKitchen(); }); }
 async function loadReports() {
   try {
     var sum = await fetch(base + '/reports/summary').then(function(r) { return r.json(); });
