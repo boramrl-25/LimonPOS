@@ -652,7 +652,7 @@ function showPage(id) {
   document.getElementById(id).classList.add('active');
   var lnk = document.querySelector('[data-page="' + id + '"]');
   if (lnk) lnk.classList.add('active');
-  if (id === 'kds') { loadKdsPrinters(); loadKitchen(); }
+  if (id === 'kds') { loadKdsPrinters(); }
   else if (id === 'settings') loadReports();
 }
 var LATE_MS = 10 * 60 * 1000;
@@ -663,8 +663,10 @@ function isLate(it) {
 function closeLateModal() { document.getElementById('late-modal').style.display = 'none'; }
 function loadKdsPrinters() {
   kdsSelectedPrinterIds = loadStoredPrinterSelection();
+  console.log('KDS selected printers:', kdsSelectedPrinterIds);
   fetch(base + '/printers').then(function(r) { return r.json(); }).then(function(list) {
     kdsKitchenPrinters = (list || []).filter(function(p) { return (p.printerType || '').toLowerCase() === 'kitchen' && p.kdsEnabled !== false; });
+    console.log('KDS printers loaded:', kdsKitchenPrinters);
     var container = document.getElementById('kds-printer-list');
     if (!container) return;
     var selected = kdsSelectedPrinterIds || [];
@@ -715,9 +717,11 @@ function updateKdsPrinterSelection() {
 }
 async function loadKitchen() {
   try {
-  if (document.getElementById('kds-printer-list') && document.getElementById('kds-printer-list').children.length > 0) updateKdsPrinterSelection();
+  var container = document.getElementById('kds-printer-list');
+  if (container && container.children.length > 0) updateKdsPrinterSelection();
   var url = base + '/kitchen-orders';
   if (kdsSelectedPrinterIds && kdsSelectedPrinterIds.length > 0) url += '?printers=' + encodeURIComponent(kdsSelectedPrinterIds.join(','));
+  console.log('KDS request URL:', url);
   var r = await fetch(url);
   var orders = await r.json();
   if (!Array.isArray(orders)) orders = [];
@@ -927,7 +931,7 @@ function openDrawer(btn) {
 }
 async function loadModifiers() { var r = await fetch(base + '/modifier-groups'); var d = await r.json(); document.getElementById('modifiers-data').textContent = JSON.stringify(d, null, 2); }
 var urlParams = new URLSearchParams(window.location.search);
-if (urlParams.get('page') === 'settings') { showPage('settings'); } else { loadKdsPrinters(); loadKitchen(); }
+if (urlParams.get('page') === 'settings') { showPage('settings'); } else { loadKdsPrinters(); }
 setInterval(function() { if (document.getElementById('kds').classList.contains('active')) loadKitchen(); }, 2000);
 setInterval(function() { if (document.getElementById('kds').classList.contains('active')) checkLateAndShowPopup(); }, 10 * 60 * 1000);
 </script>
