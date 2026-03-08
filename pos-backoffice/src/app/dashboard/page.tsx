@@ -19,7 +19,7 @@ type TicketModalType = "cash" | "card" | "all" | "void" | "refund" | "open" | nu
 function toYYYYMMDD(d: Date) {
   return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
 }
-const blockBaseClass = "flex p-5 rounded-xl border transition-colors text-left cursor-pointer w-full min-h-[100px] hover:opacity-95";
+const blockBaseClass = "flex p-3 rounded-xl border transition-colors text-left cursor-pointer w-full min-h-[72px] hover:opacity-95";
 
 function fmt(n: number) {
   return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -241,81 +241,81 @@ export default function DashboardPage() {
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
             <button type="button" className={`${blockBaseClass} bg-emerald-900/80 border-emerald-600/50 text-emerald-100`} onClick={() => setTicketModalType("all")}>
               <div className="min-w-0 flex-1">
-                <p className="text-base font-semibold uppercase tracking-wide mb-1">Total Sales</p>
-                <p className="text-lg font-bold truncate">{loading ? "..." : `${fmt(dailySales?.totalSales ?? stats.todaySales ?? 0)} AED`}</p>
+                <p className="text-sm font-semibold uppercase tracking-wide mb-0.5">Total Sales</p>
+                <p className="text-xs font-medium truncate">{loading ? "..." : `${fmt(dailySales?.totalSales ?? stats.todaySales ?? 0)} AED`}</p>
               </div>
             </button>
             <button type="button" className={`${blockBaseClass} bg-sky-900/80 border-sky-600/50 text-sky-100`} onClick={() => setTicketModalType("card")}>
               <div className="min-w-0 flex-1">
-                <p className="text-base font-semibold uppercase tracking-wide mb-1">Total Card</p>
-                <p className="text-lg font-bold truncate">{loading ? "..." : `${fmt(dailySales?.totalCard ?? 0)} AED`}</p>
+                <p className="text-sm font-semibold uppercase tracking-wide mb-0.5">Total Card</p>
+                <p className="text-xs font-medium truncate">{loading ? "..." : `${fmt(dailySales?.totalCard ?? 0)} AED`}</p>
               </div>
             </button>
             <button type="button" className={`${blockBaseClass} bg-amber-900/80 border-amber-600/50 text-amber-100`} onClick={() => setTicketModalType("cash")}>
               <div className="min-w-0 flex-1">
-                <p className="text-base font-semibold uppercase tracking-wide mb-1">Total Cash</p>
-                <p className="text-lg font-bold truncate">{loading ? "..." : `${fmt(dailySales?.totalCash ?? 0)} AED`}</p>
+                <p className="text-sm font-semibold uppercase tracking-wide mb-0.5">Total Cash</p>
+                <p className="text-xs font-medium truncate">{loading ? "..." : `${fmt(dailySales?.totalCash ?? 0)} AED`}</p>
               </div>
             </button>
             <button type="button" className={`${blockBaseClass} bg-yellow-900/80 border-yellow-600/50 text-yellow-100`} onClick={handleOpenTablesClick}>
               <div className="min-w-0 flex-1">
-                <p className="text-base font-semibold uppercase tracking-wide mb-1">Open Tables</p>
-                <p className="text-lg font-bold">{loading ? "..." : stats.openTables}</p>
+                <p className="text-sm font-semibold uppercase tracking-wide mb-0.5">Open Tables</p>
+                <p className="text-xs font-medium">{loading ? "..." : stats.openTables}</p>
               </div>
             </button>
             <button type="button" className={`${blockBaseClass} bg-orange-900/80 border-orange-600/50 text-orange-100`} onClick={() => { setTicketModalType(null); router.push("/dashboard/approvals"); }}>
               <div className="min-w-0 flex-1">
-                <p className="text-base font-semibold uppercase tracking-wide mb-1">Approval Request</p>
-                <p className="text-xl font-bold">{loading ? "..." : totalApprovalRequests}</p>
-                <p className="text-base opacity-90">Void + Closed Bill</p>
+                <p className="text-sm font-semibold uppercase tracking-wide mb-0.5">Approval Request</p>
+                <p className="text-xs font-medium">{loading ? "..." : totalApprovalRequests}</p>
+                <p className="text-xs opacity-90">Void + Closed Bill</p>
               </div>
             </button>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
             <button type="button" className={`${blockBaseClass} bg-rose-900/80 border-rose-600/50 text-rose-100`} onClick={() => setClosedBillChangesModal(true)}>
               <div className="min-w-0 flex-1">
-                <p className="text-base font-semibold uppercase tracking-wide mb-1">Closed Bill Changes</p>
-                <p className="text-lg font-bold">{loading ? "..." : (closedBillChanges?.count ?? 0)}</p>
+                <p className="text-sm font-semibold uppercase tracking-wide mb-0.5">Closed Bill Changes</p>
+                <p className="text-xs font-medium">{loading ? "..." : (closedBillChanges?.count ?? 0)}</p>
               </div>
             </button>
             <button type="button" className={`${blockBaseClass} bg-red-900/80 border-red-600/50 text-red-100`} onClick={() => setTicketModalType("void")}>
               <div className="min-w-0 flex-1">
-                <p className="text-base font-semibold uppercase tracking-wide mb-1">Total Void</p>
-                <p className="text-xl font-bold truncate">{loading ? "..." : `${fmt(dailySales?.totalVoidAmount ?? 0)} AED`}</p>
+                <p className="text-sm font-semibold uppercase tracking-wide mb-0.5">Total Void</p>
+                <p className="text-xs font-medium truncate">{loading ? "..." : `${fmt(dailySales?.totalVoidAmount ?? 0)} AED`}</p>
               </div>
             </button>
             <button type="button" className={`${blockBaseClass} bg-red-950/80 border-red-700/50 text-red-200`} onClick={() => setTicketModalType("refund")}>
               <div className="min-w-0 flex-1">
-                <p className="text-base font-semibold uppercase tracking-wide mb-1">Refund Total</p>
-                <p className="text-lg font-bold truncate">{loading ? "..." : `${fmt(dailySales?.totalRefundAmount ?? 0)} AED`}</p>
+                <p className="text-sm font-semibold uppercase tracking-wide mb-0.5">Refund Total</p>
+                <p className="text-xs font-medium truncate">{loading ? "..." : `${fmt(dailySales?.totalRefundAmount ?? 0)} AED`}</p>
               </div>
             </button>
             <button type="button" className={`${blockBaseClass} bg-teal-900/80 border-teal-600/50 text-teal-100`} onClick={() => setCashDrawerModalOpen(true)}>
               <div className="min-w-0 flex-1">
-                <p className="text-base font-semibold uppercase tracking-wide mb-1">Cash Drawer Opens</p>
-                <p className="text-xl font-bold">{loading ? "..." : (cashDrawerOpens?.count ?? 0)}</p>
-                <p className="text-base opacity-90">No sale</p>
+                <p className="text-sm font-semibold uppercase tracking-wide mb-0.5">Cash Drawer Opens</p>
+                <p className="text-xs font-medium">{loading ? "..." : (cashDrawerOpens?.count ?? 0)}</p>
+                <p className="text-xs opacity-90">No sale</p>
               </div>
             </button>
             <button type="button" className={`${blockBaseClass} bg-violet-900/80 border-violet-600/50 text-violet-100`} onClick={() => setDiscountsModalOpen(true)}>
               <div className="min-w-0 flex-1">
-                <p className="text-base font-semibold uppercase tracking-wide mb-1">Today&apos;s Discounts</p>
-                <p className="text-lg font-bold">{loading ? "..." : (discountsToday?.count ?? 0)}</p>
-                <p className="text-base opacity-90">{loading ? "" : `${fmt(discountsToday?.totalDiscountAmount ?? 0)} AED`}</p>
+                <p className="text-sm font-semibold uppercase tracking-wide mb-0.5">Today&apos;s Discounts</p>
+                <p className="text-xs font-medium">{loading ? "..." : (discountsToday?.count ?? 0)}</p>
+                <p className="text-xs opacity-90">{loading ? "" : `${fmt(discountsToday?.totalDiscountAmount ?? 0)} AED`}</p>
               </div>
             </button>
             <button type="button" className={`${blockBaseClass} bg-fuchsia-900/80 border-fuchsia-600/50 text-fuchsia-100`} onClick={() => router.push("/dashboard/discount-requests")}>
               <div className="min-w-0 flex-1">
-                <p className="text-base font-semibold uppercase tracking-wide mb-1">Discount Requests</p>
-                <p className="text-lg font-bold">{pendingDiscountRequestsCount}</p>
-                <p className="text-base opacity-90">Pending approval</p>
+                <p className="text-sm font-semibold uppercase tracking-wide mb-0.5">Discount Requests</p>
+                <p className="text-xs font-medium">{pendingDiscountRequestsCount}</p>
+                <p className="text-xs opacity-90">Pending approval</p>
               </div>
             </button>
             <button type="button" className={`${blockBaseClass} bg-rose-900/80 border-rose-600/50 text-rose-100`} onClick={handleOpenTablesNotClosedClick}>
               <div className="min-w-0 flex-1">
-                <p className="text-base font-semibold uppercase tracking-wide mb-1">Open Tables Pending Close</p>
-                <p className="text-lg font-bold">{loading ? "..." : stats.openTablesCount}</p>
-                <p className="text-base opacity-90">End-of-day open tables</p>
+                <p className="text-sm font-semibold uppercase tracking-wide mb-0.5">Open Tables Pending Close</p>
+                <p className="text-xs font-medium">{loading ? "..." : stats.openTablesCount}</p>
+                <p className="text-xs opacity-90">End-of-day open tables</p>
               </div>
             </button>
           </div>
