@@ -465,7 +465,12 @@ app.post("/api/devices/heartbeat", authMiddleware, async (req, res) => {
   };
   const idx = db.data.devices.findIndex((d) => d.id === deviceId);
   if (idx >= 0) {
-    db.data.devices[idx] = { ...db.data.devices[idx], ...device };
+    const existing = db.data.devices[idx];
+    const merged = { ...existing, ...device };
+    if (existing.clear_local_data_requested === true) {
+      merged.clear_local_data_requested = true;
+    }
+    db.data.devices[idx] = merged;
   } else {
     db.data.devices.push(device);
   }
