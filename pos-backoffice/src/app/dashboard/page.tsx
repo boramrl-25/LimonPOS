@@ -200,25 +200,25 @@ export default function DashboardPage() {
             <button type="button" className={`${blockBaseClass} bg-emerald-900/80 border-emerald-600/50 text-emerald-100`} onClick={() => setTicketModalType("all")}>
               <div className="min-w-0 flex-1">
                 <p className="text-base font-semibold uppercase tracking-wide mb-1">Total Sales</p>
-                <p className="text-3xl font-bold truncate">{loading ? "..." : `${fmt(dailySales?.totalSales ?? stats.todaySales ?? 0)} AED`}</p>
+                <p className="text-2xl font-bold truncate">{loading ? "..." : `${fmt(dailySales?.totalSales ?? stats.todaySales ?? 0)} AED`}</p>
               </div>
             </button>
             <button type="button" className={`${blockBaseClass} bg-sky-900/80 border-sky-600/50 text-sky-100`} onClick={() => setTicketModalType("card")}>
               <div className="min-w-0 flex-1">
                 <p className="text-base font-semibold uppercase tracking-wide mb-1">Total Card</p>
-                <p className="text-3xl font-bold truncate">{loading ? "..." : `${fmt(dailySales?.totalCard ?? 0)} AED`}</p>
+                <p className="text-2xl font-bold truncate">{loading ? "..." : `${fmt(dailySales?.totalCard ?? 0)} AED`}</p>
               </div>
             </button>
             <button type="button" className={`${blockBaseClass} bg-amber-900/80 border-amber-600/50 text-amber-100`} onClick={() => setTicketModalType("cash")}>
               <div className="min-w-0 flex-1">
                 <p className="text-base font-semibold uppercase tracking-wide mb-1">Total Cash</p>
-                <p className="text-3xl font-bold truncate">{loading ? "..." : `${fmt(dailySales?.totalCash ?? 0)} AED`}</p>
+                <p className="text-2xl font-bold truncate">{loading ? "..." : `${fmt(dailySales?.totalCash ?? 0)} AED`}</p>
               </div>
             </button>
             <button type="button" className={`${blockBaseClass} bg-yellow-900/80 border-yellow-600/50 text-yellow-100`} onClick={handleOpenTablesClick}>
               <div className="min-w-0 flex-1">
                 <p className="text-base font-semibold uppercase tracking-wide mb-1">Open Tables</p>
-                <p className="text-3xl font-bold">{loading ? "..." : stats.openTables}</p>
+                <p className="text-2xl font-bold">{loading ? "..." : stats.openTables}</p>
               </div>
             </button>
             <button type="button" className={`${blockBaseClass} bg-orange-900/80 border-orange-600/50 text-orange-100`} onClick={() => { setTicketModalType(null); router.push("/dashboard/approvals"); }}>
@@ -233,7 +233,7 @@ export default function DashboardPage() {
             <button type="button" className={`${blockBaseClass} bg-rose-900/80 border-rose-600/50 text-rose-100`} onClick={() => setClosedBillChangesModal(true)}>
               <div className="min-w-0 flex-1">
                 <p className="text-base font-semibold uppercase tracking-wide mb-1">Closed Bill Changes</p>
-                <p className="text-3xl font-bold">{loading ? "..." : (closedBillChanges?.count ?? 0)}</p>
+                <p className="text-2xl font-bold">{loading ? "..." : (closedBillChanges?.count ?? 0)}</p>
               </div>
             </button>
             <button type="button" className={`${blockBaseClass} bg-red-900/80 border-red-600/50 text-red-100`} onClick={() => setTicketModalType("void")}>
@@ -245,7 +245,7 @@ export default function DashboardPage() {
             <button type="button" className={`${blockBaseClass} bg-red-950/80 border-red-700/50 text-red-200`} onClick={() => setTicketModalType("refund")}>
               <div className="min-w-0 flex-1">
                 <p className="text-base font-semibold uppercase tracking-wide mb-1">Refund Total</p>
-                <p className="text-3xl font-bold truncate">{loading ? "..." : `${fmt(dailySales?.totalRefundAmount ?? 0)} AED`}</p>
+                <p className="text-2xl font-bold truncate">{loading ? "..." : `${fmt(dailySales?.totalRefundAmount ?? 0)} AED`}</p>
               </div>
             </button>
             <button type="button" className={`${blockBaseClass} bg-teal-900/80 border-teal-600/50 text-teal-100`} onClick={() => setCashDrawerModalOpen(true)}>
@@ -258,14 +258,14 @@ export default function DashboardPage() {
             <button type="button" className={`${blockBaseClass} bg-violet-900/80 border-violet-600/50 text-violet-100`} onClick={() => setDiscountsModalOpen(true)}>
               <div className="min-w-0 flex-1">
                 <p className="text-base font-semibold uppercase tracking-wide mb-1">Today&apos;s Discounts</p>
-                <p className="text-3xl font-bold">{loading ? "..." : (discountsToday?.count ?? 0)}</p>
+                <p className="text-2xl font-bold">{loading ? "..." : (discountsToday?.count ?? 0)}</p>
                 <p className="text-base opacity-90">{loading ? "" : `${fmt(discountsToday?.totalDiscountAmount ?? 0)} AED`}</p>
               </div>
             </button>
             <button type="button" className={`${blockBaseClass} bg-fuchsia-900/80 border-fuchsia-600/50 text-fuchsia-100`} onClick={() => router.push("/dashboard/discount-requests")}>
               <div className="min-w-0 flex-1">
                 <p className="text-base font-semibold uppercase tracking-wide mb-1">Discount Requests</p>
-                <p className="text-3xl font-bold">{pendingDiscountRequestsCount}</p>
+                <p className="text-2xl font-bold">{pendingDiscountRequestsCount}</p>
                 <p className="text-base opacity-90">Pending approval</p>
               </div>
             </button>
