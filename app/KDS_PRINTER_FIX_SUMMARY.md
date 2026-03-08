@@ -1,13 +1,9 @@
 # KDS Printer Filter Fix — Özet
 
-## Root Cause
+## Exact Root Cause
 
-**KDS filtering sadece `ProductEntity.printers` kullanıyordu; `CategoryEntity.printers` fallback yoktu.**
-
-`KitchenPrintHelper` ürünün printer bilgisini `product.printers` varsa ondan, yoksa `category.printers`’ten alıyordu. KDS tarafında ise sadece `product.printers` kullanıldığı için:
-
-- Ürünün kendisinde printer yok ama kategoride varsa → bu ürünler KDS filtresinde görünmüyordu
-- Bar / 6’lı ocak gibi kategori bazlı printer atamaları çalışmıyordu
+1. **Client race (ana sebep):** `loadKitchen()` başında `updateKdsPrinterSelection()` her zaman çağrılıyordu. Bu fonksiyon DOM’daki `.kds-printer-id.active` butonlarından seçimi okuyor. `showPage('kds')` → `loadKdsPrinters(); loadKitchen();` sırasında `loadKitchen` hemen çalışıyor; o anda printer listesi henüz fetch edilmediği için DOM boş. `updateKdsPrinterSelection` boş DOM’dan `activeIds = []` alıp `kdsSelectedPrinterIds = null` yapıyor. Sonuç: Her zaman "All" modu.
+2. **Category fallback eksikliği (server):** Önceki fix’te eklendi; `product.printers` boşsa `category.printers` kullanılıyor.
 
 ---
 
@@ -15,56 +11,35 @@
 
 | File | Change |
 |------|--------|
-| `app/src/main/java/com/limonpos/app/service/KdsServer.kt` | `/kitchen-orders` filtrelemesinde `effective printer` mantığı: `product.printers` boşsa `category.printers` kullanılıyor. `PrinterService.parsePrinterIds` ile tutarlı parsing. |
+| `KdsServer.kt` | 1) `/kitchen-orders` filtrelemesinde effective printer (product → category fallback). 2) `updateKdsPrinterSelection` sadece printer listesi DOM’da hazır olduğunda çağrılıyor. 3) `loadKdsPrinters` fetch bitince `loadKitchen()` çağrılıyor. |
 
 ---
 
 ## Selected Printer Storage
 
-- **Yer:** WebView `localStorage` (KDS HTML/JS embedded in `KdsServer.CONTROL_HTML`)
+- **Yer:** WebView `localStorage` (embedded HTML/JS, `KdsServer.CONTROL_HTML`)
 - **Key:** `kds_selected_printers`
-- **Değer:** `null` veya `["id1","id2"]` (printer ID listesi)
-- **Davranış:**
-  - `null` / boş → “All” modu, tüm ürünler gösterilir
-  - Dolu → Sadece seçili printer’lara ait ürünler gösterilir
+- **Değer:** `null` veya `["id1","id2"]` (printer ID)
 
 ---
 
-## Final Visibility Rule
+## Final Filtering Code Path
 
-**Item görünsün mü?**
-
-```
-effectivePrinterIds = product.printers (parse) 
-  → eğer boş: category.printers (parse)
-  → eğer yine boş: []
-
-IF selectedPrinterIds == null (All modu):
-  → Tüm itemler göster
-ELSE (belirli printer(lar) seçili):
-  → Sadece effectivePrinterIds ∩ selectedPrinterIds ≠ ∅ olan itemler göster
-  → effectivePrinterIds boş olan itemler (ne product ne category) GÖSTERME
-```
+**Client:** `loadKitchen()` → `url = base + '/kitchen-orders'` + (eğer `kdsSelectedPrinterIds` dolu) `?printers=id1,id2`  
+**Server:** `KdsServer.serve()` → query `printers` alınır → `selectedPrinterIds` set  
+Her item için: `effectivePrinterIds = product.printers` else `category.printers` → `effectivePrinterIds.any { it in selectedPrinterIds }`
 
 ---
 
-## Test Steps
+## Why It Was Still Not Working
 
-1. **Sadece Bar printer seçili KDS**
-   - Bar’a atanmış ürünler görünmeli
-   - Sadece başka printer’lara atanmış ürünler görünmemeli
+`loadKitchen()` her çağrıda `updateKdsPrinterSelection()` ile DOM’dan seçim okuyordu. İlk yüklemede DOM henüz boş (fetch tamamlanmamış) olduğu için `kdsSelectedPrinterIds = null` oluyordu. Bu yüzden her zaman `/kitchen-orders` (parametresiz) çağrılıyor ve “All” davranışı oluşuyordu.
 
-2. **Sadece 6’lı ocak printer seçili KDS**
-   - 6’lı ocak ürünleri görünmeli
+---
 
-3. **Bar + 6’lı ocak seçili KDS**
-   - Bar veya 6’lı ocak printer’larına atanmış tüm ürünler görünmeli
+## How to Test
 
-4. **Kategori fallback**
-   - Üründe `printers: []`, kategoride `printers: ["pr1"]` ise → KDS’te pr1 seçiliyken bu ürün görünmeli
-
-5. **All modu**
-   - Hiç printer seçilmediğinde veya “All” seçildiğinde tüm ürünler görünmeli
-
-6. **Persistence**
-   - Uygulamayı kapatıp aç, KDS ekranına gir → Seçim korunmalı (localStorage)
+1. KDS aç → Bir printer seç (örn. Bar) → Sadece o printer’a atanmış ürünler görünmeli.
+2. “All” tıkla → Tüm ürünler görünmeli.
+3. Uygulamayı kapat/aç, KDS’e gir → Önceki seçim korunmalı.
+4. Üründe printer yok, kategoride varsa → O kategori printer’ı seçiliyken ürün görünmeli.

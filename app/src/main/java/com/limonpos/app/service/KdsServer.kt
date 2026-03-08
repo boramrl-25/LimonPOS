@@ -675,6 +675,7 @@ function loadKdsPrinters() {
       var isActive = !allActive && selected.indexOf(pid) >= 0;
       return '<button type="button" class="kds-printer-btn kds-printer-id' + (isActive ? ' active' : '') + '" data-id="' + pid.replace(/"/g, '&quot;') + '" onclick="toggleKdsPrinterBtn(\'' + pid.replace(/'/g, "\\\\'") + '\')">' + (p.name || p.id) + '</button>';
     }).join('');
+    loadKitchen();
   });
 }
 function toggleKdsPrinterBtn(id) {
@@ -714,7 +715,7 @@ function updateKdsPrinterSelection() {
 }
 async function loadKitchen() {
   try {
-  updateKdsPrinterSelection();
+  if (document.getElementById('kds-printer-list') && document.getElementById('kds-printer-list').children.length > 0) updateKdsPrinterSelection();
   var url = base + '/kitchen-orders';
   if (kdsSelectedPrinterIds && kdsSelectedPrinterIds.length > 0) url += '?printers=' + encodeURIComponent(kdsSelectedPrinterIds.join(','));
   var r = await fetch(url);
