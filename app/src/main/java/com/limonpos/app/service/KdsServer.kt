@@ -105,13 +105,8 @@ class KdsServer @Inject constructor(
                     if (session.method == Method.OPTIONS) {
                         return cors(newFixedLengthResponse(Response.Status.OK, "text/plain", ""))
                     }
-                    val fullUri = session.uri ?: ""
-                    val uri = fullUri.split("?").first()
-                    val query = fullUri.split("?").getOrNull(1) ?: ""
-                    val queryParams = query.split("&").associate { part ->
-                        val kv = part.split("=", limit = 2)
-                        (kv.getOrNull(0) ?: "") to (kv.getOrNull(1)?.let { java.net.URLDecoder.decode(it, "UTF-8") } ?: "")
-                    }
+                    val uri = (session.uri ?: "").split("?").first()
+                    @Suppress("DEPRECATION") val queryParams = session.parms ?: emptyMap<String, String>()
                     val jsonResponse = when {
                         uri == "/" || uri == "/control" || uri == "/index.html" ->
                             newFixedLengthResponse(Response.Status.OK, "text/html; charset=utf-8", KdsServer.CONTROL_HTML)
