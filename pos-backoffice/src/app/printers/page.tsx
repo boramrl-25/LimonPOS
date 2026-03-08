@@ -6,11 +6,7 @@ import { ArrowLeft, Plus, Pencil, Trash2, FileSpreadsheet, FileDown } from "luci
 import * as XLSX from "xlsx";
 import { getPrinters, createPrinter, updatePrinter, deletePrinter } from "@/lib/api";
 
-type Printer = { id: string; name: string; printer_type: string; ip_address: string; port: number; status: string; kds_enabled?: boolean; enabled?: boolean | number };
-
-function isPrinterEnabled(p: Printer): boolean {
-  return p.enabled !== false && p.enabled !== 0;
-}
+type Printer = { id: string; name: string; printer_type: string; ip_address: string; port: number; status: string; kds_enabled?: boolean; enabled?: boolean };
 
 export default function PrintersPage() {
   const [printers, setPrinters] = useState<Printer[]>([]);
@@ -37,7 +33,7 @@ export default function PrintersPage() {
   function openEdit(p?: Printer) {
     if (p) {
       setEditing(p);
-      setForm({ name: p.name, printer_type: p.printer_type, ip_address: p.ip_address, port: p.port, kds_enabled: Boolean(p.kds_enabled), enabled: isPrinterEnabled(p) });
+      setForm({ name: p.name, printer_type: p.printer_type, ip_address: p.ip_address, port: p.port, kds_enabled: Boolean(p.kds_enabled), enabled: p.enabled !== false });
     } else {
       setEditing(null);
       setForm({ name: "", printer_type: "kitchen", ip_address: "", port: 9100, kds_enabled: true, enabled: true });
@@ -60,7 +56,7 @@ export default function PrintersPage() {
 
   async function toggleEnabled(p: Printer) {
     try {
-      const nextEnabled = !isPrinterEnabled(p);
+      const nextEnabled = p.enabled === false;
       await updatePrinter(p.id, { name: p.name, printer_type: p.printer_type, ip_address: p.ip_address, port: p.port, kds_enabled: p.kds_enabled, enabled: nextEnabled });
       await load();
     } catch (e) {
@@ -99,7 +95,7 @@ export default function PrintersPage() {
       Type: p.printer_type,
       IP: p.ip_address,
       Port: p.port,
-      Enabled: isPrinterEnabled(p) ? "On" : "Off",
+      Enabled: p.enabled !== false ? "On" : "Off",
       KDSEnabled: p.printer_type === "kitchen" && Boolean(p.kds_enabled) ? "On" : "Off",
     }));
     const ws = XLSX.utils.json_to_sheet(rows);
@@ -241,10 +237,10 @@ export default function PrintersPage() {
                 <td className="p-4">
                   <button
                     onClick={() => toggleEnabled(p)}
-                    className={`px-2 py-1 rounded text-xs font-medium transition-colors ${isPrinterEnabled(p) ? "bg-emerald-600/30 text-emerald-400 hover:bg-emerald-600/50" : "bg-slate-600/30 text-slate-500 hover:bg-slate-600/50"}`}
-                    title={isPrinterEnabled(p) ? "On — Click to turn off (exclude from print jobs)" : "Off — Click to turn on"}
+                    className={`px-2 py-1 rounded text-xs font-medium transition-colors ${p.enabled !== false ? "bg-emerald-600/30 text-emerald-400 hover:bg-emerald-600/50" : "bg-slate-600/30 text-slate-500 hover:bg-slate-600/50"}`}
+                    title={p.enabled !== false ? "On — Click to turn off (exclude from print jobs)" : "Off — Click to turn on"}
                   >
-                    {isPrinterEnabled(p) ? "On" : "Off"}
+                    {p.enabled !== false ? "On" : "Off"}
                   </button>
                 </td>
                 <td className="p-4">
