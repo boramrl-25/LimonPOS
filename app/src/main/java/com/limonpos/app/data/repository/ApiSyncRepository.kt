@@ -6,6 +6,7 @@ import android.util.Log
 import com.google.gson.Gson
 import com.limonpos.app.data.local.dao.*
 import com.limonpos.app.data.local.entity.*
+import com.limonpos.app.data.prefs.CurrencyPreferences
 import com.limonpos.app.data.prefs.FloorPlanSectionsPreferences
 import com.limonpos.app.data.prefs.PrinterPreferences
 import com.limonpos.app.data.prefs.ReceiptItemSize
@@ -43,6 +44,7 @@ class ApiSyncRepository @Inject constructor(
     private val transferLogDao: TransferLogDao,
     private val floorPlanSectionsPreferences: FloorPlanSectionsPreferences,
     private val receiptPreferences: ReceiptPreferences,
+    private val currencyPreferences: CurrencyPreferences,
     private val printerPreferences: PrinterPreferences,
     private val serverPreferences: ServerPreferences,
     private val sessionManager: SessionManager,
@@ -799,6 +801,9 @@ class ApiSyncRepository @Inject constructor(
             dto.receiptItemSize?.let { size ->
                 val v = size.coerceIn(ReceiptItemSize.NORMAL, ReceiptItemSize.XLARGE)
                 printerPreferences.setReceiptItemSize(v)
+            }
+            dto.currencyCode?.takeIf { it.isNotBlank() }?.let { code ->
+                currencyPreferences.setCurrencyCode(code)
             }
         } catch (e: Exception) {
             Log.e("ApiSync", "syncSettings error: ${e.message}", e)

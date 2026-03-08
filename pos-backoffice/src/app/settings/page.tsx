@@ -6,7 +6,7 @@ import { CreditCard, BookOpen, Mail, Users, ArrowLeft, SlidersHorizontal, Globe,
 const settingsSections = [
   { href: "/printers", label: "Printers (Receipt & Kitchen)", icon: Printer, description: "Customer bill → Receipt. Kitchen orders → Kitchen." },
   { href: "/settings/receipt", label: "Customer Receipt & Kitchen Receipt", icon: Receipt, description: "Company name, address, receipt message, kitchen header" },
-  { href: "/settings/general", label: "General & Timezone", icon: Globe, description: "Timezone for business day and daily sales" },
+  { href: "/settings/general", label: "General, Timezone & Currency", icon: Globe, description: "Timezone, currency (para birimi) for amounts and cash drawer symbol" },
   { href: "/settings/business-hours", label: "Business Hours & End of Day", icon: Clock, description: "Opening, closing, warning time, auto-close open tables" },
   { href: "/settings/payment", label: "Payment Methods & Integrations", icon: CreditCard, description: "Cash, Card, Custom payment methods" },
   { href: "/settings/zoho", label: "Zoho Books Integration", icon: BookOpen, description: "Sync sales and products" },

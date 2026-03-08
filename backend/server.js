@@ -942,7 +942,7 @@ app.delete("/api/modifier-groups/:id", authMiddleware, async (req, res) => {
   res.status(204).send();
 });
 
-// Settings (timezone, receipt/bill, kitchen)
+// Settings (timezone, receipt/bill, kitchen, currency)
 app.get("/api/settings", authMiddleware, async (req, res) => {
   await ensureData();
   const s = db.data.settings || {};
@@ -955,6 +955,7 @@ app.get("/api/settings", authMiddleware, async (req, res) => {
     receipt_footer_message: s.receipt_footer_message ?? "Thank you!",
     kitchen_header: s.kitchen_header ?? "KITCHEN",
     receipt_item_size: Math.min(2, Math.max(0, (s.receipt_item_size ?? 0) | 0)),
+    currency_code: s.currency_code ?? "AED",
     opening_time: s.opening_time ?? "07:00",
     closing_time: s.closing_time ?? "01:30",
     open_tables_warning_time: s.open_tables_warning_time ?? "01:00",
@@ -998,6 +999,10 @@ app.patch("/api/settings", authMiddleware, async (req, res) => {
     const v = Math.round(req.body.receipt_item_size);
     db.data.settings.receipt_item_size = Math.min(2, Math.max(0, v));
   }
+  const validCurrencyCodes = ["AED", "TRY", "USD", "EUR", "GBP"];
+  if (typeof req.body.currency_code === "string" && validCurrencyCodes.includes(req.body.currency_code)) {
+    db.data.settings.currency_code = req.body.currency_code;
+  }
   const ot = validateTimeHHMM(req.body.opening_time);
   if (ot) db.data.settings.opening_time = ot;
   const ct = validateTimeHHMM(req.body.closing_time);
@@ -1008,7 +1013,7 @@ app.patch("/api/settings", authMiddleware, async (req, res) => {
   if (typeof req.body.auto_close_payment_method === "string") db.data.settings.auto_close_payment_method = req.body.auto_close_payment_method.slice(0, 50) || "cash";
   if (typeof req.body.grace_minutes === "number") db.data.settings.grace_minutes = Math.min(60, Math.max(0, Math.round(req.body.grace_minutes)));
   if (typeof req.body.warning_enabled === "boolean") db.data.settings.warning_enabled = req.body.warning_enabled;
-  const businessKeys = ["opening_time", "closing_time", "open_tables_warning_time", "auto_close_open_tables", "auto_close_payment_method", "grace_minutes", "warning_enabled"];
+  const businessKeys = ["opening_time", "closing_time", "open_tables_warning_time", "auto_close_open_tables", "auto_close_payment_method", "grace_minutes", "warning_enabled", "currency_code"];
   const changed = businessKeys.filter((k) => String(prevSettings[k] ?? "") !== String(db.data.settings[k] ?? ""));
   if (changed.length > 0) {
     db.data.business_operation_log = db.data.business_operation_log || [];
@@ -1032,6 +1037,7 @@ app.patch("/api/settings", authMiddleware, async (req, res) => {
     receipt_footer_message: s.receipt_footer_message ?? "Thank you!",
     kitchen_header: s.kitchen_header ?? "KITCHEN",
     receipt_item_size: Math.min(2, Math.max(0, (s.receipt_item_size ?? 0) | 0)),
+    currency_code: s.currency_code ?? "AED",
     opening_time: s.opening_time ?? "07:00",
     closing_time: s.closing_time ?? "01:30",
     open_tables_warning_time: s.open_tables_warning_time ?? "01:00",

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
-import { getSettings, updateSettings } from "@/lib/api";
+import { getSettings, updateSettings, CURRENCY_OPTIONS } from "@/lib/api";
 
 const TIMEZONE_OPTIONS = [
   { label: "UTC", value: 0 },
@@ -21,9 +21,12 @@ const TIMEZONE_OPTIONS = [
 export default function GeneralSettingsPage() {
   const [timezoneOffsetMinutes, setTimezoneOffsetMinutes] = useState(180);
   const [manualOffset, setManualOffset] = useState("");
+  const [currencyCode, setCurrencyCode] = useState("AED");
   const [loading, setLoading] = useState(true);
   const [savingTimezone, setSavingTimezone] = useState(false);
   const [savedTimezone, setSavedTimezone] = useState(false);
+  const [savingCurrency, setSavingCurrency] = useState(false);
+  const [savedCurrency, setSavedCurrency] = useState(false);
 
   useEffect(() => {
     load();
@@ -33,6 +36,7 @@ export default function GeneralSettingsPage() {
     try {
       const s = await getSettings();
       setTimezoneOffsetMinutes(s.timezone_offset_minutes ?? 0);
+      setCurrencyCode(s.currency_code ?? "AED");
       setManualOffset("");
     } catch {
       window.location.href = "/login";
@@ -61,6 +65,21 @@ export default function GeneralSettingsPage() {
       alert((err as Error).message);
     } finally {
       setSavingTimezone(false);
+    }
+  }
+
+  async function saveCurrency(e?: React.MouseEvent) {
+    e?.preventDefault();
+    setSavingCurrency(true);
+    setSavedCurrency(false);
+    try {
+      await updateSettings({ currency_code: currencyCode });
+      setSavedCurrency(true);
+      setTimeout(() => setSavedCurrency(false), 3000);
+    } catch (err) {
+      alert((err as Error).message);
+    } finally {
+      setSavingCurrency(false);
     }
   }
 
@@ -132,6 +151,34 @@ export default function GeneralSettingsPage() {
             {savingTimezone ? "Saving..." : "Save"}
           </button>
           {savedTimezone && <span className="ml-3 text-green-400">Kaydedildi.</span>}
+        </div>
+
+        <div className="rounded-xl bg-slate-800/50 border border-slate-700 p-6 mt-6">
+          <h2 className="text-lg font-semibold text-white mb-2">Currency (Para Birimi)</h2>
+          <p className="text-slate-400 text-sm mb-4">
+            System currency for amounts, receipts, dashboard and cash drawer symbol in POS app.
+          </p>
+          <label className="block text-sm text-slate-300 mb-2">Currency</label>
+          <select
+            value={currencyCode}
+            onChange={(e) => setCurrencyCode(e.target.value)}
+            className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white mb-4"
+          >
+            {CURRENCY_OPTIONS.map((opt) => (
+              <option key={opt.code} value={opt.code}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={saveCurrency}
+            disabled={savingCurrency}
+            className="px-4 py-2 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 rounded-lg text-white font-medium"
+          >
+            {savingCurrency ? "Saving..." : "Save"}
+          </button>
+          {savedCurrency && <span className="ml-3 text-green-400">Kaydedildi.</span>}
         </div>
 
       </main>

@@ -370,6 +370,14 @@ export async function deletePaymentMethod(id: string) {
   if (!res.ok) throw new Error("Failed to delete payment method");
 }
 
+export const CURRENCY_OPTIONS = [
+  { code: "AED", symbol: "AED", label: "AED (UAE Dirham)" },
+  { code: "TRY", symbol: "₺", label: "₺ TRY (Turkish Lira)" },
+  { code: "USD", symbol: "$", label: "$ USD (US Dollar)" },
+  { code: "EUR", symbol: "€", label: "€ EUR (Euro)" },
+  { code: "GBP", symbol: "£", label: "£ GBP (British Pound)" },
+] as const;
+
 export type Settings = {
   timezone_offset_minutes: number;
   overdue_undelivered_minutes?: number;
@@ -379,6 +387,7 @@ export type Settings = {
   receipt_footer_message?: string;
   kitchen_header?: string;
   receipt_item_size?: number; // 0=normal, 1=large, 2=xlarge
+  currency_code?: string;
   opening_time?: string;
   closing_time?: string;
   open_tables_warning_time?: string;

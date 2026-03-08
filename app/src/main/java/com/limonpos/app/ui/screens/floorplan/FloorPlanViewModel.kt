@@ -14,6 +14,7 @@ import com.limonpos.app.data.repository.OverdueWarningHolder
 import com.limonpos.app.data.repository.ReservationReminderHolder
 import com.limonpos.app.data.repository.UpcomingReservationAlert
 import com.limonpos.app.data.repository.TableRepository
+import com.limonpos.app.data.prefs.CurrencyPreferences
 import com.limonpos.app.data.prefs.ServerPreferences
 import com.limonpos.app.data.repository.OverdueUndelivered
 import com.limonpos.app.data.repository.VoidRequestRepository
@@ -75,7 +76,8 @@ class FloorPlanViewModel @Inject constructor(
     private val closedBillAccessRequestDao: ClosedBillAccessRequestDao,
     private val overdueWarningHolder: OverdueWarningHolder,
     private val reservationReminderHolder: ReservationReminderHolder,
-    private val serverPreferences: ServerPreferences
+    private val serverPreferences: ServerPreferences,
+    private val currencyPreferences: CurrencyPreferences
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(FloorPlanUiState())
@@ -103,6 +105,9 @@ class FloorPlanViewModel @Inject constructor(
 
     val apiBaseUrl: StateFlow<String> = serverPreferences.baseUrl
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+
+    val currencySymbol: StateFlow<String> = currencyPreferences.currencySymbolFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "AED")
 
     val overdueWarning: StateFlow<List<OverdueUndelivered>?> = overdueWarningHolder.overdue
 

@@ -12,7 +12,6 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AttachMoney
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.MoreVert
@@ -31,6 +30,8 @@ import android.media.AudioManager
 import android.media.ToneGenerator
 import kotlinx.coroutines.delay
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
@@ -61,6 +62,7 @@ fun FloorPlanScreen(
     onLogout: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val currencySymbol by viewModel.currencySymbol.collectAsState(initial = "AED")
     val waiterName by viewModel.waiterName.collectAsState()
     val printerWarningState by viewModel.printerWarningState.collectAsState()
     val overdueWarning by viewModel.overdueWarning.collectAsState(initial = null)
@@ -249,8 +251,16 @@ fun FloorPlanScreen(
                             Icon(Icons.Default.Lock, contentDescription = "Lock", tint = LimonPrimary)
                         }
                     }
-                    IconButton(onClick = { viewModel.showCashDrawerDialog() }) {
-                        Icon(Icons.Default.AttachMoney, contentDescription = "Cash Drawer", tint = LimonPrimary)
+                    IconButton(
+                        onClick = { viewModel.showCashDrawerDialog() },
+                        modifier = Modifier.semantics { contentDescription = "Cash Drawer" }
+                    ) {
+                        Text(
+                            text = currencySymbol,
+                            color = LimonPrimary,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                     waiterName?.let { name ->
                         Text(
