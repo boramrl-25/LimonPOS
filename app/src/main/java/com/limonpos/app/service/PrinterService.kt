@@ -3,6 +3,7 @@ package com.limonpos.app.service
 import com.google.gson.Gson
 import com.limonpos.app.data.local.entity.OrderEntity
 import com.limonpos.app.data.local.entity.OrderItemEntity
+import com.limonpos.app.data.prefs.ReceiptSettingsData
 import com.limonpos.app.util.ESCPOSPrinter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -62,7 +63,8 @@ class PrinterService @Inject constructor() {
         order: OrderEntity,
         items: List<OrderItemEntity>,
         printerName: String,
-        itemSize: Int = 0
+        itemSize: Int = 0,
+        receiptSettings: ReceiptSettingsData = ReceiptSettingsData.DEFAULT
     ): ByteArray {
         val p = ESCPOSPrinter
         val buffer = mutableListOf<Byte>()
@@ -74,7 +76,7 @@ class PrinterService @Inject constructor() {
 
         addBytes(p.ALIGN_CENTER)
         addBytes(p.DOUBLE_SIZE)
-        addText("** KITCHEN **\n")
+        addText("** ${receiptSettings.kitchenHeader} **\n")
         addBytes(p.NORMAL_SIZE)
         addText("$printerName\n")
         addText("================================\n")
@@ -163,7 +165,8 @@ class PrinterService @Inject constructor() {
     fun buildReceipt(
         order: OrderEntity,
         items: List<OrderItemEntity>,
-        itemSize: Int = 0
+        itemSize: Int = 0,
+        receiptSettings: ReceiptSettingsData = ReceiptSettingsData.DEFAULT
     ): ByteArray {
         val p = ESCPOSPrinter
         val buffer = mutableListOf<Byte>()
@@ -174,8 +177,10 @@ class PrinterService @Inject constructor() {
         addBytes(p.INIT)
         addBytes(p.ALIGN_CENTER)
         addBytes(p.DOUBLE_SIZE)
-        addText("** BILL / RECEIPT **\n")
+        if (receiptSettings.companyName.isNotBlank()) addText("${receiptSettings.companyName}\n")
+        addText("** ${receiptSettings.receiptHeader} **\n")
         addBytes(p.NORMAL_SIZE)
+        if (receiptSettings.companyAddress.isNotBlank()) addText("${receiptSettings.companyAddress}\n")
         addText("================================\n")
         addBytes(p.ALIGN_LEFT)
 
@@ -208,7 +213,7 @@ class PrinterService @Inject constructor() {
         addBytes(p.BOLD_OFF)
         addText("--------------------------------\n")
         addBytes(p.ALIGN_CENTER)
-        addText("Thank you!\n")
+        addText("${receiptSettings.receiptFooterMessage}\n")
         addText("\n\n\n")
         addBytes(p.CUT)
 

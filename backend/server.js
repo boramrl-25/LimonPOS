@@ -853,13 +853,18 @@ app.delete("/api/modifier-groups/:id", authMiddleware, async (req, res) => {
   res.status(204).send();
 });
 
-// Settings (timezone vb.)
+// Settings (timezone, receipt/bill, kitchen)
 app.get("/api/settings", authMiddleware, async (req, res) => {
   await ensureData();
   const settings = db.data.settings || {};
   res.json({
     timezone_offset_minutes: settings.timezone_offset_minutes ?? 0,
     overdue_undelivered_minutes: Math.min(1440, Math.max(1, (settings.overdue_undelivered_minutes ?? 10) | 0)),
+    company_name: settings.company_name ?? "",
+    company_address: settings.company_address ?? "",
+    receipt_header: settings.receipt_header ?? "BILL / RECEIPT",
+    receipt_footer_message: settings.receipt_footer_message ?? "Thank you!",
+    kitchen_header: settings.kitchen_header ?? "KITCHEN",
   });
 });
 
@@ -875,10 +880,21 @@ app.patch("/api/settings", authMiddleware, async (req, res) => {
     const v = Math.round(req.body.overdue_undelivered_minutes);
     db.data.settings.overdue_undelivered_minutes = Math.min(1440, Math.max(1, v));
   }
+  if (typeof req.body.company_name === "string") db.data.settings.company_name = req.body.company_name.slice(0, 200);
+  if (typeof req.body.company_address === "string") db.data.settings.company_address = req.body.company_address.slice(0, 400);
+  if (typeof req.body.receipt_header === "string") db.data.settings.receipt_header = req.body.receipt_header.slice(0, 100) || "BILL / RECEIPT";
+  if (typeof req.body.receipt_footer_message === "string") db.data.settings.receipt_footer_message = req.body.receipt_footer_message.slice(0, 300) || "Thank you!";
+  if (typeof req.body.kitchen_header === "string") db.data.settings.kitchen_header = req.body.kitchen_header.slice(0, 100) || "KITCHEN";
   await db.write();
+  const s = db.data.settings;
   res.json({
-    timezone_offset_minutes: db.data.settings.timezone_offset_minutes ?? 0,
-    overdue_undelivered_minutes: Math.min(1440, Math.max(1, (db.data.settings.overdue_undelivered_minutes ?? 10) | 0)),
+    timezone_offset_minutes: s.timezone_offset_minutes ?? 0,
+    overdue_undelivered_minutes: Math.min(1440, Math.max(1, (s.overdue_undelivered_minutes ?? 10) | 0)),
+    company_name: s.company_name ?? "",
+    company_address: s.company_address ?? "",
+    receipt_header: s.receipt_header ?? "BILL / RECEIPT",
+    receipt_footer_message: s.receipt_footer_message ?? "Thank you!",
+    kitchen_header: s.kitchen_header ?? "KITCHEN",
   });
 });
 

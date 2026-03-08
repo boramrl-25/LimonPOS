@@ -7,6 +7,8 @@ import com.google.gson.Gson
 import com.limonpos.app.data.local.dao.*
 import com.limonpos.app.data.local.entity.*
 import com.limonpos.app.data.prefs.FloorPlanSectionsPreferences
+import com.limonpos.app.data.prefs.ReceiptPreferences
+import com.limonpos.app.data.prefs.ReceiptSettingsData
 import com.limonpos.app.data.prefs.ServerPreferences
 import com.limonpos.app.data.remote.ApiService
 import com.limonpos.app.data.remote.AuthTokenProvider
@@ -37,6 +39,7 @@ class ApiSyncRepository @Inject constructor(
     private val closedBillAccessRequestDao: ClosedBillAccessRequestDao,
     private val transferLogDao: TransferLogDao,
     private val floorPlanSectionsPreferences: FloorPlanSectionsPreferences,
+    private val receiptPreferences: ReceiptPreferences,
     private val serverPreferences: ServerPreferences,
     private val sessionManager: SessionManager,
     private val authTokenProvider: AuthTokenProvider,
@@ -103,6 +106,7 @@ class ApiSyncRepository @Inject constructor(
             syncVoidRequests()
             syncClosedBillAccessRequests()
             syncFloorPlanSections()
+            syncSettings()
             true
         } catch (e: Exception) {
             Log.e("ApiSync", "syncFromApi error: ${e.message}", e)
@@ -140,6 +144,7 @@ class ApiSyncRepository @Inject constructor(
         try {
             syncPrinters()
             syncUsers()
+            syncSettings()
         } catch (e: Exception) {
             lastSyncError = "Printer/User: ${e.message}"
             Log.e("ApiSync", "syncPrinters/Users error", e)
@@ -720,6 +725,25 @@ class ApiSyncRepository @Inject constructor(
             Log.e("ApiSync", "syncProducts error: ${e.message}", e)
             lastSyncError = e.message ?: "Sync error"
             false
+        }
+    }
+
+    private suspend fun syncSettings() {
+        try {
+            val response = apiService.getSettings()
+            if (!response.isSuccessful) return
+            val dto = response.body() ?: return
+            receiptPreferences.setReceiptSettings(
+                ReceiptSettingsData(
+                    companyName = dto.companyName?.take(200) ?: "",
+                    companyAddress = dto.companyAddress?.take(400) ?: "",
+                    receiptHeader = dto.receiptHeader?.take(100)?.takeIf { it.isNotBlank() } ?: "BILL / RECEIPT",
+                    receiptFooterMessage = dto.receiptFooterMessage?.take(300)?.takeIf { it.isNotBlank() } ?: "Thank you!",
+                    kitchenHeader = dto.kitchenHeader?.take(100)?.takeIf { it.isNotBlank() } ?: "KITCHEN"
+                )
+            )
+        } catch (e: Exception) {
+            Log.e("ApiSync", "syncSettings error: ${e.message}", e)
         }
     }
 

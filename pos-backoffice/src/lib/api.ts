@@ -336,7 +336,17 @@ export async function deletePaymentMethod(id: string) {
   if (!res.ok) throw new Error("Failed to delete payment method");
 }
 
-export async function getSettings(): Promise<{ timezone_offset_minutes: number; overdue_undelivered_minutes?: number }> {
+export type Settings = {
+  timezone_offset_minutes: number;
+  overdue_undelivered_minutes?: number;
+  company_name?: string;
+  company_address?: string;
+  receipt_header?: string;
+  receipt_footer_message?: string;
+  kitchen_header?: string;
+};
+
+export async function getSettings(): Promise<Settings> {
   const res = await fetchWithTimeout(`${API_URL}/settings`, { headers: headers() });
   if (!res.ok) throw new Error("Failed to fetch settings");
   return res.json();
@@ -349,7 +359,7 @@ export async function getOverdueTableIds(): Promise<{ tableIds: string[]; overdu
   return res.json();
 }
 
-export async function updateSettings(settings: { timezone_offset_minutes?: number }) {
+export async function updateSettings(settings: Partial<Settings>) {
   const res = await fetchWithTimeout(`${API_URL}/settings`, {
     method: "PATCH",
     headers: headers(),

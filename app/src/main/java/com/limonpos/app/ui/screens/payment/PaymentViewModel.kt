@@ -9,6 +9,7 @@ import com.limonpos.app.data.repository.ApiSyncRepository
 import com.limonpos.app.data.repository.AuthRepository
 import com.limonpos.app.data.repository.OrderRepository
 import com.limonpos.app.data.prefs.PrinterPreferences
+import com.limonpos.app.data.prefs.ReceiptPreferences
 import com.limonpos.app.data.printer.ReceiptPrintWarningHolder
 import com.limonpos.app.data.printer.ReceiptPrintWarningState
 import com.limonpos.app.data.repository.PrinterRepository
@@ -70,6 +71,7 @@ class PaymentViewModel @Inject constructor(
     private val printerRepository: PrinterRepository,
     private val printerService: PrinterService,
     private val printerPreferences: PrinterPreferences,
+    private val receiptPreferences: ReceiptPreferences,
     private val zohoBooksRepository: ZohoBooksRepository,
     private val receiptPrintWarningHolder: ReceiptPrintWarningHolder
 ) : ViewModel() {
@@ -307,7 +309,8 @@ class PaymentViewModel @Inject constructor(
                         val cashierPrinters = printerRepository.getAllPrinters().first()
                             .filter { (it.printerType == "cashier" || it.printerType.equals("receipt", true)) && it.ipAddress.isNotBlank() }
                         val itemSize = printerPreferences.getReceiptItemSize()
-                        val finalReceipt = printerService.buildReceipt(ow.order, ow.items, itemSize)
+                        val receiptSettings = receiptPreferences.getReceiptSettings()
+                        val finalReceipt = printerService.buildReceipt(ow.order, ow.items, itemSize, receiptSettings)
                         for (printer in cashierPrinters) {
                             val printResult = printerService.sendToPrinter(printer.ipAddress, printer.port, finalReceipt)
                             if (printResult.isFailure) failedPrinters.add(printer.name)
@@ -388,7 +391,8 @@ class PaymentViewModel @Inject constructor(
                     val cashierPrinters = printerRepository.getAllPrinters().first()
                         .filter { (it.printerType == "cashier" || it.printerType.equals("receipt", true)) && it.ipAddress.isNotBlank() }
                     val itemSize = printerPreferences.getReceiptItemSize()
-                    val receipt = printerService.buildReceipt(ow.order, ow.items, itemSize)
+                    val receiptSettings = receiptPreferences.getReceiptSettings()
+                    val receipt = printerService.buildReceipt(ow.order, ow.items, itemSize, receiptSettings)
                     for (printer in cashierPrinters) {
                         val printResult = printerService.sendToPrinter(printer.ipAddress, printer.port, receipt)
                         if (printResult.isFailure) failedPrinters.add(printer.name)
@@ -465,8 +469,9 @@ class PaymentViewModel @Inject constructor(
             }
             val failed = mutableListOf<String>()
             val itemSize = printerPreferences.getReceiptItemSize()
+            val receiptSettings = receiptPreferences.getReceiptSettings()
             for (printer in cashierPrinters) {
-                val receipt = printerService.buildReceipt(ow.order, ow.items, itemSize)
+                val receipt = printerService.buildReceipt(ow.order, ow.items, itemSize, receiptSettings)
                 val result = printerService.sendToPrinter(printer.ipAddress, printer.port, receipt)
                 if (result.isFailure) failed.add(printer.name)
             }
@@ -505,7 +510,8 @@ class PaymentViewModel @Inject constructor(
                     }
                 } else {
                     val itemSize = printerPreferences.getReceiptItemSize()
-                    val receipt = printerService.buildReceipt(ow.order, ow.items, itemSize)
+                    val receiptSettings = receiptPreferences.getReceiptSettings()
+                    val receipt = printerService.buildReceipt(ow.order, ow.items, itemSize, receiptSettings)
                     for (printer in cashierPrinters) {
                         if (printerService.sendToPrinter(printer.ipAddress, printer.port, receipt).isFailure) {
                             failedPrinters.add(printer.name)
