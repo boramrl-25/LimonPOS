@@ -616,12 +616,12 @@ async function loadKitchen() {
       var items = (o.items || []).filter(function(x) { return x.status === 'sent' || x.status === 'preparing' || x.status === 'delivered'; });
       if (items.length === 0) continue;
       for (var j = 0; j < items.length; j++) {
-        if (items[j].status === 'sent') pendingCount++;
+        if (items[j].status === 'sent' || items[j].status === 'delivered') pendingCount++;
         if (items[j].status === 'preparing') preparingCount++;
         if (isLate(items[j])) delayedCount++;
       }
       var hasLate = items.some(isLate);
-      var hasSent = items.some(function(x) { return x.status === 'sent'; });
+      var hasSent = items.some(function(x) { return x.status === 'sent' || x.status === 'delivered'; });
       var hasPreparing = items.some(function(x) { return x.status === 'preparing'; });
       var cardClass = (hasPreparing ? 'preparing' : 'sent');
       if (hasLate) cardClass += ' late';
@@ -634,7 +634,7 @@ async function loadKitchen() {
       for (var j = 0; j < items.length; j++) {
         var it = items[j];
         html += '<div class="kds-item-line"><span class="kds-item-name">' + (it.quantity > 1 ? it.quantity + 'x ' : '') + formatProductNameLines(it.productName) + (it.notes ? ' — ' + escapeHtml(it.notes) : '') + '</span><span>';
-        if (it.status === 'sent') html += '<button class="btn btn-start" onclick="startItem(\'' + it.id + '\')">Start</button>';
+        if (it.status === 'sent' || it.status === 'delivered') html += '<button class="btn btn-start" onclick="startItem(\'' + it.id + '\')">Start</button>';
         if (it.status === 'preparing') html += '<button class="btn btn-ready" onclick="readyItem(\'' + it.id + '\')">✓ Ready</button>';
         html += '</span></div>';
       }
