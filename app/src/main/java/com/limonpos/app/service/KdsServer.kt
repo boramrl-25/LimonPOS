@@ -105,6 +105,9 @@ class KdsServer @Inject constructor(
                     if (session.method == Method.OPTIONS) {
                         return cors(newFixedLengthResponse(Response.Status.OK, "text/plain", ""))
                     }
+                    if (session.method == Method.POST) {
+                        try { session.parseBody(mutableMapOf()) } catch (_: Exception) { }
+                    }
                     val uri = (session.uri ?: "").split("?").first()
                     @Suppress("DEPRECATION") val queryParams = session.parms ?: emptyMap<String, String>()
                     val jsonResponse = when {

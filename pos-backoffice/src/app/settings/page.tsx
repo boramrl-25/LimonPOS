@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { CreditCard, BookOpen, Mail, Users, ArrowLeft, SlidersHorizontal, Globe, Trash2, Printer, Receipt, Clock } from "lucide-react";
+import { CreditCard, BookOpen, Mail, Users, ArrowLeft, SlidersHorizontal, Globe, Trash2, Printer, Receipt, Clock, Smartphone } from "lucide-react";
 
 const settingsSections = [
   { href: "/printers", label: "Printers (Receipt & Kitchen)", icon: Printer, description: "Customer bill → Receipt. Kitchen orders → Kitchen." },
@@ -13,6 +13,7 @@ const settingsSections = [
   { href: "/settings/email", label: "Email & SMTP Settings", icon: Mail, description: "Z-Report recipients, SMTP config" },
   { href: "/modifiers", label: "Modifier Groups", icon: SlidersHorizontal, description: "Size, extras, options for products" },
   { href: "/settings/users", label: "Users & Permissions", icon: Users, description: "Staff management, roles, permissions matrix" },
+  { href: "/settings/clear-local-data", label: "Clear local data on apps", icon: Smartphone, description: "Bağlı cihazlardan yerel satış verilerini sil (POS sync sonrası)" },
   { href: "/settings/clear-test-data", label: "Clear test data (date range)", icon: Trash2, description: "Delete orders and sales data between two dates" },
 ];
 
