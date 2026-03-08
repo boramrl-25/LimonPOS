@@ -838,7 +838,7 @@ app.post("/api/printers", authMiddleware, async (req, res) => {
   await ensureData();
   const id = req.body.id || `pr_${uuid().slice(0, 8)}`;
   const body = req.body;
-  const pr = { id, name: body.name || "Printer", printer_type: body.printer_type || "kitchen", ip_address: body.ip_address || "", port: body.port ?? 9100, connection_type: body.connection_type || "network", status: body.status || "offline", is_backup: body.is_backup ? 1 : 0, kds_enabled: body.kds_enabled !== false ? 1 : 0 };
+  const pr = { id, name: body.name || "Printer", printer_type: body.printer_type || "kitchen", ip_address: body.ip_address || "", port: body.port ?? 9100, connection_type: body.connection_type || "network", status: body.status || "offline", is_backup: body.is_backup ? 1 : 0, kds_enabled: body.kds_enabled !== false ? 1 : 0, enabled: body.enabled !== false ? 1 : 0 };
   db.data.printers = db.data.printers.filter((p) => p.id !== id);
   db.data.printers.push(pr);
   await db.write();
@@ -850,7 +850,7 @@ app.put("/api/printers/:id", authMiddleware, async (req, res) => {
   const idx = db.data.printers.findIndex((p) => p.id === req.params.id);
   if (idx < 0) return res.status(404).json({ error: "Not found" });
   const body = req.body;
-  db.data.printers[idx] = { ...db.data.printers[idx], name: body.name, printer_type: body.printer_type || "kitchen", ip_address: body.ip_address || "", port: body.port ?? 9100, connection_type: body.connection_type || "network", status: body.status || "offline", is_backup: body.is_backup ? 1 : 0, kds_enabled: body.kds_enabled !== false ? 1 : 0 };
+  db.data.printers[idx] = { ...db.data.printers[idx], name: body.name, printer_type: body.printer_type || "kitchen", ip_address: body.ip_address || "", port: body.port ?? 9100, connection_type: body.connection_type || "network", status: body.status || "offline", is_backup: body.is_backup ? 1 : 0, kds_enabled: body.kds_enabled !== false ? 1 : 0, enabled: body.enabled !== false ? 1 : 0 };
   await db.write();
   res.json(db.data.printers[idx]);
 });

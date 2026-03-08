@@ -263,7 +263,8 @@ class PaymentViewModel @Inject constructor(
                     )
                 }
 
-                // Fiş yazdırma arka planda; sadece hiçbir printer'da basılamadıysa uyarı (Retry/Dismiss)
+                // Partial receipt sadece bakiye varsa; bakiye 0 ise sadece final receipt basılacak (race önleme)
+                if (kotlin.math.abs(newBalance) >= 0.01) {
                 viewModelScope.launch(Dispatchers.IO) {
                     val cashierPrinters = printerRepository.getAllPrinters().first()
                         .filter { (it.printerType == "cashier" || it.printerType.equals("receipt", true)) && it.ipAddress.isNotBlank() && it.enabled }
@@ -300,6 +301,7 @@ class PaymentViewModel @Inject constructor(
                     } else if (drawerFailedPrinters.isNotEmpty()) {
                         _uiState.update { it.copy(message = "Receipt printed. Cash drawer did not open: ${drawerFailedPrinters.joinToString(", ")}") }
                     }
+                }
                 }
 
                 if (kotlin.math.abs(newBalance) < 0.01) {

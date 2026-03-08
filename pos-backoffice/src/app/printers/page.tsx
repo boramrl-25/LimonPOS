@@ -6,13 +6,13 @@ import { ArrowLeft, Plus, Pencil, Trash2, FileSpreadsheet, FileDown } from "luci
 import * as XLSX from "xlsx";
 import { getPrinters, createPrinter, updatePrinter, deletePrinter } from "@/lib/api";
 
-type Printer = { id: string; name: string; printer_type: string; ip_address: string; port: number; status: string; kds_enabled?: boolean };
+type Printer = { id: string; name: string; printer_type: string; ip_address: string; port: number; status: string; kds_enabled?: boolean; enabled?: boolean };
 
 export default function PrintersPage() {
   const [printers, setPrinters] = useState<Printer[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Printer | null | undefined>(undefined);
-  const [form, setForm] = useState({ name: "", printer_type: "kitchen", ip_address: "", port: 9100, kds_enabled: true });
+  const [form, setForm] = useState({ name: "", printer_type: "kitchen", ip_address: "", port: 9100, kds_enabled: true, enabled: true });
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -33,10 +33,10 @@ export default function PrintersPage() {
   function openEdit(p?: Printer) {
     if (p) {
       setEditing(p);
-      setForm({ name: p.name, printer_type: p.printer_type, ip_address: p.ip_address, port: p.port, kds_enabled: Boolean(p.kds_enabled) });
+      setForm({ name: p.name, printer_type: p.printer_type, ip_address: p.ip_address, port: p.port, kds_enabled: Boolean(p.kds_enabled), enabled: p.enabled !== false });
     } else {
       setEditing(null);
-      setForm({ name: "", printer_type: "kitchen", ip_address: "", port: 9100, kds_enabled: true });
+      setForm({ name: "", printer_type: "kitchen", ip_address: "", port: 9100, kds_enabled: true, enabled: true });
     }
   }
 
@@ -54,6 +54,16 @@ export default function PrintersPage() {
     }
   }
 
+  async function toggleEnabled(p: Printer) {
+    try {
+      const nextEnabled = p.enabled === false;
+      await updatePrinter(p.id, { name: p.name, printer_type: p.printer_type, ip_address: p.ip_address, port: p.port, kds_enabled: p.kds_enabled, enabled: nextEnabled });
+      await load();
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+
   async function remove(id: string) {
     if (!confirm("Are you sure you want to delete?")) return;
     try {
@@ -66,8 +76,8 @@ export default function PrintersPage() {
 
   function downloadPrintersTemplate() {
     const rows = [
-      { Name: "Bar", Type: "kitchen", IP: "192.168.1.100", Port: 9100, KDSEnabled: "On" },
-      { Name: "Receipt", Type: "receipt", IP: "192.168.1.101", Port: 9100, KDSEnabled: "Off" },
+      { Name: "Bar", Type: "kitchen", IP: "192.168.1.100", Port: 9100, Enabled: "On", KDSEnabled: "On" },
+      { Name: "Receipt", Type: "receipt", IP: "192.168.1.101", Port: 9100, Enabled: "On", KDSEnabled: "Off" },
     ];
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
@@ -85,6 +95,7 @@ export default function PrintersPage() {
       Type: p.printer_type,
       IP: p.ip_address,
       Port: p.port,
+      Enabled: p.enabled !== false ? "On" : "Off",
       KDSEnabled: p.printer_type === "kitchen" && Boolean(p.kds_enabled) ? "On" : "Off",
     }));
     const ws = XLSX.utils.json_to_sheet(rows);
@@ -120,11 +131,13 @@ export default function PrintersPage() {
 
         const printer_type = typeRaw === "receipt" ? "receipt" : "kitchen";
         const port = Number(portRaw) || 9100;
+        const enabledRaw = String(row.Enabled ?? row.enabled ?? "on").toLowerCase();
+        const enabled = enabledRaw === "on" || enabledRaw === "1" || enabledRaw === "true" || enabledRaw === "yes";
         const kds_enabled = printer_type === "kitchen" && (kdsRaw === "on" || kdsRaw === "1" || kdsRaw === "true" || kdsRaw === "yes");
 
         const existing = printers.find((p) => p.name.toLowerCase() === name.toLowerCase());
 
-        const payload = { name, printer_type, ip_address, port, kds_enabled };
+        const payload = { name, printer_type, ip_address, port, enabled, kds_enabled };
 
         if (existing) {
           await updatePrinter(existing.id, payload);
@@ -205,6 +218,7 @@ export default function PrintersPage() {
             <tr className="border-b border-slate-700 bg-slate-800/50">
               <th className="text-left p-4 font-medium">Name</th>
               <th className="text-left p-4 font-medium">Type</th>
+              <th className="text-left p-4 font-medium">On/Off</th>
               <th className="text-left p-4 font-medium">KDS</th>
               <th className="text-left p-4 font-medium">IP</th>
               <th className="text-left p-4 font-medium">Port</th>
@@ -219,6 +233,15 @@ export default function PrintersPage() {
                   <span className={p.printer_type === "kitchen" ? "text-emerald-400" : "text-amber-400"}>
                     {p.printer_type === "kitchen" ? "Kitchen" : "Receipt"}
                   </span>
+                </td>
+                <td className="p-4">
+                  <button
+                    onClick={() => toggleEnabled(p)}
+                    className={`px-2 py-1 rounded text-xs font-medium transition-colors ${p.enabled !== false ? "bg-emerald-600/30 text-emerald-400 hover:bg-emerald-600/50" : "bg-slate-600/30 text-slate-500 hover:bg-slate-600/50"}`}
+                    title={p.enabled !== false ? "On — Click to turn off (exclude from print jobs)" : "Off — Click to turn on"}
+                  >
+                    {p.enabled !== false ? "On" : "Off"}
+                  </button>
                 </td>
                 <td className="p-4">
                   <span className={`px-2 py-0.5 rounded text-xs ${(Boolean(p.kds_enabled) && p.printer_type === "kitchen") ? "bg-emerald-600/30 text-emerald-400" : p.printer_type === "kitchen" ? "bg-slate-600/30 text-slate-500" : "bg-slate-700/50 text-slate-500"}`}>
@@ -260,6 +283,16 @@ export default function PrintersPage() {
               <div>
                 <label className="block text-sm text-slate-400 mb-1">Port</label>
                 <input type="number" value={form.port} onChange={(e) => setForm((f) => ({ ...f, port: parseInt(e.target.value) || 9100 }))} className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white" />
+              </div>
+              <div className="flex items-center justify-between p-3 rounded-lg bg-slate-800/50 border border-slate-700">
+                <span className="text-sm text-slate-300">On — Include in print jobs (receipt, kitchen, void)</span>
+                <button
+                  type="button"
+                  onClick={() => setForm((f) => ({ ...f, enabled: !f.enabled }))}
+                  className={`w-12 h-6 rounded-full transition-colors ${form.enabled ? "bg-emerald-600" : "bg-slate-600"}`}
+                >
+                  <div className={`w-5 h-5 rounded-full bg-white shadow transition-transform ${form.enabled ? "translate-x-6" : "translate-x-1"}`} style={{ marginTop: 2 }} />
+                </button>
               </div>
               {form.printer_type === "kitchen" && (
                 <div className="flex items-center justify-between p-3 rounded-lg bg-slate-800/50 border border-slate-700">

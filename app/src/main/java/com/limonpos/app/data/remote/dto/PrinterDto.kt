@@ -11,5 +11,6 @@ data class PrinterDto(
     @SerializedName("connection_type") val connectionType: String = "network",
     @SerializedName("status") val status: String = "offline",
     @SerializedName("is_backup") val isBackup: Any? = false,  // Boolean or 0/1 from API
-    @SerializedName("kds_enabled") val kdsEnabled: Any? = 1   // Int or Boolean from API
+    @SerializedName("kds_enabled") val kdsEnabled: Any? = 1,  // Int or Boolean from API
+    @SerializedName("enabled") val enabled: Any? = 1          // Boolean or 0/1; when false/0 printer excluded from print jobs
 )
