@@ -33,7 +33,7 @@ class DatabaseSeeder @Inject constructor(
     }
 
     private suspend fun seedUsers() {
-        // Varsayılan kullanıcı yok. 1234/2222 sadece Server URL için (users tablosunda değil).
+        // Varsayılan kullanıcı yok. 1234 sadece Server URL için (users tablosunda değil).
         // Kullanıcılar backoffice üzerinden eklenir, sync ile gelir.
         val users = emptyList<UserEntity>()
         if (users.isNotEmpty()) userDao.insertUsers(users)

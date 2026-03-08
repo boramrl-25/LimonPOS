@@ -117,7 +117,7 @@ export default function SetupPage() {
           </p>
         )}
 
-        <p className="mt-6 text-center text-xs text-slate-500">Setup PIN: 2222</p>
+        <p className="mt-6 text-center text-xs text-slate-500">Setup PIN: 1234</p>
       </div>
     </div>
   );

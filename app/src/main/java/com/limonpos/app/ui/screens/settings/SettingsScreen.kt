@@ -51,7 +51,6 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val userRole by viewModel.userRole.collectAsState(null)
-    val apiBaseUrl by viewModel.apiBaseUrl.collectAsState(initial = "")
     val isManager by viewModel.isManager.collectAsState(false)
     val isKdsOnly = userRole == "kds"
     val message by viewModel.message.collectAsState()
@@ -71,17 +70,7 @@ fun SettingsScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
-                        Text(if (isKdsOnly) "Kitchen" else "Settings", fontWeight = FontWeight.Bold, color = LimonText)
-                        if (apiBaseUrl.isNotEmpty()) {
-                            Text(
-                                "Device: $apiBaseUrl — Synced with API",
-                                color = LimonTextSecondary,
-                                fontSize = 11.sp,
-                                modifier = Modifier.padding(top = 2.dp)
-                            )
-                        }
-                    }
+                    Text(if (isKdsOnly) "Kitchen" else "Settings", fontWeight = FontWeight.Bold, color = LimonText)
                 },
                 navigationIcon = {
                     if (!isKdsOnly) {

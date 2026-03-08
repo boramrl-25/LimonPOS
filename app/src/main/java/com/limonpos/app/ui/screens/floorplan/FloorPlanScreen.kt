@@ -208,7 +208,6 @@ fun FloorPlanScreen(
         }
     }
 
-    val apiBaseUrl by viewModel.apiBaseUrl.collectAsState(initial = "")
     val sections by viewModel.floorPlanSections.collectAsState(initial = emptyMap())
     val currentUserId by viewModel.currentUserId.collectAsState(initial = null)
     var tablesRaw = uiState.tablesByFloor[uiState.selectedFloor].orEmpty()
@@ -237,22 +236,12 @@ fun FloorPlanScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
-                        Text(
-                            "Floor Plan",
-                            fontWeight = FontWeight.Bold,
-                            color = LimonText,
-                            fontSize = 20.sp
-                        )
-                        if (apiBaseUrl.isNotEmpty()) {
-                            Text(
-                                "Device: $apiBaseUrl — Synced with API",
-                                color = LimonTextSecondary,
-                                fontSize = 11.sp,
-                                modifier = Modifier.padding(top = 2.dp)
-                            )
-                        }
-                    }
+                    Text(
+                        "Floor Plan",
+                        fontWeight = FontWeight.Bold,
+                        color = LimonText,
+                        fontSize = 20.sp
+                    )
                 },
                 actions = {
                     if (!uiState.isLocked) {

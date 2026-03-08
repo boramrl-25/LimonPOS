@@ -23,9 +23,6 @@ fun LoginScreen(
     val pin by viewModel.pin.collectAsState()
     val error by viewModel.error.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
-    val showMaintenanceDialog by viewModel.showMaintenanceDialog.collectAsState()
-    val maintenancePin by viewModel.maintenancePin.collectAsState()
-    val maintenanceError by viewModel.maintenanceError.collectAsState()
     val maintenanceAccessGranted by viewModel.maintenanceAccessGranted.collectAsState()
     val loginSuccess by viewModel.loginSuccess.collectAsState()
 
@@ -40,52 +37,6 @@ fun LoginScreen(
     }
     LaunchedEffect(loginScreenKey) {
         viewModel.clearPin()
-    }
-
-    if (showMaintenanceDialog) {
-        AlertDialog(
-            onDismissRequest = { viewModel.dismissMaintenanceDialog() },
-            title = { Text("Server URL — Kurulum", color = LimonText) },
-            text = {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        "Kurulum PIN'i girin (sadece Server URL ekranı açılır)",
-                        color = LimonTextSecondary,
-                        fontSize = 14.sp,
-                        modifier = Modifier.padding(bottom = 12.dp)
-                    )
-                    Text(
-                        text = "●".repeat(maintenancePin.length).padEnd(4, '_').take(4),
-                        fontSize = 28.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = LimonPrimary,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-                    maintenanceError?.let { err ->
-                        Text(
-                            text = err,
-                            color = LimonError,
-                            fontSize = 13.sp,
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        )
-                    }
-                    Numpad(
-                        onDigit = { viewModel.addMaintenanceDigit(it) },
-                        onClear = { viewModel.dismissMaintenanceDialog() },
-                        onBackspace = { viewModel.backspaceMaintenance() },
-                        onEnter = { viewModel.validateMaintenancePin() },
-                        enabled = true
-                    )
-                }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { viewModel.dismissMaintenanceDialog() }) {
-                    Text("İptal", color = LimonTextSecondary)
-                }
-            },
-            containerColor = LimonSurface
-        )
     }
 
     Column(
@@ -138,73 +89,5 @@ fun LoginScreen(
             onEnter = { viewModel.login() },
             enabled = !isLoading
         )
-
-        Spacer(modifier = Modifier.height(24.dp))
-        TextButton(onClick = { viewModel.openMaintenanceDialog() }) {
-            Text("Server URL (Kurulum)", color = LimonTextSecondary, fontSize = 14.sp)
-        }
-    }
-}
-
-@Composable
-private fun Numpad(
-    onDigit: (String) -> Unit,
-    onClear: () -> Unit,
-    onBackspace: () -> Unit,
-    onEnter: () -> Unit,
-    enabled: Boolean
-) {
-    val keys = listOf(
-        listOf("1", "2", "3"),
-        listOf("4", "5", "6"),
-        listOf("7", "8", "9"),
-        listOf("C", "0", "⌫")
-    )
-
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        keys.forEach { row ->
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                row.forEach { key ->
-                    val isAction = key in listOf("C", "⌫")
-                    Button(
-                        onClick = {
-                            when (key) {
-                                "C" -> onClear()
-                                "⌫" -> onBackspace()
-                                else -> onDigit(key)
-                            }
-                        },
-                        modifier = Modifier.size(72.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isAction) LimonTextSecondary else LimonPrimary,
-                            contentColor = LimonText
-                        ),
-                        enabled = enabled
-                    ) {
-                        Text(
-                            text = key,
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                }
-            }
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-        Button(
-            onClick = onEnter,
-            modifier = Modifier
-                .fillMaxWidth(0.8f)
-                .height(56.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = LimonPrimary, contentColor = LimonText),
-            enabled = enabled
-        ) {
-            Text("Sign In", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-        }
     }
 }

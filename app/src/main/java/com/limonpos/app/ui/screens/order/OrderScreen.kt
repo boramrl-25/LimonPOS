@@ -130,14 +130,14 @@ fun OrderScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                "Order - ${uiState.table?.name ?: "Table"}",
+                                "T${uiState.table?.number ?: "-"}",
                                 fontWeight = FontWeight.Bold,
                                 color = LimonText,
                                 fontSize = 18.sp
                             )
                             uiState.orderWithItems?.order?.id?.takeLast(6)?.uppercase()?.let { shortId ->
                                 Text(
-                                    text = "Ticket ID: $shortId",
+                                    shortId,
                                     color = LimonTextSecondary,
                                     fontSize = 12.sp
                                 )
@@ -146,13 +146,13 @@ fun OrderScreen(
                         if (uiState.table != null && uiState.table?.status != "free") {
                             IconButton(
                                 onClick = { viewModel.openTransferTable() },
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.size(44.dp)
                             ) {
                                 Icon(
                                     Icons.Default.SwapHoriz,
                                     contentDescription = "Transfer Table",
                                     tint = LimonPrimary,
-                                    modifier = Modifier.size(20.dp)
+                                    modifier = Modifier.size(28.dp)
                                 )
                             }
                         }

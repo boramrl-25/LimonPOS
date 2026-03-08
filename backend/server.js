@@ -243,7 +243,7 @@ async function ensureData() {
     db.data.migrations.pin2222SetupOnly = true;
     await db.write();
   }
-  // Migration: Remove 1234/2222 from users — maintenance PIN only (Server URL), not login
+  // Migration: Remove 1234 (and legacy 2222) from users — 1234 maintenance only
   if (!db.data.migrations.removeMaintenancePinsFromUsers) {
     db.data.users = (db.data.users || []).filter((u) => {
       const p = String(u?.pin ?? "");

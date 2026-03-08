@@ -245,7 +245,7 @@ export default function UsersSettingsPage() {
       </Link>
 
       <h1 className="text-2xl font-bold text-sky-400 mb-2">Users</h1>
-      <p className="text-slate-400 mb-8">Staff management. Tap row to edit. Setup PIN: 2222</p>
+      <p className="text-slate-400 mb-8">Staff management. Tap row to edit. Setup PIN: 1234</p>
       <p className="text-slate-500 text-sm mb-4">Excel veya CSV: Örnek dosyayı indir, doldur, yükle.</p>
 
       <div className="flex flex-col sm:flex-row gap-4 mb-4">
@@ -418,7 +418,7 @@ export default function UsersSettingsPage() {
               </div>
               <div>
                 <label className="block text-sm text-slate-400 mb-1">PIN (4-6 digits)</label>
-                <input type="password" value={form.pin} onChange={(e) => setForm((f) => ({ ...f, pin: e.target.value }))} className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white" placeholder="2222" maxLength={6} />
+                <input type="password" value={form.pin} onChange={(e) => setForm((f) => ({ ...f, pin: e.target.value }))} className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white" placeholder="1234" maxLength={6} />
               </div>
               <div>
                 <label className="block text-sm text-slate-400 mb-1">Role</label>
