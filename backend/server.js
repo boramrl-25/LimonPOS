@@ -123,6 +123,11 @@ function resolvePaymentMethodCode(method, paymentMethods) {
   return null;
 }
 
+/** Bugünün başlangıç timestamp'i (business day veya calendar day). */
+function getTodayStartTimestamp() {
+  return getTodayRange().startTs;
+}
+
 /** Tek kaynak: bugünkü ödemeler + iade/void. Dashboard ve daily-sales aynı mantığı kullanır. */
 function getTodaySalesSummary() {
   const range = getTodayRange();
