@@ -37,7 +37,7 @@ class ProductRepository @Inject constructor(
         }.filter { (_, products) -> products.isNotEmpty() }
         val otherProducts = productDao.getActiveProductsByCategoryOnce("all").filter { it.showInTill }
         return if (otherProducts.isEmpty()) withProducts
-        else withProducts + (CategoryEntity("all", "Diğer", "#64748b", 999, true, true, "SYNCED", "[]") to otherProducts)
+        else withProducts + (CategoryEntity("all", "Other", "#64748b", 999, true, true, "SYNCED", "[]") to otherProducts)
     }
 
     suspend fun getCategoryById(id: String): CategoryEntity? = categoryDao.getCategoryById(id)

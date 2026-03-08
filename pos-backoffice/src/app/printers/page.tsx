@@ -151,9 +151,9 @@ export default function PrintersPage() {
 
       <div className="flex justify-between items-center mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-sky-400">Yazıcılar</h1>
-          <p className="text-slate-400">Müşteri fişi (Bill/Receipt) ve mutfak siparişi (Kitchen) yazıcıları. Sync ile POS uygulamasına aktarılır.</p>
-          <p className="text-slate-500 text-sm mt-1">Excel veya CSV: Örnek dosyayı indir, doldur, yükle.</p>
+          <h1 className="text-2xl font-bold text-sky-400">Printers</h1>
+          <p className="text-slate-400">Customer bill (Receipt) and kitchen order (Kitchen) printers. Synced to POS app.</p>
+          <p className="text-slate-500 text-sm mt-1">Excel or CSV: Download sample, fill, upload.</p>
         </div>
         <div className="flex gap-2 flex-wrap">
           <input
@@ -166,9 +166,9 @@ export default function PrintersPage() {
           <button
             onClick={downloadPrintersTemplate}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-medium"
-            title="Import için Excel şablonu indir"
+            title="Download Excel template for import"
           >
-            <FileDown className="w-4 h-4" /> Örnek dosya indir
+            <FileDown className="w-4 h-4" /> Download template
           </button>
           <button
             onClick={exportPrintersToExcel}
@@ -186,7 +186,7 @@ export default function PrintersPage() {
             ) : (
               <FileSpreadsheet className="w-4 h-4" />
             )}
-            Yükle (Excel/CSV)
+            Upload (Excel/CSV)
           </button>
           <button onClick={() => openEdit()} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium">
             <Plus className="w-4 h-4" /> New Printer
@@ -217,7 +217,7 @@ export default function PrintersPage() {
                 <td className="p-4">{p.name}</td>
                 <td className="p-4">
                   <span className={p.printer_type === "kitchen" ? "text-emerald-400" : "text-amber-400"}>
-                    {p.printer_type === "kitchen" ? "Mutfak (kitchen)" : "Müşteri fişi (receipt)"}
+                    {p.printer_type === "kitchen" ? "Kitchen" : "Receipt"}
                   </span>
                 </td>
                 <td className="p-4">
@@ -249,8 +249,8 @@ export default function PrintersPage() {
               <div>
                 <label className="block text-sm text-slate-400 mb-1">Type</label>
                 <select value={form.printer_type} onChange={(e) => setForm((f) => ({ ...f, printer_type: e.target.value }))} className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white">
-                  <option value="kitchen">Mutfak (kitchen) — Siparişler mutfağa gider</option>
-                  <option value="receipt">Müşteri fişi (receipt/cashier) — Bill/ödeme fişi</option>
+                  <option value="kitchen">Kitchen — Orders go to kitchen</option>
+                  <option value="receipt">Receipt (cashier) — Customer bill</option>
                 </select>
               </div>
               <div>

@@ -70,7 +70,7 @@ fun ZohoBooksSettingsScreen(
                 Text(msg, color = LimonPrimary, modifier = Modifier.padding(bottom = 16.dp), fontSize = 14.sp)
             }
             Text(
-                "Anlık satış aktarımı: Ödeme tamamlandığında satış Zoho Books'a Sales Receipt olarak gönderilir.",
+                "Instant sales transfer: Sales are sent to Zoho Books as Sales Receipt when payment is completed.",
                 color = LimonTextSecondary,
                 fontSize = 14.sp,
                 modifier = Modifier.padding(bottom = 16.dp)
@@ -120,7 +120,7 @@ fun ZohoBooksSettingsScreen(
             OutlinedTextField(
                 value = custInput,
                 onValueChange = { custInput = it },
-                label = { Text("Customer ID (Walk-in müşteri)") },
+                label = { Text("Customer ID (Walk-in customer)") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 colors = OutlinedTextFieldDefaults.colors(
@@ -136,7 +136,7 @@ fun ZohoBooksSettingsScreen(
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(containerColor = LimonPrimary)
             ) {
-                Text("Kaydet")
+                Text("Save")
             }
         }
     }

@@ -242,7 +242,7 @@ fun OrderScreen(
                         shape = RoundedCornerShape(8.dp)
                     ) {
                         Text(
-                            "Recall edilmiş fis - Sepette tek ürün iade veya tüm fisi iade edebilirsiniz. Ödeme değişikliği için Payment.",
+                            "Recalled bill — Return single item or full bill from cart. Use Payment for payment changes.",
                             color = LimonPrimary,
                             fontSize = 13.sp,
                             modifier = Modifier.padding(12.dp)
@@ -285,7 +285,7 @@ fun OrderScreen(
                         ) {
                             Text(err, color = LimonError, fontSize = 13.sp, modifier = Modifier.weight(1f))
                             TextButton(onClick = { viewModel.clearCloseTableError() }) {
-                                Text("İptal", color = LimonTextSecondary)
+                                Text("Cancel", color = LimonTextSecondary)
                             }
                         }
                     }
@@ -906,9 +906,9 @@ private fun AddProductModifiersDialog(
         text = {
             Column {
                 if (loading) {
-                    Text("Yükleniyor...", color = LimonTextSecondary, fontSize = 16.sp)
+                    Text("Loading...", color = LimonTextSecondary, fontSize = 16.sp)
                 } else if (groups.isEmpty()) {
-                    Text("Modifier grubu bulunamadı. Sync yapıp tekrar deneyin.", color = LimonTextSecondary, fontSize = 16.sp)
+                    Text("Modifier group not found. Sync and try again.", color = LimonTextSecondary, fontSize = 16.sp)
                 }
                 groups.forEach { gwo ->
                     val minMax = if (gwo.group.minSelect == gwo.group.maxSelect) {
@@ -965,7 +965,7 @@ private fun AddProductModifiersDialog(
                                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                                     )
                                     IconButton(onClick = { if (opt.id in selectedOptions) updateQty(opt.id, 1) }) {
-                                        Icon(Icons.Default.Add, "Artır", tint = LimonText, modifier = Modifier.size(20.dp))
+                                        Icon(Icons.Default.Add, "Add", tint = LimonText, modifier = Modifier.size(20.dp))
                                     }
                                 }
                             }
@@ -1137,7 +1137,7 @@ private fun OverdueUndeliveredDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text("Ürünler henüz masaya gelmedi", fontWeight = FontWeight.Bold, color = LimonError)
+            Text("Items not yet delivered to table", fontWeight = FontWeight.Bold, color = LimonError)
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1153,7 +1153,7 @@ private fun OverdueUndeliveredDialog(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("Masa ${block.tableNumber}", fontWeight = FontWeight.Bold, color = LimonPrimary, fontSize = 15.sp)
+                                Text("Table ${block.tableNumber}", fontWeight = FontWeight.Bold, color = LimonPrimary, fontSize = 15.sp)
                                 Text("Tap to go", color = LimonTextSecondary, fontSize = 12.sp)
                             }
                             Spacer(modifier = Modifier.height(6.dp))
@@ -1287,7 +1287,7 @@ private fun CategoryChipsRow(
         FilterChip(
             selected = selectedCategoryId == "all",
             onClick = { onSelectCategory("all") },
-            label = { Text("Tümü", fontSize = 15.sp, maxLines = 2) },
+            label = { Text("All", fontSize = 15.sp, maxLines = 2) },
             modifier = Modifier.heightIn(min = 44.dp),
             colors = FilterChipDefaults.filterChipColors(
                 selectedContainerColor = LimonPrimary,

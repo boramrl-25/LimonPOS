@@ -150,13 +150,13 @@ class OrderViewModel @Inject constructor(
                             apiSyncRepository.syncFromApi()
                         } else {
                             val ok = apiSyncRepository.syncCatalog()
-                            if (!ok) _uiState.update { it.copy(syncError = apiSyncRepository.lastSyncError ?: "Sync hatası") }
+                            if (!ok) _uiState.update { it.copy(syncError = apiSyncRepository.lastSyncError ?: "Sync error") }
                         }
                         loadCategoriesWithProducts()
                     }
                 } catch (e: Exception) {
                     android.util.Log.e("OrderViewModel", "Background sync error: ${e.message}", e)
-                    _uiState.update { it.copy(syncError = e.message ?: "Sync hatası") }
+                    _uiState.update { it.copy(syncError = e.message ?: "Sync error") }
                 }
             }
         }
@@ -277,15 +277,15 @@ class OrderViewModel @Inject constructor(
                 try {
                     val ok = apiSyncRepository.syncCatalog()
                     loadCategoriesWithProducts()
-                    if (!ok) _uiState.update { it.copy(syncError = apiSyncRepository.lastSyncError ?: "Sync hatası") }
+                    if (!ok) _uiState.update { it.copy(syncError = apiSyncRepository.lastSyncError ?: "Sync error") }
                 } catch (e: Exception) {
-                    _uiState.update { it.copy(syncError = e.message ?: "Sync hatası") }
+                    _uiState.update { it.copy(syncError = e.message ?: "Sync error") }
                     loadCategoriesWithProducts()
                 } finally {
                     _uiState.update { it.copy(syncInProgress = false) }
                 }
             } else {
-                _uiState.update { it.copy(syncError = "İnternet bağlantısı yok") }
+                _uiState.update { it.copy(syncError = "No internet connection") }
             }
         }
     }
@@ -409,7 +409,7 @@ class OrderViewModel @Inject constructor(
                     val userId = authRepository.getCurrentUserIdSync()
                     if (userId == null) {
                         Log.w(TAG, "addToCart: User not logged in, cannot create order")
-                        _uiState.update { it.copy(addToCartError = "Giriş yapılmamış. Lütfen giriş yapın.") }
+                        _uiState.update { it.copy(addToCartError = "Not logged in. Please log in.") }
                         return@launch
                     }
                     val userName = authRepository.getCurrentUserNameSync() ?: "Waiter"
@@ -444,7 +444,7 @@ class OrderViewModel @Inject constructor(
                 _uiState.update { it.copy(orderWithItems = updated) }
             } catch (e: Exception) {
                 Log.e(TAG, "addToCart failed", e)
-                _uiState.update { it.copy(addToCartError = e.message ?: "Ürün eklenemedi") }
+                _uiState.update { it.copy(addToCartError = e.message ?: "Failed to add product") }
             }
         }
     }
@@ -694,7 +694,7 @@ class OrderViewModel @Inject constructor(
             if (orderRepository.refundItem(item.id, userId, userName)) {
                 _itemToRefund.value = null
             } else {
-                _uiState.update { it.copy(addToCartError = "Önce Closed Bills'dan fisi recall edin.") }
+                _uiState.update { it.copy(addToCartError = "Recall the bill from Closed Bills first.") }
             }
         }
     }
@@ -718,7 +718,7 @@ class OrderViewModel @Inject constructor(
                 _navigateToFloorPlanRequest.value = _navigateToFloorPlanRequest.value + 1
             } else {
                 _showRefundFullConfirm.value = false
-                _uiState.update { it.copy(addToCartError = "Önce Closed Bills'dan fisi recall edin.") }
+                _uiState.update { it.copy(addToCartError = "Recall the bill from Closed Bills first.") }
             }
         }
     }

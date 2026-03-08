@@ -142,9 +142,9 @@ class PaymentViewModel @Inject constructor(
             }
             _uiState.update { it.copy(discountRequestLoading = false) }
             if (ok) {
-                _uiState.update { it.copy(discountRequestPending = true, message = "İndirim talebi gönderildi. Web onayından sonra Sync ile güncel tutarı alın.", navigateToFloorPlanAfterDiscount = true) }
+                _uiState.update { it.copy(discountRequestPending = true, message = "Discount request sent. Sync to get updated total after web approval.", navigateToFloorPlanAfterDiscount = true) }
             } else {
-                _uiState.update { it.copy(message = "İndirim talebi gönderilemedi. Bağlantıyı kontrol edin veya Sync yapıp tekrar deneyin.") }
+                _uiState.update { it.copy(message = "Failed to send discount request. Check connection or Sync and try again.") }
             }
         }
     }
@@ -157,7 +157,7 @@ class PaymentViewModel @Inject constructor(
             _uiState.update { it.copy(discountRequestLoading = false) }
             if (ok) {
                 loadOrder()
-                _uiState.update { it.copy(message = "Sipariş güncellendi.") }
+                _uiState.update { it.copy(message = "Order updated.") }
             }
         }
     }
@@ -257,7 +257,7 @@ class PaymentViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         splits = listOf(PaymentSplit(id = "split_${System.currentTimeMillis()}", amount = 0.0, method = "")),
-                        message = "Ödeme alındı"
+                        message = "Payment received"
                     )
                 }
 

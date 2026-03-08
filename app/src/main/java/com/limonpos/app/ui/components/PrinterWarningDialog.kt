@@ -58,7 +58,7 @@ fun PrinterWarningDialog(
                     verticalArrangement = Arrangement.spacedBy(20.dp)
                 ) {
                     Text(
-                        "Yazıcı uyarısı",
+                        "Printer warning",
                         color = LimonError,
                         fontSize = 22.sp,
                         fontWeight = FontWeight.Bold

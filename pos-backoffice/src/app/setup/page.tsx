@@ -34,33 +34,33 @@ export default function SetupPage() {
       <div className="w-full max-w-md">
         <div className="mb-8 text-center">
           <h1 className="text-2xl font-bold text-sky-400">Limon POS</h1>
-          <p className="text-slate-400 text-sm mt-1">Hoş geldiniz – Kurulum</p>
+          <p className="text-slate-400 text-sm mt-1">Welcome – Setup</p>
         </div>
 
         <div className="rounded-xl bg-slate-900 border border-slate-700 p-6 space-y-6">
           {step === 1 && (
             <>
-              <h2 className="text-lg font-semibold text-white">İşletme adı (isteğe bağlı)</h2>
+              <h2 className="text-lg font-semibold text-white">Business name (optional)</h2>
               <input
                 type="text"
                 value={businessName}
                 onChange={(e) => setBusinessName(e.target.value)}
-                placeholder="Örn: Limon Restaurant"
+                placeholder="e.g. Limon Restaurant"
                 className="w-full px-4 py-3 rounded-lg bg-slate-800 border border-slate-600 text-white placeholder-slate-500 focus:outline-none focus:border-sky-500"
               />
               <button
                 onClick={() => setStep(2)}
                 className="w-full py-3 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium flex items-center justify-center gap-2"
               >
-                Devam et <ChevronRight className="w-4 h-4" />
+                Continue <ChevronRight className="w-4 h-4" />
               </button>
             </>
           )}
 
           {step === 2 && (
             <>
-              <h2 className="text-lg font-semibold text-white">Zoho Books entegrasyonu</h2>
-              <p className="text-sm text-slate-400">Satışları Zoho Books&apos;a otomatik göndermek istiyor musunuz?</p>
+              <h2 className="text-lg font-semibold text-white">Zoho Books integration</h2>
+              <p className="text-sm text-slate-400">Do you want to send sales to Zoho Books automatically?</p>
               <div className="space-y-2">
                 <button
                   onClick={() => setSetupZoho("later")}
@@ -70,8 +70,8 @@ export default function SetupPage() {
                 >
                   <Package className="w-5 h-5 text-slate-400" />
                   <div className="text-left">
-                    <span className="font-medium">Şimdilik atla</span>
-                    <p className="text-xs text-slate-400">Sonra Settings → Zoho Books&apos;tan ekleyebilirsiniz</p>
+                    <span className="font-medium">Skip for now</span>
+                    <p className="text-xs text-slate-400">You can add later from Settings → Zoho Books</p>
                   </div>
                 </button>
                 <button
@@ -82,8 +82,8 @@ export default function SetupPage() {
                 >
                   <BookOpen className="w-5 h-5 text-slate-400" />
                   <div className="text-left">
-                    <span className="font-medium">Evet, kurmak istiyorum</span>
-                    <p className="text-xs text-slate-400">Settings → Zoho Books&apos;a yönlendirileceksiniz</p>
+                    <span className="font-medium">Yes, set up now</span>
+                    <p className="text-xs text-slate-400">You will be redirected to Settings → Zoho Books</p>
                   </div>
                 </button>
               </div>
@@ -92,14 +92,14 @@ export default function SetupPage() {
                   onClick={() => setStep(1)}
                   className="flex-1 py-3 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-800"
                 >
-                  Geri
+                  Back
                 </button>
                 <button
                   onClick={finish}
                   disabled={loading}
                   className="flex-1 py-3 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium flex items-center justify-center gap-2 disabled:opacity-50"
                 >
-                  {loading ? "Kaydediliyor..." : "Kurulumu Tamamla"}
+                  {loading ? "Saving..." : "Complete setup"}
                   <CheckCircle className="w-4 h-4" />
                 </button>
               </div>
@@ -109,11 +109,11 @@ export default function SetupPage() {
 
         {setupZoho === "yes" && step === 2 && (
           <p className="mt-4 text-center text-sm text-slate-400">
-            Kurulumdan sonra{" "}
+            After setup you can continue from the{" "}
             <Link href="/settings/zoho" className="text-sky-400 hover:underline">
               Zoho Books
             </Link>{" "}
-            sayfasından devam edebilirsiniz.
+            page.
           </p>
         )}
 

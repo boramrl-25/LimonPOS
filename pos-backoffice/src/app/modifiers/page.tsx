@@ -214,9 +214,9 @@ export default function ModifiersPage() {
             type="button"
             onClick={downloadModifiersTemplate}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-medium"
-            title="Import için Excel şablonu indir"
+            title="Download Excel template for import"
           >
-            <FileDown className="w-4 h-4" /> Şablon indir
+            <FileDown className="w-4 h-4" /> Download template
           </button>
           <button
             type="button"

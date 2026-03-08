@@ -273,7 +273,7 @@ export default function CategoriesPage() {
         <div>
           <h1 className="text-2xl font-bold text-sky-400">Categories</h1>
           <p className="text-slate-400">Product categories. Sıra (order) determines order in app. Sürükleyip bırakın veya oklarla sıralayın.</p>
-          <p className="text-slate-500 text-sm mt-1">Excel veya CSV: Örnek dosyayı indir, doldur, yükle.</p>
+          <p className="text-slate-500 text-sm mt-1">Excel or CSV: Download sample, fill, upload.</p>
         </div>
         <div className="flex gap-2 flex-wrap">
           <input
@@ -288,7 +288,7 @@ export default function CategoriesPage() {
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-medium"
             title="Import için Excel şablonu indir"
           >
-            <FileDown className="w-4 h-4" /> Örnek dosya indir
+            <FileDown className="w-4 h-4" /> Download template
           </button>
           <button
             onClick={exportCategoriesToExcel}
@@ -306,7 +306,7 @@ export default function CategoriesPage() {
             ) : (
               <FileSpreadsheet className="w-4 h-4" />
             )}
-            Yükle (Excel/CSV)
+            Upload (Excel/CSV)
           </button>
           <button onClick={() => openEdit()} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium">
             <Plus className="w-4 h-4" /> New Category

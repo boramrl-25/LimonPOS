@@ -117,7 +117,7 @@ class ApiSyncRepository @Inject constructor(
     /** Fast catalog sync for manual refresh: categories, products, modifier groups (+ printers/users). */
     suspend fun syncCatalog(): Boolean {
         if (!isOnline()) {
-            lastSyncError = "İnternet bağlantısı yok"
+            lastSyncError = "No internet connection"
             return false
         }
         restoreAuthTokenIfNeeded()
@@ -141,7 +141,7 @@ class ApiSyncRepository @Inject constructor(
             syncPrinters()
             syncUsers()
         } catch (e: Exception) {
-            lastSyncError = "Yazıcı/Kullanıcı: ${e.message}"
+            lastSyncError = "Printer/User: ${e.message}"
             Log.e("ApiSync", "syncPrinters/Users error", e)
             return false
         }
@@ -651,7 +651,7 @@ class ApiSyncRepository @Inject constructor(
                 }
             }
             if (!response.isSuccessful) {
-                val msg = if (response.code() == 401) "Yetkisiz (401) - Giriş yapıp tekrar deneyin" else "API ${response.code()}"
+                val msg = if (response.code() == 401) "Unauthorized (401) - Login and try again" else "API ${response.code()}"
                 Log.w("ApiSync", "syncProducts: $msg")
                 lastSyncError = msg
                 return false
@@ -659,7 +659,7 @@ class ApiSyncRepository @Inject constructor(
             val dtos = response.body()
             if (dtos == null) {
                 Log.w("ApiSync", "syncProducts: empty or invalid response body")
-                lastSyncError = "Ürün listesi alınamadı"
+                lastSyncError = "Failed to fetch product list"
                 return false
             }
             if (dtos.isEmpty()) {
@@ -708,7 +708,7 @@ class ApiSyncRepository @Inject constructor(
                 }
             } catch (e: Exception) {
                 Log.e("ApiSync", "syncProducts: mapping failed ${e.message}", e)
-                lastSyncError = e.message ?: "Ürün verisi işlenemedi"
+                lastSyncError = e.message ?: "Failed to process product data"
                 return false
             }
             productDao.deleteAll()
@@ -718,7 +718,7 @@ class ApiSyncRepository @Inject constructor(
             true
         } catch (e: Exception) {
             Log.e("ApiSync", "syncProducts error: ${e.message}", e)
-            lastSyncError = e.message ?: "Sync hatası"
+            lastSyncError = e.message ?: "Sync error"
             false
         }
     }
@@ -760,7 +760,7 @@ class ApiSyncRepository @Inject constructor(
             printerDao.insertPrinters(entities)
         } catch (e: Exception) {
             Log.e("ApiSync", "syncPrinters error: ${e.message}", e)
-            lastSyncError = "Yazıcı/Kullanıcı: ${e.message ?: "parse hatası"}"
+            lastSyncError = "Printer/User: ${e.message ?: "parse error"}"
         }
     }
 
@@ -796,7 +796,7 @@ class ApiSyncRepository @Inject constructor(
             userDao.insertUsers(entities)
         } catch (e: Exception) {
             Log.e("ApiSync", "syncUsers error: ${e.message}", e)
-            lastSyncError = "Yazıcı/Kullanıcı: ${e.message ?: "parse hatası"}"
+            lastSyncError = "Printer/User: ${e.message ?: "parse error"}"
         }
     }
 

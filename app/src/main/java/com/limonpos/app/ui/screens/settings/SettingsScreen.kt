@@ -133,13 +133,13 @@ fun SettingsScreen(
                 Text(msg, color = LimonPrimary, modifier = Modifier.padding(bottom = 16.dp), fontSize = 14.sp)
             }
             if (needsNotificationPermission) {
-                Text("Bildirimler / Notifications", fontWeight = FontWeight.Bold, color = LimonText, fontSize = 16.sp, modifier = Modifier.padding(bottom = 12.dp))
+                Text("Notifications", fontWeight = FontWeight.Bold, color = LimonText, fontSize = 16.sp, modifier = Modifier.padding(bottom = 12.dp))
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = LimonError.copy(alpha = 0.15f))
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Bildirim izni verilmemiş. Masaya gitmedi uyarıları gelmez.", color = LimonText, fontSize = 14.sp)
+                        Text("Notification permission denied. Overdue table alerts will not appear.", color = LimonText, fontSize = 14.sp)
                         Text("Notification permission denied. Overdue alerts will not appear.", color = LimonTextSecondary, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
                         Spacer(modifier = Modifier.height(12.dp))
                         Button(
@@ -153,7 +153,7 @@ fun SettingsScreen(
                         ) {
                             Icon(Icons.Default.Notifications, contentDescription = null, modifier = Modifier.size(20.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Ayarlara git / Open Settings", color = LimonText)
+                            Text("Open Settings", color = LimonText)
                         }
                     }
                 }
@@ -168,7 +168,7 @@ fun SettingsScreen(
                 ) {
                     Icon(Icons.Default.Restaurant, contentDescription = null, modifier = Modifier.size(24.dp))
                     Spacer(modifier = Modifier.width(12.dp))
-                    Text("KDS Aç / Open Kitchen Display", color = LimonText, fontSize = 16.sp)
+                    Text("Open Kitchen Display (KDS)", color = LimonText, fontSize = 16.sp)
                 }
                 Spacer(modifier = Modifier.height(24.dp))
                 Button(
@@ -191,15 +191,15 @@ fun SettingsScreen(
                     Text("Printer Setup", color = LimonText)
                 }
                 Spacer(modifier = Modifier.height(16.dp))
-                Text("Yazıcı ürün boyutu / Receipt item size", fontWeight = FontWeight.Bold, color = LimonText, fontSize = 14.sp, modifier = Modifier.padding(bottom = 8.dp))
+                Text("Receipt item size", fontWeight = FontWeight.Bold, color = LimonText, fontSize = 14.sp, modifier = Modifier.padding(bottom = 8.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     listOf(
                         ReceiptItemSize.NORMAL to "Normal",
-                        ReceiptItemSize.LARGE to "Büyük",
-                        ReceiptItemSize.XLARGE to "Çok Büyük"
+                        ReceiptItemSize.LARGE to "Large",
+                        ReceiptItemSize.XLARGE to "XLarge"
                     ).forEach { (size, label) ->
                         FilterChip(
                             selected = receiptItemSize == size,

@@ -60,9 +60,9 @@ class ServerSettingsViewModel @Inject constructor(
                         .build()
                     val request = Request.Builder().url(healthUrl).build()
                     val response = client.newCall(request).execute()
-                    if (response.isSuccessful) "Bağlantı başarılı!" else "Sunucu hata: ${response.code}"
+                    if (response.isSuccessful) "Connection successful!" else "Server error: ${response.code}"
                 } catch (e: Exception) {
-                    "Bağlanamadı: ${e.message}"
+                    "Cannot connect: ${e.message}"
                 }
             }
             _message.update { result }

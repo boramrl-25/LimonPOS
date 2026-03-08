@@ -201,15 +201,15 @@ fun PaymentScreen(
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Discount / İndirim", fontWeight = FontWeight.Bold, color = LimonText, fontSize = 14.sp)
+                        Text("Discount", fontWeight = FontWeight.Bold, color = LimonText, fontSize = 14.sp)
                         Spacer(Modifier.height(8.dp))
                         if (uiState.discountRequestPending) {
-                            Text("İndirim onayı bekleniyor. Web'den onaylandıktan sonra Sync ile güncel tutarı alın.", color = LimonTextSecondary, fontSize = 12.sp)
+                            Text("Discount approval pending. Sync to get updated total after web approval.", color = LimonTextSecondary, fontSize = 12.sp)
                             Spacer(Modifier.height(8.dp))
                             OutlinedButton(onClick = { viewModel.refreshOrderFromApi() }, modifier = Modifier.fillMaxWidth()) {
                                 Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.width(8.dp))
-                                Text("Sync / Güncelle")
+                                Text("Sync / Update")
                             }
                         } else if (!hasDiscount) {
                             Button(
@@ -217,10 +217,10 @@ fun PaymentScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 colors = ButtonDefaults.buttonColors(containerColor = LimonPrimary)
                             ) {
-                                Text("İndirim talebi gönder", color = Color.Black)
+                                Text("Send discount request", color = Color.Black)
                             }
                         } else {
-                            Text("İndirim uygulandı.", color = LimonSuccess, fontSize = 12.sp)
+                            Text("Discount applied.", color = LimonSuccess, fontSize = 12.sp)
                         }
                     }
                 }
@@ -393,14 +393,14 @@ private fun DiscountRequestDialog(
     var noteText by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("İndirim talebi", fontWeight = FontWeight.Bold, color = LimonText) },
+        title = { Text("Discount request", fontWeight = FontWeight.Bold, color = LimonText) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Web'den yetkili biri yüzde veya tutar girecek. Talep gönderin.", color = LimonTextSecondary, fontSize = 12.sp)
+                Text("An authorized user will enter percent or amount on web. Send the request.", color = LimonTextSecondary, fontSize = 12.sp)
                 OutlinedTextField(
                     value = percentText,
                     onValueChange = { if (it.isEmpty() || it.all { c -> c.isDigit() || c == '.' }) percentText = it },
-                    label = { Text("İstenen indirim % (opsiyonel)") },
+                    label = { Text("Requested discount % (optional)") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
@@ -408,7 +408,7 @@ private fun DiscountRequestDialog(
                 OutlinedTextField(
                     value = amountText,
                     onValueChange = { if (it.isEmpty() || it.all { c -> c.isDigit() || c == '.' }) amountText = it },
-                    label = { Text("İstenen indirim tutarı AED (opsiyonel)") },
+                    label = { Text("Requested discount amount AED (optional)") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
@@ -416,7 +416,7 @@ private fun DiscountRequestDialog(
                 OutlinedTextField(
                     value = noteText,
                     onValueChange = { noteText = it },
-                    label = { Text("Açıklama (opsiyonel)") },
+                    label = { Text("Notes (optional)") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = false
                 )
@@ -430,9 +430,9 @@ private fun DiscountRequestDialog(
                     if (pct != null || amt != null) onSubmit(pct, amt, noteText.trim())
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = LimonPrimary)
-            ) { Text("Gönder", color = Color.Black) }
+            ) { Text("Send", color = Color.Black) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("İptal", color = LimonTextSecondary) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = LimonTextSecondary) } },
         containerColor = LimonSurface
     )
 }
@@ -476,7 +476,7 @@ private fun CompletedPaymentRow(
                 Text(CurrencyUtils.format(payment.amount), color = LimonText, fontSize = 14.sp)
             }
             TextButton(onClick = onCancel) {
-                Text("İptal", color = LimonError, fontSize = 14.sp)
+                Text("Cancel", color = LimonError, fontSize = 14.sp)
             }
         }
     }

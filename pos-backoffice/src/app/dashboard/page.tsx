@@ -5,16 +5,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
-  Coins,
-  UtensilsCrossed,
-  Receipt,
   RefreshCw,
   Moon,
   ChevronRight,
-  Bell,
-  FileEdit,
-  Banknote,
-  Percent,
 } from "lucide-react";
 import { getDashboardStats, getDailySales, getOpenOrders, getClosedBillChanges, getCashDrawerOpens, getDiscountsToday, getDiscountRequestsPending, runEod } from "@/lib/api";
 import type { DiscountTodayRow } from "@/lib/api";
@@ -26,7 +19,7 @@ type TicketModalType = "cash" | "card" | "all" | "void" | "refund" | "open" | nu
 function toYYYYMMDD(d: Date) {
   return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
 }
-const blockButtonClass = "flex items-center gap-4 p-5 rounded-xl bg-slate-800/60 border border-slate-700 hover:border-sky-500/50 hover:bg-slate-800/80 transition-colors text-left cursor-pointer w-full min-h-[88px]";
+const blockBaseClass = "flex p-5 rounded-xl border transition-colors text-left cursor-pointer w-full min-h-[100px] hover:opacity-95";
 
 function fmt(n: number) {
   return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -204,87 +197,76 @@ export default function DashboardPage() {
         <section>
           <h2 className="text-lg font-semibold text-slate-200 mb-4">Overview (tap to view tickets)</h2>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-            <button type="button" className={blockButtonClass} onClick={() => setTicketModalType("all")}>
-              <Coins className="w-8 h-8 text-emerald-400 shrink-0" />
+            <button type="button" className={`${blockBaseClass} bg-emerald-900/80 border-emerald-600/50 text-emerald-100`} onClick={() => setTicketModalType("all")}>
               <div className="min-w-0 flex-1">
-                <p className="text-slate-400 text-xs uppercase tracking-wide">Total Sales</p>
-                <p className="text-lg font-bold text-white truncate">{loading ? "..." : `${fmt(dailySales?.totalSales ?? stats.todaySales ?? 0)} AED`}</p>
+                <p className="text-base font-semibold uppercase tracking-wide mb-1">Total Sales</p>
+                <p className="text-3xl font-bold truncate">{loading ? "..." : `${fmt(dailySales?.totalSales ?? stats.todaySales ?? 0)} AED`}</p>
               </div>
             </button>
-            <button type="button" className={blockButtonClass} onClick={() => setTicketModalType("card")}>
-              <Receipt className="w-8 h-8 text-sky-400 shrink-0" />
+            <button type="button" className={`${blockBaseClass} bg-sky-900/80 border-sky-600/50 text-sky-100`} onClick={() => setTicketModalType("card")}>
               <div className="min-w-0 flex-1">
-                <p className="text-slate-400 text-xs uppercase tracking-wide">Total Card</p>
-                <p className="text-lg font-bold text-white truncate">{loading ? "..." : `${fmt(dailySales?.totalCard ?? 0)} AED`}</p>
+                <p className="text-base font-semibold uppercase tracking-wide mb-1">Total Card</p>
+                <p className="text-3xl font-bold truncate">{loading ? "..." : `${fmt(dailySales?.totalCard ?? 0)} AED`}</p>
               </div>
             </button>
-            <button type="button" className={blockButtonClass} onClick={() => setTicketModalType("cash")}>
-              <Coins className="w-8 h-8 text-amber-400 shrink-0" />
+            <button type="button" className={`${blockBaseClass} bg-amber-900/80 border-amber-600/50 text-amber-100`} onClick={() => setTicketModalType("cash")}>
               <div className="min-w-0 flex-1">
-                <p className="text-slate-400 text-xs uppercase tracking-wide">Total Cash</p>
-                <p className="text-lg font-bold text-white truncate">{loading ? "..." : `${fmt(dailySales?.totalCash ?? 0)} AED`}</p>
+                <p className="text-base font-semibold uppercase tracking-wide mb-1">Total Cash</p>
+                <p className="text-3xl font-bold truncate">{loading ? "..." : `${fmt(dailySales?.totalCash ?? 0)} AED`}</p>
               </div>
             </button>
-            <button type="button" className={blockButtonClass} onClick={handleOpenTablesClick}>
-              <UtensilsCrossed className="w-8 h-8 text-amber-400 shrink-0" />
+            <button type="button" className={`${blockBaseClass} bg-yellow-900/80 border-yellow-600/50 text-yellow-100`} onClick={handleOpenTablesClick}>
               <div className="min-w-0 flex-1">
-                <p className="text-slate-400 text-xs uppercase tracking-wide">Open Tables</p>
-                <p className="text-lg font-bold text-white">{loading ? "..." : stats.openTables}</p>
+                <p className="text-base font-semibold uppercase tracking-wide mb-1">Open Tables</p>
+                <p className="text-3xl font-bold">{loading ? "..." : stats.openTables}</p>
               </div>
             </button>
-            <button type="button" className={blockButtonClass} onClick={() => { setTicketModalType(null); router.push("/dashboard/approvals"); }}>
-              <Bell className="w-8 h-8 text-orange-400 shrink-0" />
+            <button type="button" className={`${blockBaseClass} bg-orange-900/80 border-orange-600/50 text-orange-100`} onClick={() => { setTicketModalType(null); router.push("/dashboard/approvals"); }}>
               <div className="min-w-0 flex-1">
-                <p className="text-slate-400 text-xs uppercase tracking-wide">Approval Request</p>
-                <p className="text-lg font-bold text-white">{loading ? "..." : totalApprovalRequests}</p>
-                <p className="text-xs text-slate-500">Void + Closed Bill</p>
+                <p className="text-base font-semibold uppercase tracking-wide mb-1">Approval Request</p>
+                <p className="text-3xl font-bold">{loading ? "..." : totalApprovalRequests}</p>
+                <p className="text-base opacity-90">Void + Closed Bill</p>
               </div>
             </button>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
-            <button type="button" className={blockButtonClass} onClick={() => setClosedBillChangesModal(true)}>
-              <FileEdit className="w-8 h-8 text-rose-400 shrink-0" />
+            <button type="button" className={`${blockBaseClass} bg-rose-900/80 border-rose-600/50 text-rose-100`} onClick={() => setClosedBillChangesModal(true)}>
               <div className="min-w-0 flex-1">
-                <p className="text-slate-400 text-xs uppercase tracking-wide">Closed Bill Changes</p>
-                <p className="text-lg font-bold text-white">{loading ? "..." : (closedBillChanges?.count ?? 0)}</p>
+                <p className="text-base font-semibold uppercase tracking-wide mb-1">Closed Bill Changes</p>
+                <p className="text-3xl font-bold">{loading ? "..." : (closedBillChanges?.count ?? 0)}</p>
               </div>
             </button>
-            <button type="button" className={blockButtonClass} onClick={() => setTicketModalType("void")}>
-              <Receipt className="w-8 h-8 text-red-400 shrink-0" />
+            <button type="button" className={`${blockBaseClass} bg-red-900/80 border-red-600/50 text-red-100`} onClick={() => setTicketModalType("void")}>
               <div className="min-w-0 flex-1">
-                <p className="text-slate-400 text-xs uppercase tracking-wide">Total Void</p>
-                <p className="text-lg font-bold text-red-400 truncate">{loading ? "..." : `${fmt(dailySales?.totalVoidAmount ?? 0)} AED`}</p>
+                <p className="text-base font-semibold uppercase tracking-wide mb-1">Total Void</p>
+                <p className="text-3xl font-bold truncate">{loading ? "..." : `${fmt(dailySales?.totalVoidAmount ?? 0)} AED`}</p>
               </div>
             </button>
-            <button type="button" className={blockButtonClass} onClick={() => setTicketModalType("refund")}>
-              <Receipt className="w-8 h-8 text-red-400 shrink-0" />
+            <button type="button" className={`${blockBaseClass} bg-red-950/80 border-red-700/50 text-red-200`} onClick={() => setTicketModalType("refund")}>
               <div className="min-w-0 flex-1">
-                <p className="text-slate-400 text-xs uppercase tracking-wide">Refund Total</p>
-                <p className="text-lg font-bold text-red-400 truncate">{loading ? "..." : `${fmt(dailySales?.totalRefundAmount ?? 0)} AED`}</p>
+                <p className="text-base font-semibold uppercase tracking-wide mb-1">Refund Total</p>
+                <p className="text-3xl font-bold truncate">{loading ? "..." : `${fmt(dailySales?.totalRefundAmount ?? 0)} AED`}</p>
               </div>
             </button>
-            <button type="button" className={blockButtonClass} onClick={() => setCashDrawerModalOpen(true)}>
-              <Banknote className="w-8 h-8 text-amber-400 shrink-0" />
+            <button type="button" className={`${blockBaseClass} bg-teal-900/80 border-teal-600/50 text-teal-100`} onClick={() => setCashDrawerModalOpen(true)}>
               <div className="min-w-0 flex-1">
-                <p className="text-slate-400 text-xs uppercase tracking-wide">Cash Drawer Opens</p>
-                <p className="text-lg font-bold text-white">{loading ? "..." : (cashDrawerOpens?.count ?? 0)}</p>
-                <p className="text-xs text-slate-500">No sale</p>
+                <p className="text-base font-semibold uppercase tracking-wide mb-1">Cash Drawer Opens</p>
+                <p className="text-3xl font-bold">{loading ? "..." : (cashDrawerOpens?.count ?? 0)}</p>
+                <p className="text-base opacity-90">No sale</p>
               </div>
             </button>
-            <button type="button" className={blockButtonClass} onClick={() => setDiscountsModalOpen(true)}>
-              <Percent className="w-8 h-8 text-violet-400 shrink-0" />
+            <button type="button" className={`${blockBaseClass} bg-violet-900/80 border-violet-600/50 text-violet-100`} onClick={() => setDiscountsModalOpen(true)}>
               <div className="min-w-0 flex-1">
-                <p className="text-slate-400 text-xs uppercase tracking-wide">Today&apos;s Discounts</p>
-                <p className="text-lg font-bold text-white">{loading ? "..." : (discountsToday?.count ?? 0)}</p>
-                <p className="text-xs text-slate-500">{loading ? "" : `${fmt(discountsToday?.totalDiscountAmount ?? 0)} AED`}</p>
+                <p className="text-base font-semibold uppercase tracking-wide mb-1">Today&apos;s Discounts</p>
+                <p className="text-3xl font-bold">{loading ? "..." : (discountsToday?.count ?? 0)}</p>
+                <p className="text-base opacity-90">{loading ? "" : `${fmt(discountsToday?.totalDiscountAmount ?? 0)} AED`}</p>
               </div>
             </button>
-            <button type="button" className={blockButtonClass} onClick={() => router.push("/dashboard/discount-requests")}>
-              <Percent className="w-8 h-8 text-amber-400 shrink-0" />
+            <button type="button" className={`${blockBaseClass} bg-fuchsia-900/80 border-fuchsia-600/50 text-fuchsia-100`} onClick={() => router.push("/dashboard/discount-requests")}>
               <div className="min-w-0 flex-1">
-                <p className="text-slate-400 text-xs uppercase tracking-wide">Discount Requests</p>
-                <p className="text-lg font-bold text-white">{pendingDiscountRequestsCount}</p>
-                <p className="text-xs text-slate-500">Onay bekleyen</p>
+                <p className="text-base font-semibold uppercase tracking-wide mb-1">Discount Requests</p>
+                <p className="text-3xl font-bold">{pendingDiscountRequestsCount}</p>
+                <p className="text-base opacity-90">Pending approval</p>
               </div>
             </button>
           </div>
@@ -298,13 +280,13 @@ export default function DashboardPage() {
             <div className="flex-1 min-w-0">
               {stats.lastEod ? (
                 <p className="text-slate-400 text-sm">
-                  Son gün kapatma: <span className="text-slate-200">{formatEodTime(stats.lastEod.ran_at)}</span>
+                  Last day close: <span className="text-slate-200">{formatEodTime(stats.lastEod.ran_at)}</span>
                   {stats.lastEod.tables_closed_count > 0 && (
-                    <span className="text-amber-400 ml-1">({stats.lastEod.tables_closed_count} masa EOD&apos;da kapatıldı)</span>
+                    <span className="text-amber-400 ml-1">({stats.lastEod.tables_closed_count} table(s) closed in EOD)</span>
                   )}
                 </p>
               ) : (
-                <p className="text-slate-400 text-sm">Henüz gün kapatma yapılmadı.</p>
+                <p className="text-slate-400 text-sm">No day close done yet.</p>
               )}
               {stats.openTablesCount > 0 && (
                 <p className="text-amber-400 text-sm mt-1">
@@ -314,7 +296,7 @@ export default function DashboardPage() {
             </div>
             {selectedDateFrom === null && selectedDateTo === null && (
               <a href="#eod" className="px-3 py-1.5 rounded-lg bg-amber-600/80 hover:bg-amber-500 text-white text-sm font-medium">
-                End of Day / Günü Kapat
+                End of Day
               </a>
             )}
           </div>
@@ -416,7 +398,7 @@ export default function DashboardPage() {
                 <section id="eod" className="rounded-xl bg-slate-800/60 border border-slate-700 p-5 mt-6">
                   <h3 className="text-lg font-semibold text-slate-200 mb-3 flex items-center gap-2">
                     <Moon className="w-5 h-5 text-amber-400" />
-                    End of Day / Günü Kapat
+                    End of Day
                   </h3>
                   <p className="text-slate-400 text-sm mb-4">Close the business day. If there are open checks, you can mark them as paid and close.</p>
                   {dailySales?.lastEod && (
@@ -551,7 +533,7 @@ export default function DashboardPage() {
                   ))}
                 </ul>
               ) : (
-                <p className="text-slate-500 py-4">Bu dönemde onaylanan indirim yok.</p>
+                <p className="text-slate-500 py-4">No approved discounts in this period.</p>
               )}
             </div>
           </div>

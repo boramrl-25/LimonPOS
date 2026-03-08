@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
@@ -188,7 +188,7 @@ export default function ProductsPage() {
     const odRaw = form.overdue_undelivered_minutes;
     const od = odRaw === "" ? null : Number(odRaw);
     if (od == null || isNaN(od) || od < 1 || od > 1440) {
-      alert("Masaya gitmeyen ürün uyarı süresi (dakika) zorunludur ve 1–1440 arasında olmalıdır.");
+      alert("Overdue undelivered minutes is required and must be 1–1440.");
       return;
     }
     try {
@@ -219,7 +219,7 @@ export default function ProductsPage() {
   }
 
   async function remove(id: string) {
-    if (!confirm("Bu ürünü silmek istediğinize emin misiniz?")) return;
+    if (!confirm("Are you sure you want to delete this product?")) return;
     try {
       await deleteProduct(id);
       setSelectedProductIds((prev) => {
@@ -253,10 +253,10 @@ export default function ProductsPage() {
   async function bulkDeleteProducts() {
     const ids = Array.from(selectedProductIds);
     if (ids.length === 0) {
-      alert("Lütfen silmek istediğiniz ürünleri işaretleyin.");
+      alert("Please select products to delete.");
       return;
     }
-    if (!confirm(`${ids.length} ürünü kalıcı olarak silmek istediğinize emin misiniz?`)) return;
+    if (!confirm(`Are you sure you want to permanently delete ${ids.length} product(s)?`)) return;
     setDeleteLoading(true);
     try {
       for (const id of ids) {
@@ -319,7 +319,7 @@ export default function ProductsPage() {
         await load(true);
         const suggested = r.productsSuggestedForRemoval?.length ?? 0;
         if (suggested > 0) {
-          alert(`${suggested} ürün Zoho'da artık yok. Silinecek önerisi olarak listelendi. Onay verene kadar satışta kalır; aşağıdaki "Zoho'da artık yok" listesinden seçip silebilirsiniz.`);
+          alert(`${suggested} product(s) no longer in Zoho. Listed for removal. Stays on sale until confirmed; you can select and delete from the "No longer in Zoho" list below.`);
         }
       }
     } catch (e) {
@@ -346,10 +346,10 @@ export default function ProductsPage() {
   async function confirmRemoval() {
     const ids = Array.from(selectedRemovalIds);
     if (ids.length === 0) {
-      alert("Lütfen silmek istediğiniz ürünleri işaretleyin.");
+      alert("Please select products to delete.");
       return;
     }
-    if (!confirm(`${ids.length} ürünü kalıcı olarak silmek istediğinize emin misiniz?`)) return;
+    if (!confirm(`Are you sure you want to permanently delete ${ids.length} product(s)?`)) return;
     setRemovalLoading(true);
     try {
       await confirmProductRemoval(ids);
@@ -396,7 +396,7 @@ export default function ProductsPage() {
     const rows = [
       {
         ID: "",
-        Name: "Örnek Ürün",
+        Name: "Sample Product",
         NameArabic: "",
         NameTurkish: "",
         SKU: "SKU001",
@@ -412,7 +412,7 @@ export default function ProductsPage() {
       },
       {
         ID: "",
-        Name: "İkinci Ürün",
+        Name: "Second Product",
         NameArabic: "",
         NameTurkish: "",
         SKU: "SKU002",
@@ -703,7 +703,7 @@ export default function ProductsPage() {
         updated += 1;
       }
       await load(true);
-      alert(`Modifier/yazıcı ataması: ${updated} ürün güncellendi.${skipped > 0 ? ` ${skipped} satır atlandı (ürün bulunamadı veya boş).` : ""}`);
+      alert(`Modifier/printer assignment: ${updated} product(s) updated.${skipped > 0 ? ` ${skipped} row(s) skipped (product not found or empty).` : ""}`);
     } catch (err) {
       alert((err as Error).message);
     } finally {
@@ -776,14 +776,14 @@ export default function ProductsPage() {
       <div className="flex justify-between items-center mb-8 flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-sky-400">Products</h1>
-          <p className="text-slate-400">Add, edit, delete products. Zoho sync ile ürünler güncellenir; Zoho'da kaldırılanlar &quot;silinecek önerisi&quot; olarak listelenir, onay verene kadar satışta kalır.</p>
+          <p className="text-slate-400">Add, edit, delete products. Zoho sync updates products; removed Zoho items are listed for removal and stay on sale until confirmed.</p>
           <p className="text-slate-500 text-xs mt-1">Checkbox ile seç, toplu sil. Export/Import: Printers, Modifiers, OverdueMinutes dahil.</p>
-          <p className="text-slate-500 text-sm mt-1">Excel veya CSV: Örnek dosyayı indir, doldur, yükle.</p>
+          <p className="text-slate-500 text-sm mt-1">Excel or CSV: Download sample, fill, upload.</p>
           {lastSync && <p className="text-slate-500 text-sm mt-1">Last sync: {lastSync}</p>}
           {zohoCheckResult && (
             <p className={`text-sm mt-1 ${zohoCheckResult.ok ? "text-emerald-400" : "text-amber-400"}`}>
               {zohoCheckResult.ok
-                ? `Zoho: ${zohoCheckResult.itemsCount} ürün, ${zohoCheckResult.groupsCount} grup bulundu.`
+                ? `Zoho: ${zohoCheckResult.itemsCount} products, ${zohoCheckResult.groupsCount} groups found.`
                 : `Zoho: ${zohoCheckResult.error || "Bağlantı yok"}`}
             </p>
           )}
@@ -799,9 +799,9 @@ export default function ProductsPage() {
           <button
             onClick={downloadProductsTemplate}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-medium"
-            title="Import için Excel şablonu indir"
+            title="Download Excel template for import"
           >
-            <FileDown className="w-4 h-4" /> Örnek dosya indir
+            <FileDown className="w-4 h-4" /> Download template
           </button>
           <button
             onClick={exportProductsToExcel}
@@ -821,10 +821,10 @@ export default function ProductsPage() {
             )}
             Yükle (Excel/CSV)
           </button>
-          <button onClick={checkZoho} disabled={checkLoading} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-600 hover:bg-slate-500 disabled:opacity-50 text-white font-medium" title="Zoho bağlantısını ve ürün sayısını kontrol et">
+          <button onClick={checkZoho} disabled={checkLoading} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-600 hover:bg-slate-500 disabled:opacity-50 text-white font-medium" title="Check Zoho connection and product count">
             {checkLoading ? "Kontrol..." : "Zoho Kontrol"}
           </button>
-          <button onClick={syncFromZoho} disabled={syncLoading} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-medium" title="Zoho'da yapılan değişiklikleri uygula (ürünler Zoho'dan senkronize edilir)">
+          <button onClick={syncFromZoho} disabled={syncLoading} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-medium" title="Apply Zoho changes (products sync from Zoho)">
             <RefreshCw className={`w-4 h-4 ${syncLoading ? "animate-spin" : ""}`} /> Zoho Sync
           </button>
           <button onClick={() => openEdit()} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium">
@@ -834,9 +834,9 @@ export default function ProductsPage() {
       </div>
 
       <div className="mb-6 p-4 rounded-lg border border-amber-700/50 bg-amber-950/20">
-        <h2 className="text-lg font-semibold text-amber-400 mb-2">Ürünlere modifier ve yazıcı atama (Excel/CSV)</h2>
+        <h2 className="text-lg font-semibold text-amber-400 mb-2">Assign modifiers & printers to products (Excel/CSV)</h2>
         <p className="text-slate-400 text-sm mb-3">
-          Şablonu indir, <strong>Product</strong> (ürün adı veya SKU), <strong>Modifiers</strong> (virgülle ayrılmış modifier grupları), <strong>Printers</strong> (virgülle ayrılmış yazıcılar) sütunlarını doldurup yükleyin. Sadece eşleşen ürünler güncellenir.
+          Download template, fill <strong>Product</strong> (name or SKU), <strong>Modifiers</strong> (comma-separated groups), <strong>Printers</strong> (comma-separated). Only matching products are updated.
         </p>
         <input
           ref={modifierPrinterFileInputRef}
@@ -852,7 +852,7 @@ export default function ProductsPage() {
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-medium"
             title="Modifier ve yazıcı atama şablonu"
           >
-            <FileDown className="w-4 h-4" /> Örnek dosya indir
+            <FileDown className="w-4 h-4" /> Download template
           </button>
           <button
             type="button"
@@ -865,7 +865,7 @@ export default function ProductsPage() {
             ) : (
               <FileSpreadsheet className="w-4 h-4" />
             )}
-            Modifier &amp; yazıcı yükle (Excel/CSV)
+            Upload modifier &amp; printers (Excel/CSV)
           </button>
         </div>
       </div>
@@ -879,7 +879,7 @@ export default function ProductsPage() {
             role="searchbox"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Ürün adı, SKU veya kategori ile ara..."
+            placeholder="Search by product name, SKU or category..."
             className="w-full pl-10 pr-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white placeholder-slate-500"
           />
         </div>
@@ -914,7 +914,7 @@ export default function ProductsPage() {
 
       {selectedProductIds.size > 0 && (
         <div className="mb-4 flex items-center gap-3 p-3 rounded-lg bg-slate-800/50 border border-slate-700">
-          <span className="text-slate-300 text-sm">{selectedProductIds.size} ürün seçili</span>
+          <span className="text-slate-300 text-sm">{selectedProductIds.size} product(s) selected</span>
           <button
             type="button"
             onClick={bulkDeleteProducts}
@@ -1046,10 +1046,10 @@ export default function ProductsPage() {
                       className="rounded border-slate-500"
                     />
                   </th>
-                  <th className="text-left p-2 font-medium">Ürün</th>
+                  <th className="text-left p-2 font-medium">Product</th>
                   <th className="text-left p-2 font-medium">SKU</th>
                   <th className="text-left p-2 font-medium">Kategori</th>
-                  <th className="text-left p-2 font-medium">Fiyat</th>
+                  <th className="text-left p-2 font-medium">Price</th>
                 </tr>
               </thead>
               <tbody>
@@ -1080,13 +1080,13 @@ export default function ProductsPage() {
           <div className="bg-slate-900 rounded-xl border border-slate-700 p-6 max-w-xl w-full max-h-[85vh] overflow-hidden flex flex-col">
             <h2 className="text-xl font-bold text-amber-400 mb-2">Upload çakışması</h2>
             <p className="text-slate-400 text-sm mb-4">
-              {importConflictModal.conflicts.length} ürün zaten mevcut ve upload dosyasındaki bilgiler farklı. Upload verisiyle güncellemek istiyor musunuz?
+              {importConflictModal.conflicts.length} product(s) already exist with different data in upload. Update with upload data?
             </p>
             <div className="flex-1 overflow-y-auto mb-4 max-h-[300px] rounded border border-slate-700">
               <table className="w-full text-sm">
                 <thead className="bg-slate-800/50 sticky top-0">
                   <tr>
-                    <th className="text-left p-2 font-medium">Ürün</th>
+                    <th className="text-left p-2 font-medium">Product</th>
                     <th className="text-left p-2 font-medium text-slate-500">Mevcut ↔ Upload</th>
                   </tr>
                 </thead>
@@ -1095,7 +1095,7 @@ export default function ProductsPage() {
                     <tr key={i} className="border-b border-slate-700/50">
                       <td className="p-2 font-medium">{c.name}</td>
                       <td className="p-2 text-slate-400 text-xs">
-                        Fiyat: {(c.existing.price ?? 0).toFixed(2)} ↔ {Number(c.row.Price ?? c.row.price ?? 0).toFixed(2)} · vb.
+                        Price: {(c.existing.price ?? 0).toFixed(2)} ↔ {Number(c.row.Price ?? c.row.price ?? 0).toFixed(2)}, etc.
                       </td>
                     </tr>
                   ))}
@@ -1125,7 +1125,7 @@ export default function ProductsPage() {
                 }}
                 className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white"
               >
-                İptal
+                Cancel
               </button>
             </div>
           </div>
@@ -1211,7 +1211,7 @@ export default function ProductsPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm text-slate-400 mb-1">Masaya gitmeyen ürün uyarı süresi (dakika) *</label>
+                <label className="block text-sm text-slate-400 mb-1">Overdue undelivered minutes *</label>
                 <input
                   type="number"
                   min={1}

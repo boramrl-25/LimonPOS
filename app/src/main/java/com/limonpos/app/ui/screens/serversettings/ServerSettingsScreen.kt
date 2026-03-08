@@ -79,7 +79,7 @@ fun ServerSettingsScreen(
                 .padding(24.dp)
         ) {
             Text(
-                "Bu backend Zoho Books ile aynı veriyi kullanır. WiFi değişince bilgisayar IP'sini güncelleyin.",
+                "This backend shares data with Zoho Books. Update the computer IP when WiFi changes.",
                 color = LimonTextSecondary,
                 fontSize = 14.sp,
                 modifier = Modifier.padding(bottom = 16.dp)
@@ -103,13 +103,13 @@ fun ServerSettingsScreen(
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                "Örnekler:\n• Emulator: http://10.0.2.2:3002/api/\n• Gerçek cihaz: http://192.168.1.100:3002/api/\n• localhost:3000 yazarsanız varsayılan backend kullanılır.",
+                "Examples:\n• Emulator: http://10.0.2.2:3002/api/\n• Real device: http://192.168.1.100:3002/api/\n• localhost:3000 uses the default backend.",
                 color = LimonTextSecondary,
                 fontSize = 12.sp,
                 modifier = Modifier.padding(bottom = 8.dp)
             )
             Text(
-                "Not: Bu adresi tarayıcıda (Chrome/Google) açarsanız \"bağlantı güvenli değil\" uyarısı normaldir (HTTP). Adresi yalnızca bu alana yazıp Kaydet ile kullanın.",
+                "Note: Opening this URL in browser may show 'connection not secure' (HTTP). Use it only in this field and Save.",
                 color = LimonTextSecondary.copy(alpha = 0.8f),
                 fontSize = 11.sp,
                 modifier = Modifier.padding(bottom = 24.dp)
@@ -117,7 +117,7 @@ fun ServerSettingsScreen(
             message?.let { msg ->
                 Text(
                     msg,
-                    color = if (msg.startsWith("Bağlantı başarılı")) LimonSuccess else LimonPrimary,
+                    color = if (msg.startsWith("Connection successful")) LimonSuccess else LimonPrimary,
                     fontSize = 14.sp,
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
@@ -133,7 +133,7 @@ fun ServerSettingsScreen(
                 ) {
                     Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(20.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(if (testing) "Test ediliyor…" else "Bağlantıyı test et")
+                    Text(if (testing) "Testing…" else "Test connection")
                 }
                 Button(
                     onClick = { viewModel.saveUrl(inputUrl) },

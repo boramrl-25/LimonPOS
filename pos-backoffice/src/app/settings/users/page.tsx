@@ -246,7 +246,7 @@ export default function UsersSettingsPage() {
 
       <h1 className="text-2xl font-bold text-sky-400 mb-2">Users</h1>
       <p className="text-slate-400 mb-8">Staff management. Tap row to edit. Setup PIN: 1234</p>
-      <p className="text-slate-500 text-sm mb-4">Excel veya CSV: Örnek dosyayı indir, doldur, yükle.</p>
+      <p className="text-slate-500 text-sm mb-4">Excel or CSV: Download sample, fill, upload.</p>
 
       <div className="flex flex-col sm:flex-row gap-4 mb-4">
         <div className="flex-1 flex gap-2">
@@ -267,17 +267,17 @@ export default function UsersSettingsPage() {
           >
             <option value="">All roles</option>
             {roles.map((r) => (
-              <option key={r.id} value={r.id}>{r.label} / {r.labelTr}</option>
+              <option key={r.id} value={r.id}>{r.label}</option>
             ))}
           </select>
         </div>
       </div>
 
       <section className="mb-6 p-4 rounded-xl bg-slate-800/50 border border-slate-700">
-        <h3 className="text-sm font-semibold text-slate-200 mb-3">Yeni rol ekle / Add new role</h3>
+        <h3 className="text-sm font-semibold text-slate-200 mb-3">Add new role</h3>
         <form onSubmit={addNewRole} className="flex flex-wrap items-end gap-3 mb-4">
           <div>
-            <label className="block text-xs text-slate-400 mb-1">Rol adı (EN)</label>
+            <label className="block text-xs text-slate-400 mb-1">Role name</label>
             <input
               type="text"
               value={newRoleLabel}
@@ -287,7 +287,7 @@ export default function UsersSettingsPage() {
             />
           </div>
           <div>
-            <label className="block text-xs text-slate-400 mb-1">Rol adı (TR)</label>
+            <label className="block text-xs text-slate-400 mb-1">Role name (alt)</label>
             <input
               type="text"
               value={newRoleLabelTr}
@@ -297,17 +297,17 @@ export default function UsersSettingsPage() {
             />
           </div>
           <button type="submit" disabled={addingRole || !newRoleLabel.trim()} className="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-sm font-medium disabled:opacity-50">
-            {addingRole ? "..." : "Rol ekle"}
+            {addingRole ? "..." : "Add role"}
           </button>
         </form>
         {customRoles.length > 0 && (
           <div>
-            <p className="text-xs text-slate-500 mb-2">Özel roller (silebilirsiniz):</p>
+            <p className="text-xs text-slate-500 mb-2">Custom roles (you can delete):</p>
             <ul className="flex flex-wrap gap-2">
               {customRoles.map((r) => (
                 <li key={r.id} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-700/80 border border-slate-600">
-                  <span className="text-sm text-slate-200">{r.labelTr || r.label}</span>
-                  <button type="button" onClick={() => removeRole(r.id)} className="p-0.5 rounded hover:bg-red-600/30 text-red-400" title="Rolü sil">
+                  <span className="text-sm text-slate-200">{r.label}</span>
+                  <button type="button" onClick={() => removeRole(r.id)} className="p-0.5 rounded hover:bg-red-600/30 text-red-400" title="Delete role">
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </li>
@@ -324,9 +324,9 @@ export default function UsersSettingsPage() {
           <button
             onClick={downloadUsersTemplate}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-medium"
-            title="Import için örnek Excel/CSV indir"
+            title="Download sample Excel/CSV for import"
           >
-            <FileDown className="w-4 h-4" /> Örnek dosya indir
+            <FileDown className="w-4 h-4" /> Download template
           </button>
           <button
             onClick={exportUsersToExcel}
@@ -341,7 +341,7 @@ export default function UsersSettingsPage() {
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-medium disabled:opacity-50"
           >
             {importing ? <div className="w-4 h-4 border-2 border-sky-500 border-t-transparent rounded-full animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
-            Yükle (Excel/CSV)
+            Upload (Excel/CSV)
           </button>
           <button onClick={() => openEdit()} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium">
             <Plus className="w-4 h-4" /> New User
@@ -424,7 +424,7 @@ export default function UsersSettingsPage() {
                 <label className="block text-sm text-slate-400 mb-1">Role</label>
                 <select value={form.role} onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))} className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white">
                   {roles.map((r) => (
-                    <option key={r.id} value={r.id}>{r.label} / {r.labelTr}</option>
+                    <option key={r.id} value={r.id}>{r.label}</option>
                   ))}
                 </select>
               </div>
@@ -448,7 +448,7 @@ export default function UsersSettingsPage() {
                   {permissions.filter((p) => p.scope === "app").map((p) => (
                     <div key={p.id} className="flex items-center gap-3">
                       <input type="checkbox" id={p.id} checked={form.permissions.includes(p.id)} onChange={() => togglePermission(p.id)} className="rounded bg-slate-800 border-slate-600" />
-                      <label htmlFor={p.id} className="text-sm text-slate-300">{p.labelTr || p.label}</label>
+                      <label htmlFor={p.id} className="text-sm text-slate-300">{p.label}</label>
                     </div>
                   ))}
                   {permissions.filter((p) => p.scope === "web").length > 0 && (
@@ -457,7 +457,7 @@ export default function UsersSettingsPage() {
                       {permissions.filter((p) => p.scope === "web").map((p) => (
                         <div key={p.id} className="flex items-center gap-3">
                           <input type="checkbox" id={p.id} checked={form.permissions.includes(p.id)} onChange={() => togglePermission(p.id)} className="rounded bg-slate-800 border-slate-600" />
-                          <label htmlFor={p.id} className="text-sm text-slate-300">{p.labelTr || p.label}</label>
+                          <label htmlFor={p.id} className="text-sm text-slate-300">{p.label}</label>
                         </div>
                       ))}
                     </>

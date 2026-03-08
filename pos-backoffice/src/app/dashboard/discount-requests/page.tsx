@@ -67,7 +67,7 @@ export default function DiscountRequestsPage() {
   }
 
   async function submitCancel(orderId: string, requestId: string) {
-    if (!confirm("Bu indirim talebini iptal etmek istediğinize emin misiniz?")) return;
+    if (!confirm("Are you sure you want to cancel this discount request?")) return;
     setActing(requestId);
     try {
       await cancelDiscountRequest(orderId, requestId);
@@ -96,11 +96,11 @@ export default function DiscountRequestsPage() {
         </p>
 
         {loading ? (
-          <p className="text-slate-500 py-8">Yükleniyor...</p>
+          <p className="text-slate-500 py-8">Loading...</p>
         ) : requests.length === 0 ? (
           <div className="text-slate-500 py-8 space-y-2">
-            <p>Bekleyen indirim talebi yok.</p>
-            <p className="text-sm">Talep gelmiyorsa: uygulamada önce Sync yapıp sonra indirim talebi gönderin. Bu sayfayı görmek için kullanıcıda &quot;Web: İndirim taleplerini onayla&quot; yetkisi olmalı.</p>
+            <p>No pending discount requests.</p>
+            <p className="text-sm">If no requests: Sync in app first, then send discount request. User must have &quot;Web: Approve discount requests&quot; permission.</p>
           </div>
         ) : (
           <ul className="space-y-4">
@@ -108,7 +108,7 @@ export default function DiscountRequestsPage() {
               <li key={r.id} className="p-4 rounded-xl bg-slate-800/60 border border-slate-700">
                 <div className="flex justify-between items-start gap-4">
                   <div>
-                    <p className="font-medium text-white">Masa {r.table_number} · Sipariş {r.order_id.slice(-8)}</p>
+                    <p className="font-medium text-white">Table {r.table_number} · Order {r.order_id.slice(-8)}</p>
                     <p className="text-slate-500 text-sm mt-1">
                       Talep: {r.requested_by_user_name} · {new Date(r.requested_at).toLocaleString("tr-TR", { dateStyle: "short", timeStyle: "medium" })}
                     </p>
@@ -120,7 +120,7 @@ export default function DiscountRequestsPage() {
                     )}
                     {r.note && <p className="text-slate-400 text-sm mt-1">Not: {r.note}</p>}
                     {r.order_total_before_discount != null && (
-                      <p className="text-slate-500 text-xs mt-1">Hesap (indirim öncesi): {fmt(r.order_total_before_discount)} AED</p>
+                      <p className="text-slate-500 text-xs mt-1">Total (before discount): {fmt(r.order_total_before_discount)} AED</p>
                     )}
                   </div>
                   {approveForm?.requestId === r.id ? (
@@ -186,7 +186,7 @@ export default function DiscountRequestsPage() {
                         className="px-4 py-2 rounded-lg bg-red-900/70 hover:bg-red-800 text-red-200 text-sm font-medium disabled:opacity-50 flex items-center gap-1"
                       >
                         <X className="w-4 h-4" />
-                        İptal
+                        Cancel
                       </button>
                     </div>
                   )}

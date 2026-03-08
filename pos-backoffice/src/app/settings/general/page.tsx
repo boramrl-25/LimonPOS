@@ -9,7 +9,7 @@ const TIMEZONE_OPTIONS = [
   { label: "UTC", value: 0 },
   { label: "GMT+1 (Örn. Berlin)", value: 60 },
   { label: "GMT+2 (Örn. İstanbul kış)", value: 120 },
-  { label: "GMT+3 (Türkiye)", value: 180 },
+  { label: "GMT+3 (Turkey)", value: 180 },
   { label: "GMT+4", value: 240 },
   { label: "GMT-1", value: -60 },
   { label: "GMT-2", value: -120 },
@@ -67,7 +67,7 @@ export default function GeneralSettingsPage() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <p className="text-slate-400">Yükleniyor...</p>
+        <p className="text-slate-400">Loading...</p>
       </div>
     );
   }
@@ -88,7 +88,7 @@ export default function GeneralSettingsPage() {
         <div className="rounded-xl bg-slate-800/50 border border-slate-700 p-6">
           <h2 className="text-lg font-semibold text-white mb-2">Saat dilimi (Timezone)</h2>
           <p className="text-slate-400 text-sm mb-4">
-            Dashboard ve günlük satışlarda &quot;bugün&quot; bu saate göre hesaplanır. Türkiye için GMT+3 (180 dakika) seçin.
+            &quot;Today&quot; in dashboard and daily sales is calculated by this timezone. Use GMT+3 (180 min) for Turkey.
           </p>
 
           <label className="block text-sm text-slate-300 mb-2">Hazır seçenekler</label>
@@ -129,7 +129,7 @@ export default function GeneralSettingsPage() {
             disabled={savingTimezone}
             className="px-4 py-2 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 rounded-lg text-white font-medium"
           >
-            {savingTimezone ? "Kaydediliyor..." : "Kaydet"}
+            {savingTimezone ? "Saving..." : "Save"}
           </button>
           {savedTimezone && <span className="ml-3 text-green-400">Kaydedildi.</span>}
         </div>

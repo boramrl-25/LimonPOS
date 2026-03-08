@@ -343,7 +343,7 @@ fun FloorPlanScreen(
                     ) {
                         Text(err, color = LimonError, fontSize = 13.sp, modifier = Modifier.weight(1f))
                         TextButton(onClick = { viewModel.clearCloseTableError() }) {
-                            Text("İptal", color = LimonTextSecondary)
+                            Text("Cancel", color = LimonTextSecondary)
                         }
                     }
                 }
@@ -1146,7 +1146,7 @@ private fun OverdueUndeliveredDialogFloor(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text("Ürünler henüz masaya gelmedi", fontWeight = FontWeight.Bold, color = LimonError)
+            Text("Items not yet delivered to table", fontWeight = FontWeight.Bold, color = LimonError)
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1162,7 +1162,7 @@ private fun OverdueUndeliveredDialogFloor(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("Masa ${block.tableNumber}", fontWeight = FontWeight.Bold, color = LimonPrimary, fontSize = 15.sp)
+                                Text("Table ${block.tableNumber}", fontWeight = FontWeight.Bold, color = LimonPrimary, fontSize = 15.sp)
                                 Text("Tap to go", color = LimonTextSecondary, fontSize = 12.sp)
                             }
                             Spacer(modifier = Modifier.height(6.dp))

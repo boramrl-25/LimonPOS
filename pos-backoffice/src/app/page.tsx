@@ -49,7 +49,7 @@ export default function Home() {
         openTables: res.openTables ?? 0,
       });
     } catch (e) {
-      setSummaryError((e as Error).message || "Veri yüklenemedi");
+      setSummaryError((e as Error).message || "Failed to load data");
       setStats(null);
     } finally {
       setSummaryLoading(false);
@@ -65,7 +65,7 @@ export default function Home() {
 
   if (!ready) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-slate-400">Yükleniyor...</div>
+      <div className="min-h-screen flex items-center justify-center text-slate-400">Loading...</div>
     );
   }
 
