@@ -7,8 +7,8 @@ import { getSettings, updateSettings } from "@/lib/api";
 
 const TIMEZONE_OPTIONS = [
   { label: "UTC", value: 0 },
-  { label: "GMT+1 (Örn. Berlin)", value: 60 },
-  { label: "GMT+2 (Örn. İstanbul kış)", value: 120 },
+  { label: "GMT+1 (e.g. Berlin)", value: 60 },
+  { label: "GMT+2 (e.g. Istanbul winter)", value: 120 },
   { label: "GMT+3 (Turkey)", value: 180 },
   { label: "GMT+4", value: 240 },
   { label: "GMT-1", value: -60 },
@@ -49,7 +49,7 @@ export default function GeneralSettingsPage() {
     try {
       const offset = manualOffset !== "" ? parseInt(manualOffset, 10) : timezoneOffsetMinutes;
       if (isNaN(offset) || offset < -720 || offset > 840) {
-        alert("Saat dilimi -720 ile 840 dakika arasında olmalı (GMT-12 ile GMT+14).");
+        alert("Timezone must be between -720 and 840 minutes (GMT-12 to GMT+14).");
         return;
       }
       await updateSettings({ timezone_offset_minutes: offset });
@@ -79,19 +79,19 @@ export default function GeneralSettingsPage() {
           <ArrowLeft className="w-5 h-5" />
         </Link>
         <div>
-          <h1 className="text-xl font-bold text-sky-400">Genel & Saat Dilimi</h1>
-          <p className="text-slate-400 text-sm">Günlük satış ve iş günü hesaplamaları bu saate göre yapılır</p>
+          <h1 className="text-xl font-bold text-sky-400">General & Timezone</h1>
+          <p className="text-slate-400 text-sm">Daily sales and business day calculations use this timezone</p>
         </div>
       </header>
 
       <main className="p-6 max-w-xl">
         <div className="rounded-xl bg-slate-800/50 border border-slate-700 p-6">
-          <h2 className="text-lg font-semibold text-white mb-2">Saat dilimi (Timezone)</h2>
+          <h2 className="text-lg font-semibold text-white mb-2">Timezone</h2>
           <p className="text-slate-400 text-sm mb-4">
             &quot;Today&quot; in dashboard and daily sales is calculated by this timezone. Use GMT+3 (180 min) for Turkey.
           </p>
 
-          <label className="block text-sm text-slate-300 mb-2">Hazır seçenekler</label>
+          <label className="block text-sm text-slate-300 mb-2">Preset options</label>
           <select
             value={manualOffset !== "" ? "" : timezoneOffsetMinutes}
             onChange={(e) => {
@@ -104,15 +104,15 @@ export default function GeneralSettingsPage() {
           >
             {TIMEZONE_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
-                {opt.label} ({opt.value >= 0 ? "+" : ""}{opt.value} dk)
+                {opt.label} ({opt.value >= 0 ? "+" : ""}{opt.value} min)
               </option>
             ))}
           </select>
 
-          <label className="block text-sm text-slate-300 mb-2">Manuel giriş (dakika)</label>
+          <label className="block text-sm text-slate-300 mb-2">Manual entry (minutes)</label>
           <input
             type="number"
-            placeholder="Örn. 180 (GMT+3)"
+            placeholder="e.g. 180 (GMT+3)"
             min={-720}
             max={840}
             value={manualOffset}
@@ -120,7 +120,7 @@ export default function GeneralSettingsPage() {
             className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white mb-4"
           />
           <p className="text-slate-500 text-xs mb-6">
-            UTC&apos;den fark: dakika cinsinden (örn. 180 = GMT+3, -300 = GMT-5). Boş bırakırsanız yukarıdaki seçenek kullanılır.
+            Offset from UTC in minutes (e.g. 180 = GMT+3, -300 = GMT-5). Leave empty to use preset.
           </p>
 
           <button

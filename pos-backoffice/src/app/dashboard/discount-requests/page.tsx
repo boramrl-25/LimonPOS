@@ -47,7 +47,7 @@ export default function DiscountRequestsPage() {
     const discountPercent = percent.trim() ? parseFloat(percent) : undefined;
     const discountAmount = amount.trim() ? parseFloat(amount) : undefined;
     if ((discountPercent == null || isNaN(discountPercent)) && (discountAmount == null || isNaN(discountAmount))) {
-      alert("Yüzde veya tutar girin.");
+      alert("Enter percent or amount.");
       return;
     }
     setActing(requestId);
@@ -89,10 +89,10 @@ export default function DiscountRequestsPage() {
         </Link>
         <h1 className="text-xl font-bold flex items-center gap-2 mb-4">
           <Percent className="w-6 h-6 text-violet-400" />
-          İndirim talepleri (onay bekleyen)
+          Discount requests (pending approval)
         </h1>
         <p className="text-slate-500 text-sm mb-6">
-          Uygulamadan gelen indirim taleplerini buradan onaylayın. Yüzde veya tutar girin; %100 indirim hesabı 0 kapatır.
+          Approve discount requests from the app. Enter percent or amount; 100% discount closes the check at 0.
         </p>
 
         {loading ? (
@@ -110,15 +110,15 @@ export default function DiscountRequestsPage() {
                   <div>
                     <p className="font-medium text-white">Table {r.table_number} · Order {r.order_id.slice(-8)}</p>
                     <p className="text-slate-500 text-sm mt-1">
-                      Talep: {r.requested_by_user_name} · {new Date(r.requested_at).toLocaleString("tr-TR", { dateStyle: "short", timeStyle: "medium" })}
+                      Request: {r.requested_by_user_name} · {new Date(r.requested_at).toLocaleString("tr-TR", { dateStyle: "short", timeStyle: "medium" })}
                     </p>
                     {(r.requested_percent != null && r.requested_percent > 0) && (
-                      <p className="text-slate-400 text-sm">İstenen: %{r.requested_percent}</p>
+                      <p className="text-slate-400 text-sm">Requested: %{r.requested_percent}</p>
                     )}
                     {(r.requested_amount != null && r.requested_amount > 0) && (
-                      <p className="text-slate-400 text-sm">İstenen tutar: {fmt(r.requested_amount)} AED</p>
+                      <p className="text-slate-400 text-sm">Requested amount: {fmt(r.requested_amount)} AED</p>
                     )}
-                    {r.note && <p className="text-slate-400 text-sm mt-1">Not: {r.note}</p>}
+                    {r.note && <p className="text-slate-400 text-sm mt-1">Note: {r.note}</p>}
                     {r.order_total_before_discount != null && (
                       <p className="text-slate-500 text-xs mt-1">Total (before discount): {fmt(r.order_total_before_discount)} AED</p>
                     )}
@@ -130,7 +130,7 @@ export default function DiscountRequestsPage() {
                         step="0.01"
                         min="0"
                         max="100"
-                        placeholder="İndirim %"
+                        placeholder="Discount %"
                         value={approveForm.percent}
                         onChange={(e) => setApproveForm((f) => f ? { ...f, percent: e.target.value } : null)}
                         className="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 text-slate-200 text-sm"
@@ -139,14 +139,14 @@ export default function DiscountRequestsPage() {
                         type="number"
                         step="0.01"
                         min="0"
-                        placeholder="İndirim tutarı AED"
+                        placeholder="Discount amount AED"
                         value={approveForm.amount}
                         onChange={(e) => setApproveForm((f) => f ? { ...f, amount: e.target.value } : null)}
                         className="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 text-slate-200 text-sm"
                       />
                       <input
                         type="text"
-                        placeholder="Açıklama (opsiyonel)"
+                        placeholder="Note (optional)"
                         value={approveForm.note}
                         onChange={(e) => setApproveForm((f) => f ? { ...f, note: e.target.value } : null)}
                         className="w-full px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 text-slate-200 text-sm"
@@ -159,14 +159,14 @@ export default function DiscountRequestsPage() {
                           className="flex-1 flex items-center justify-center gap-1 px-3 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium disabled:opacity-50"
                         >
                           <Check className="w-4 h-4" />
-                          Onayla
+                          Approve
                         </button>
                         <button
                           type="button"
                           onClick={() => setApproveForm(null)}
                           className="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm"
                         >
-                          Vazgeç
+                          Cancel
                         </button>
                       </div>
                     </div>
@@ -177,7 +177,7 @@ export default function DiscountRequestsPage() {
                         onClick={() => setApproveForm({ requestId: r.id, orderId: r.order_id, percent: "", amount: "", note: "" })}
                         className="px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium"
                       >
-                        Onayla
+                        Approve
                       </button>
                       <button
                         type="button"
@@ -195,7 +195,7 @@ export default function DiscountRequestsPage() {
                   href={`/orders/${r.order_id}`}
                   className="inline-block mt-2 text-sky-400 hover:text-sky-300 text-sm"
                 >
-                  Fise git →
+                  Go to receipt →
                 </Link>
               </li>
             ))}

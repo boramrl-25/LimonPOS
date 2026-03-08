@@ -6,10 +6,9 @@ import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   RefreshCw,
-  Moon,
   ChevronRight,
 } from "lucide-react";
-import { getDashboardStats, getDailySales, getOpenOrders, getClosedBillChanges, getCashDrawerOpens, getDiscountsToday, getDiscountRequestsPending, runEod } from "@/lib/api";
+import { getDashboardStats, getDailySales, getOpenOrders, getClosedBillChanges, getCashDrawerOpens, getDiscountsToday, getDiscountRequestsPending } from "@/lib/api";
 import type { DiscountTodayRow } from "@/lib/api";
 
 type PaidTicket = { order_id: string; receipt_no?: string; table_number: string; total: number; paid_at: number; waiter_name?: string; cash_amount: number; card_amount: number; discount_amount?: number };
@@ -23,10 +22,6 @@ const blockBaseClass = "flex p-5 rounded-xl border transition-colors text-left c
 
 function fmt(n: number) {
   return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function formatEodTime(ts: number) {
-  return new Date(ts).toLocaleString("tr-TR", { dateStyle: "short", timeStyle: "short" });
 }
 
 const POLL_INTERVAL_MS = 8000;
@@ -64,7 +59,6 @@ export default function DashboardPage() {
   const [selectedDateTo, setSelectedDateTo] = useState<string | null>(null);
   const [openOrders, setOpenOrders] = useState<OpenOrderRow[]>([]);
   const [openOrdersLoading, setOpenOrdersLoading] = useState(false);
-  const [eodConfirmOpen, setEodConfirmOpen] = useState(false);
   const [closedBillChanges, setClosedBillChanges] = useState<{ count: number; summary: { fullRefunds: number; itemRefunds: number; paymentMethodChanges?: number }; changes: Array<{ id: string; order_id: string; receipt_no: string | null; table_number: string; type: string; product_name: string | null; amount: number; user_name: string; created_at: number; details?: string | null }> } | null>(null);
   const [closedBillChangesModal, setClosedBillChangesModal] = useState(false);
   const [cashDrawerOpens, setCashDrawerOpens] = useState<{ count: number; opens: Array<{ id: string; user_name: string; opened_at: number }> } | null>(null);
@@ -200,31 +194,31 @@ export default function DashboardPage() {
             <button type="button" className={`${blockBaseClass} bg-emerald-900/80 border-emerald-600/50 text-emerald-100`} onClick={() => setTicketModalType("all")}>
               <div className="min-w-0 flex-1">
                 <p className="text-base font-semibold uppercase tracking-wide mb-1">Total Sales</p>
-                <p className="text-2xl font-bold truncate">{loading ? "..." : `${fmt(dailySales?.totalSales ?? stats.todaySales ?? 0)} AED`}</p>
+                <p className="text-lg font-bold truncate">{loading ? "..." : `${fmt(dailySales?.totalSales ?? stats.todaySales ?? 0)} AED`}</p>
               </div>
             </button>
             <button type="button" className={`${blockBaseClass} bg-sky-900/80 border-sky-600/50 text-sky-100`} onClick={() => setTicketModalType("card")}>
               <div className="min-w-0 flex-1">
                 <p className="text-base font-semibold uppercase tracking-wide mb-1">Total Card</p>
-                <p className="text-2xl font-bold truncate">{loading ? "..." : `${fmt(dailySales?.totalCard ?? 0)} AED`}</p>
+                <p className="text-lg font-bold truncate">{loading ? "..." : `${fmt(dailySales?.totalCard ?? 0)} AED`}</p>
               </div>
             </button>
             <button type="button" className={`${blockBaseClass} bg-amber-900/80 border-amber-600/50 text-amber-100`} onClick={() => setTicketModalType("cash")}>
               <div className="min-w-0 flex-1">
                 <p className="text-base font-semibold uppercase tracking-wide mb-1">Total Cash</p>
-                <p className="text-2xl font-bold truncate">{loading ? "..." : `${fmt(dailySales?.totalCash ?? 0)} AED`}</p>
+                <p className="text-lg font-bold truncate">{loading ? "..." : `${fmt(dailySales?.totalCash ?? 0)} AED`}</p>
               </div>
             </button>
             <button type="button" className={`${blockBaseClass} bg-yellow-900/80 border-yellow-600/50 text-yellow-100`} onClick={handleOpenTablesClick}>
               <div className="min-w-0 flex-1">
                 <p className="text-base font-semibold uppercase tracking-wide mb-1">Open Tables</p>
-                <p className="text-2xl font-bold">{loading ? "..." : stats.openTables}</p>
+                <p className="text-lg font-bold">{loading ? "..." : stats.openTables}</p>
               </div>
             </button>
             <button type="button" className={`${blockBaseClass} bg-orange-900/80 border-orange-600/50 text-orange-100`} onClick={() => { setTicketModalType(null); router.push("/dashboard/approvals"); }}>
               <div className="min-w-0 flex-1">
                 <p className="text-base font-semibold uppercase tracking-wide mb-1">Approval Request</p>
-                <p className="text-3xl font-bold">{loading ? "..." : totalApprovalRequests}</p>
+                <p className="text-xl font-bold">{loading ? "..." : totalApprovalRequests}</p>
                 <p className="text-base opacity-90">Void + Closed Bill</p>
               </div>
             </button>
@@ -233,39 +227,39 @@ export default function DashboardPage() {
             <button type="button" className={`${blockBaseClass} bg-rose-900/80 border-rose-600/50 text-rose-100`} onClick={() => setClosedBillChangesModal(true)}>
               <div className="min-w-0 flex-1">
                 <p className="text-base font-semibold uppercase tracking-wide mb-1">Closed Bill Changes</p>
-                <p className="text-2xl font-bold">{loading ? "..." : (closedBillChanges?.count ?? 0)}</p>
+                <p className="text-lg font-bold">{loading ? "..." : (closedBillChanges?.count ?? 0)}</p>
               </div>
             </button>
             <button type="button" className={`${blockBaseClass} bg-red-900/80 border-red-600/50 text-red-100`} onClick={() => setTicketModalType("void")}>
               <div className="min-w-0 flex-1">
                 <p className="text-base font-semibold uppercase tracking-wide mb-1">Total Void</p>
-                <p className="text-3xl font-bold truncate">{loading ? "..." : `${fmt(dailySales?.totalVoidAmount ?? 0)} AED`}</p>
+                <p className="text-xl font-bold truncate">{loading ? "..." : `${fmt(dailySales?.totalVoidAmount ?? 0)} AED`}</p>
               </div>
             </button>
             <button type="button" className={`${blockBaseClass} bg-red-950/80 border-red-700/50 text-red-200`} onClick={() => setTicketModalType("refund")}>
               <div className="min-w-0 flex-1">
                 <p className="text-base font-semibold uppercase tracking-wide mb-1">Refund Total</p>
-                <p className="text-2xl font-bold truncate">{loading ? "..." : `${fmt(dailySales?.totalRefundAmount ?? 0)} AED`}</p>
+                <p className="text-lg font-bold truncate">{loading ? "..." : `${fmt(dailySales?.totalRefundAmount ?? 0)} AED`}</p>
               </div>
             </button>
             <button type="button" className={`${blockBaseClass} bg-teal-900/80 border-teal-600/50 text-teal-100`} onClick={() => setCashDrawerModalOpen(true)}>
               <div className="min-w-0 flex-1">
                 <p className="text-base font-semibold uppercase tracking-wide mb-1">Cash Drawer Opens</p>
-                <p className="text-3xl font-bold">{loading ? "..." : (cashDrawerOpens?.count ?? 0)}</p>
+                <p className="text-xl font-bold">{loading ? "..." : (cashDrawerOpens?.count ?? 0)}</p>
                 <p className="text-base opacity-90">No sale</p>
               </div>
             </button>
             <button type="button" className={`${blockBaseClass} bg-violet-900/80 border-violet-600/50 text-violet-100`} onClick={() => setDiscountsModalOpen(true)}>
               <div className="min-w-0 flex-1">
                 <p className="text-base font-semibold uppercase tracking-wide mb-1">Today&apos;s Discounts</p>
-                <p className="text-2xl font-bold">{loading ? "..." : (discountsToday?.count ?? 0)}</p>
+                <p className="text-lg font-bold">{loading ? "..." : (discountsToday?.count ?? 0)}</p>
                 <p className="text-base opacity-90">{loading ? "" : `${fmt(discountsToday?.totalDiscountAmount ?? 0)} AED`}</p>
               </div>
             </button>
             <button type="button" className={`${blockBaseClass} bg-fuchsia-900/80 border-fuchsia-600/50 text-fuchsia-100`} onClick={() => router.push("/dashboard/discount-requests")}>
               <div className="min-w-0 flex-1">
                 <p className="text-base font-semibold uppercase tracking-wide mb-1">Discount Requests</p>
-                <p className="text-2xl font-bold">{pendingDiscountRequestsCount}</p>
+                <p className="text-lg font-bold">{pendingDiscountRequestsCount}</p>
                 <p className="text-base opacity-90">Pending approval</p>
               </div>
             </button>
@@ -273,33 +267,6 @@ export default function DashboardPage() {
           {lastRefresh && (
             <p className="text-slate-500 text-xs mt-2">Last updated: {lastRefresh.toLocaleTimeString()}</p>
           )}
-
-          {/* End of Day bilgisi */}
-          <div className="mt-4 p-4 rounded-xl bg-slate-800/40 border border-slate-700 flex flex-wrap items-center gap-4">
-            <Moon className="w-5 h-5 text-amber-400 shrink-0" />
-            <div className="flex-1 min-w-0">
-              {stats.lastEod ? (
-                <p className="text-slate-400 text-sm">
-                  Last day close: <span className="text-slate-200">{formatEodTime(stats.lastEod.ran_at)}</span>
-                  {stats.lastEod.tables_closed_count > 0 && (
-                    <span className="text-amber-400 ml-1">({stats.lastEod.tables_closed_count} table(s) closed in EOD)</span>
-                  )}
-                </p>
-              ) : (
-                <p className="text-slate-400 text-sm">No day close done yet.</p>
-              )}
-              {stats.openTablesCount > 0 && (
-                <p className="text-amber-400 text-sm mt-1">
-                  <strong>{stats.openTablesCount}</strong> open check(s). Scroll to End of Day to close.
-                </p>
-              )}
-            </div>
-            {selectedDateFrom === null && selectedDateTo === null && (
-              <a href="#eod" className="px-3 py-1.5 rounded-lg bg-amber-600/80 hover:bg-amber-500 text-white text-sm font-medium">
-                End of Day
-              </a>
-            )}
-          </div>
         </section>
 
         {/* Daily Sales — tap blocks to view tickets (Receipt #, Date, Who) */}
@@ -392,25 +359,6 @@ export default function DashboardPage() {
                     })}
                   </div>
                 </>
-              )}
-
-              {selectedDateFrom === null && selectedDateTo === null && (
-                <section id="eod" className="rounded-xl bg-slate-800/60 border border-slate-700 p-5 mt-6">
-                  <h3 className="text-lg font-semibold text-slate-200 mb-3 flex items-center gap-2">
-                    <Moon className="w-5 h-5 text-amber-400" />
-                    End of Day
-                  </h3>
-                  <p className="text-slate-400 text-sm mb-4">Close the business day. If there are open checks, you can mark them as paid and close.</p>
-                  {dailySales?.lastEod && (
-                    <p className="text-slate-400 text-sm mb-3">Last run: <strong className="text-slate-200">{formatEodTime(dailySales.lastEod.ran_at)}</strong></p>
-                  )}
-                  {(dailySales?.openTablesCount ?? 0) > 0 && (
-                    <p className="text-amber-400 text-sm mb-3"><strong>{dailySales.openTablesCount}</strong> open check(s) will be marked as paid.</p>
-                  )}
-                  <button type="button" onClick={() => setEodConfirmOpen(true)} className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-medium">
-                    Run End of Day
-                  </button>
-                </section>
               )}
 
               {dailySales.categorySales.length === 0 &&
@@ -535,20 +483,6 @@ export default function DashboardPage() {
               ) : (
                 <p className="text-slate-500 py-4">No approved discounts in this period.</p>
               )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* EOD confirm modal */}
-      {eodConfirmOpen && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-900 rounded-xl border border-slate-700 p-6 max-w-md w-full">
-            <h3 className="text-lg font-semibold text-amber-400 mb-2">End of Day</h3>
-            <p className="text-slate-400 text-sm mb-4">Close the day? Open checks will be marked as paid.</p>
-            <div className="flex gap-2 justify-end">
-              <button type="button" onClick={() => setEodConfirmOpen(false)} className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white">Cancel</button>
-              <button type="button" onClick={async () => { setEodConfirmOpen(false); try { await runEod(true); await fetchData(); } catch (e) { alert((e as Error).message); } }} className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white">Run EOD</button>
             </div>
           </div>
         </div>

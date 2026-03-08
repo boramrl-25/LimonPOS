@@ -1176,7 +1176,7 @@ private fun OverdueUndeliveredDialogFloor(
         },
         confirmButton = {
             Button(onClick = onDismiss, colors = ButtonDefaults.buttonColors(containerColor = LimonPrimary)) {
-                Text("Tamam", color = Color.Black)
+                Text("OK", color = Color.Black)
             }
         },
         containerColor = LimonSurface

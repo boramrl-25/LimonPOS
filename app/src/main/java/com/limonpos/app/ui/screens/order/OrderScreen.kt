@@ -1167,7 +1167,7 @@ private fun OverdueUndeliveredDialog(
         },
         confirmButton = {
             Button(onClick = onDismiss, colors = ButtonDefaults.buttonColors(containerColor = LimonPrimary)) {
-                Text("Tamam", color = Color.Black)
+                Text("OK", color = Color.Black)
             }
         },
         containerColor = LimonSurface
@@ -1300,7 +1300,7 @@ private fun CategoryChipsRow(
             FilterChip(
                 selected = selectedCategoryId != "all",
                 onClick = { categoriesMenuExpanded = true },
-                label = { Text("Kategoriler", fontSize = 15.sp, maxLines = 2) },
+                label = { Text("Categories", fontSize = 15.sp, maxLines = 2) },
                 modifier = Modifier.heightIn(min = 44.dp),
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = LimonPrimary,

@@ -1,5 +1,6 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.the-limon.com/api";
 const TOKEN_KEY = "limonpos_admin_token";
+const USER_KEY = "limonpos_admin_user";
 const FETCH_TIMEOUT_MS = 15000;
 
 async function fetchWithTimeout(url: string, opts: RequestInit = {}): Promise<Response> {
@@ -26,17 +27,50 @@ export async function login(pin: string) {
   });
   if (!res.ok) throw new Error("Invalid PIN");
   const data = await res.json();
-  if (typeof window !== "undefined") localStorage.setItem(TOKEN_KEY, data.token);
+  if (typeof window !== "undefined") {
+    localStorage.setItem(TOKEN_KEY, data.token);
+    if (data.user) localStorage.setItem(USER_KEY, JSON.stringify(data.user));
+  }
   return data;
 }
 
 export function logout() {
-  if (typeof window !== "undefined") localStorage.removeItem(TOKEN_KEY);
+  if (typeof window !== "undefined") {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+  }
 }
 
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem(TOKEN_KEY);
+}
+
+export type CurrentUser = { id: string; name: string; role: string; permissions: string[]; cash_drawer_permission?: boolean };
+
+export function getStoredUser(): CurrentUser | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const s = localStorage.getItem(USER_KEY);
+    if (!s) return null;
+    return JSON.parse(s) as CurrentUser;
+  } catch {
+    return null;
+  }
+}
+
+export async function getCurrentUser(): Promise<CurrentUser | null> {
+  const token = getToken();
+  if (!token) return null;
+  try {
+    const res = await fetchWithTimeout(`${API_URL}/auth/me`, { headers: headers() });
+    if (!res.ok) return getStoredUser();
+    const user = await res.json();
+    if (typeof window !== "undefined") localStorage.setItem(USER_KEY, JSON.stringify(user));
+    return user;
+  } catch {
+    return getStoredUser();
+  }
 }
 
 function headers() {

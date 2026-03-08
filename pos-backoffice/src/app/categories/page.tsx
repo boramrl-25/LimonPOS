@@ -272,7 +272,7 @@ export default function CategoriesPage() {
       <div className="flex justify-between items-center mb-8">
         <div>
           <h1 className="text-2xl font-bold text-sky-400">Categories</h1>
-          <p className="text-slate-400">Product categories. Sıra (order) determines order in app. Sürükleyip bırakın veya oklarla sıralayın.</p>
+          <p className="text-slate-400">Product categories. Order determines display order in app. Drag and drop or use arrows to sort.</p>
           <p className="text-slate-500 text-sm mt-1">Excel or CSV: Download sample, fill, upload.</p>
         </div>
         <div className="flex gap-2 flex-wrap">
@@ -286,7 +286,7 @@ export default function CategoriesPage() {
           <button
             onClick={downloadCategoriesTemplate}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-medium"
-            title="Import için Excel şablonu indir"
+            title="Download Excel template for import"
           >
             <FileDown className="w-4 h-4" /> Download template
           </button>
@@ -323,8 +323,8 @@ export default function CategoriesPage() {
         <table className="w-full">
           <thead>
             <tr className="border-b border-slate-700 bg-slate-800/50">
-              <th className="text-left p-4 font-medium w-12" title="Sürükle" />
-              <th className="text-left p-4 font-medium w-20">Sıra</th>
+              <th className="text-left p-4 font-medium w-12" title="Drag" />
+              <th className="text-left p-4 font-medium w-20">Order</th>
               <th className="text-left p-4 font-medium">Name</th>
               <th className="text-left p-4 font-medium">Color</th>
               <th className="text-left p-4 font-medium w-24">Show till</th>
@@ -354,7 +354,7 @@ export default function CategoriesPage() {
                     }}
                     onDragEnd={handleDragEnd}
                     className="cursor-grab active:cursor-grabbing p-1.5 rounded hover:bg-slate-700 text-slate-400 hover:text-slate-200 touch-none"
-                    title="Sürükleyerek sırala"
+                    title="Drag to sort"
                   >
                     <GripVertical className="w-5 h-5" />
                   </div>

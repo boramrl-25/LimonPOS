@@ -58,7 +58,7 @@ export default function ReceiptSettingsPage() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <p className="text-slate-400">Yükleniyor...</p>
+        <p className="text-slate-400">Loading...</p>
       </div>
     );
   }
@@ -70,8 +70,8 @@ export default function ReceiptSettingsPage() {
           <ArrowLeft className="w-5 h-5" />
         </Link>
         <div>
-          <h1 className="text-xl font-bold text-sky-400">Müşteri Fişi & Mutfak Fişi</h1>
-          <p className="text-slate-400 text-sm">Şirket bilgileri, fatura mesajı ve mutfak fişi başlığı</p>
+          <h1 className="text-xl font-bold text-sky-400">Customer Receipt & Kitchen Receipt</h1>
+          <p className="text-slate-400 text-sm">Company info, receipt message and kitchen receipt header</p>
         </div>
       </header>
 
@@ -79,29 +79,29 @@ export default function ReceiptSettingsPage() {
         <form onSubmit={save} className="space-y-6">
           {/* Müşteri Fişi / Bill */}
           <div className="rounded-xl bg-slate-800/50 border border-slate-700 p-6">
-            <h2 className="text-lg font-semibold text-white mb-4">Müşteri Fişi (Bill / Receipt)</h2>
+            <h2 className="text-lg font-semibold text-white mb-4">Customer Receipt (Bill)</h2>
 
-            <label className="block text-sm text-slate-300 mb-2">Şirket / İşletme adı</label>
+            <label className="block text-sm text-slate-300 mb-2">Company / Business name</label>
             <input
               type="text"
               value={companyName}
               onChange={(e) => setCompanyName(e.target.value)}
-              placeholder="Örn: Limon Restoran"
+              placeholder="e.g. Limon Restaurant"
               maxLength={200}
               className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white mb-4 placeholder-slate-500"
             />
 
-            <label className="block text-sm text-slate-300 mb-2">Adres</label>
+            <label className="block text-sm text-slate-300 mb-2">Address</label>
             <textarea
               value={companyAddress}
               onChange={(e) => setCompanyAddress(e.target.value)}
-              placeholder="Örn: Atatürk Cad. No:1, Kadıköy"
+              placeholder="e.g. Main St. No:1, Downtown"
               maxLength={400}
               rows={3}
               className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white mb-4 placeholder-slate-500 resize-none"
             />
 
-            <label className="block text-sm text-slate-300 mb-2">Fiş başlığı</label>
+            <label className="block text-sm text-slate-300 mb-2">Receipt header</label>
             <input
               type="text"
               value={receiptHeader}
@@ -111,11 +111,11 @@ export default function ReceiptSettingsPage() {
               className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white mb-4 placeholder-slate-500"
             />
 
-            <label className="block text-sm text-slate-300 mb-2">Fiş sonu mesajı</label>
+            <label className="block text-sm text-slate-300 mb-2">Receipt footer message</label>
             <textarea
               value={receiptFooterMessage}
               onChange={(e) => setReceiptFooterMessage(e.target.value)}
-              placeholder="Thank you! / Teşekkür ederiz!"
+              placeholder="Thank you!"
               maxLength={300}
               rows={2}
               className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white placeholder-slate-500 resize-none"
@@ -124,9 +124,9 @@ export default function ReceiptSettingsPage() {
 
           {/* Mutfak Fişi */}
           <div className="rounded-xl bg-slate-800/50 border border-slate-700 p-6">
-            <h2 className="text-lg font-semibold text-white mb-4">Mutfak Fişi</h2>
+            <h2 className="text-lg font-semibold text-white mb-4">Kitchen Receipt</h2>
 
-            <label className="block text-sm text-slate-300 mb-2">Mutfak fişi başlığı</label>
+            <label className="block text-sm text-slate-300 mb-2">Kitchen receipt header</label>
             <input
               type="text"
               value={kitchenHeader}
@@ -136,7 +136,7 @@ export default function ReceiptSettingsPage() {
               className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white placeholder-slate-500"
             />
             <p className="text-slate-500 text-xs mt-2">
-              Mutfak yazıcısına giden fişin üst kısmında görünür.
+              Shown at the top of the receipt sent to the kitchen printer.
             </p>
           </div>
 
@@ -146,9 +146,9 @@ export default function ReceiptSettingsPage() {
               disabled={saving}
               className="px-4 py-2 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 rounded-lg text-white font-medium"
             >
-              {saving ? "Kaydediliyor..." : "Kaydet"}
+              {saving ? "Saving..." : "Save"}
             </button>
-            {saved && <span className="text-green-400">Kaydedildi.</span>}
+            {saved && <span className="text-green-400">Saved.</span>}
           </div>
         </form>
       </main>

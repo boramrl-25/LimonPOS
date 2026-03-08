@@ -129,7 +129,7 @@ class ApiSyncRepository @Inject constructor(
         try {
             syncCategories()
         } catch (e: Exception) {
-            lastSyncError = "Kategoriler: ${e.message}"
+            lastSyncError = "Categories: ${e.message}"
             Log.e("ApiSync", "syncCategories error", e)
             return false
         }

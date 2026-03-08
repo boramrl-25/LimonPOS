@@ -819,7 +819,7 @@ export default function ProductsPage() {
             ) : (
               <FileSpreadsheet className="w-4 h-4" />
             )}
-            Yükle (Excel/CSV)
+            Upload (Excel/CSV)
           </button>
           <button onClick={checkZoho} disabled={checkLoading} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-600 hover:bg-slate-500 disabled:opacity-50 text-white font-medium" title="Check Zoho connection and product count">
             {checkLoading ? "Kontrol..." : "Zoho Kontrol"}
@@ -921,14 +921,14 @@ export default function ProductsPage() {
             disabled={deleteLoading}
             className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white font-medium text-sm"
           >
-            {deleteLoading ? "..." : "Seçilenleri sil"}
+            {deleteLoading ? "..." : "Delete selected"}
           </button>
           <button
             type="button"
             onClick={() => setSelectedProductIds(new Set())}
             className="px-4 py-2 rounded-lg bg-slate-600 hover:bg-slate-500 text-white text-sm"
           >
-            Seçimi kaldır
+            Clear selection
           </button>
         </div>
       )}
@@ -948,10 +948,10 @@ export default function ProductsPage() {
                   checked={sortedProducts.length > 0 && selectedProductIds.size === sortedProducts.length}
                   onChange={selectAllProducts}
                   className="rounded border-slate-500"
-                  title="Tümünü seç / kaldır"
+                  title="Select all / clear"
                 />
               </th>
-              <th className="text-left p-3 font-medium w-14">Görsel</th>
+              <th className="text-left p-3 font-medium w-14">Image</th>
               <th className="text-left p-3 font-medium min-w-[140px]">Product</th>
               <th className="text-left p-3 font-medium min-w-[90px]">SKU</th>
               <th className="text-left p-3 font-medium min-w-[120px]">Category</th>
@@ -1015,15 +1015,15 @@ export default function ProductsPage() {
 
       {pendingRemoval.length > 0 && (
         <div className="rounded-lg border border-amber-700/50 bg-amber-950/20 p-4 mb-8">
-          <h2 className="text-lg font-semibold text-amber-400 mb-2">Zoho'da artık yok (silinecek önerisi)</h2>
-          <p className="text-slate-400 text-sm mb-3">Bu ürünler Zoho Books’ta kaldırılmış. Onay verene kadar satışta kalır; silmek için işaretleyip &quot;Seçilenleri sil&quot; deyin.</p>
+          <h2 className="text-lg font-semibold text-amber-400 mb-2">No longer in Zoho (suggested for removal)</h2>
+          <p className="text-slate-400 text-sm mb-3">These products were removed from Zoho Books. They stay in sales until you approve; select and click &quot;Delete selected&quot; to remove.</p>
           <div className="flex gap-2 mb-3">
             <button
               type="button"
               onClick={selectAllRemoval}
               className="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-sm"
             >
-              {selectedRemovalIds.size === pendingRemoval.length ? "Seçimi kaldır" : "Tümünü seç"}
+              {selectedRemovalIds.size === pendingRemoval.length ? "Clear selection" : "Select all"}
             </button>
             <button
               type="button"
@@ -1031,7 +1031,7 @@ export default function ProductsPage() {
               disabled={selectedRemovalIds.size === 0 || removalLoading}
               className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:pointer-events-none text-white text-sm font-medium"
             >
-              {removalLoading ? "..." : `Seçilenleri sil (${selectedRemovalIds.size})`}
+              {removalLoading ? "..." : `Delete selected (${selectedRemovalIds.size})`}
             </button>
           </div>
           <div className="overflow-x-auto rounded border border-slate-700">
@@ -1048,7 +1048,7 @@ export default function ProductsPage() {
                   </th>
                   <th className="text-left p-2 font-medium">Product</th>
                   <th className="text-left p-2 font-medium">SKU</th>
-                  <th className="text-left p-2 font-medium">Kategori</th>
+                  <th className="text-left p-2 font-medium">Category</th>
                   <th className="text-left p-2 font-medium">Price</th>
                 </tr>
               </thead>
@@ -1078,7 +1078,7 @@ export default function ProductsPage() {
       {importConflictModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
           <div className="bg-slate-900 rounded-xl border border-slate-700 p-6 max-w-xl w-full max-h-[85vh] overflow-hidden flex flex-col">
-            <h2 className="text-xl font-bold text-amber-400 mb-2">Upload çakışması</h2>
+            <h2 className="text-xl font-bold text-amber-400 mb-2">Upload conflict</h2>
             <p className="text-slate-400 text-sm mb-4">
               {importConflictModal.conflicts.length} product(s) already exist with different data in upload. Update with upload data?
             </p>
@@ -1087,7 +1087,7 @@ export default function ProductsPage() {
                 <thead className="bg-slate-800/50 sticky top-0">
                   <tr>
                     <th className="text-left p-2 font-medium">Product</th>
-                    <th className="text-left p-2 font-medium text-slate-500">Mevcut ↔ Upload</th>
+                    <th className="text-left p-2 font-medium text-slate-500">Current ↔ Upload</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1108,14 +1108,14 @@ export default function ProductsPage() {
                 onClick={() => importConflictModal.resolve(true)}
                 className="flex-1 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium"
               >
-                Evet, upload ile güncelle
+                Yes, update with upload
               </button>
               <button
                 type="button"
                 onClick={() => importConflictModal.resolve(false)}
                 className="flex-1 py-2 rounded-lg bg-slate-600 hover:bg-slate-500 text-white font-medium"
               >
-                Hayır, çakışanları atla
+                No, skip conflicts
               </button>
               <button
                 type="button"
@@ -1166,7 +1166,7 @@ export default function ProductsPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm text-slate-400 mb-1">Görsel URL</label>
+                <label className="block text-sm text-slate-400 mb-1">Image URL</label>
                 <input
                   value={form.image_url}
                   onChange={(e) => setForm((f) => ({ ...f, image_url: e.target.value }))}
@@ -1174,7 +1174,7 @@ export default function ProductsPage() {
                   placeholder="https://..."
                 />
                 {form.image_url && (
-                  <img src={form.image_url} alt="Önizleme" className="mt-2 w-16 h-16 object-cover rounded border border-slate-600" onError={(e) => { (e.target as HTMLImageElement).style.visibility = "hidden"; }} />
+                  <img src={form.image_url} alt="Preview" className="mt-2 w-16 h-16 object-cover rounded border border-slate-600" onError={(e) => { (e.target as HTMLImageElement).style.visibility = "hidden"; }} />
                 )}
               </div>
               <div>
@@ -1222,7 +1222,7 @@ export default function ProductsPage() {
                   onChange={(e) => setForm((f) => ({ ...f, overdue_undelivered_minutes: e.target.value === "" ? "" : (parseInt(e.target.value, 10) || 0) }))}
                   className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white"
                 />
-                <p className="text-slate-500 text-xs mt-1">Zorunlu. Mutfağa gittikten bu dakika sonra masaya ulaşmazsa uyarı verilir. 1–1440 arası girin.</p>
+                <p className="text-slate-500 text-xs mt-1">Required. Minutes after sending to kitchen without reaching table triggers alert. Enter 1–1440.</p>
               </div>
               <div>
                 <label className="block text-sm text-slate-400 mb-1">Printers</label>

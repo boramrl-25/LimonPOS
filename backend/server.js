@@ -369,6 +369,18 @@ app.post("/api/auth/login", async (req, res) => {
   });
 });
 
+app.get("/api/auth/me", authMiddleware, async (req, res) => {
+  const user = req.user;
+  const perms = JSON.parse(user.permissions || "[]");
+  res.json({
+    id: user.id,
+    name: user.name,
+    role: user.role,
+    permissions: perms,
+    cash_drawer_permission: !!user.cash_drawer_permission,
+  });
+});
+
 app.post("/api/auth/verify-cash-drawer", authMiddleware, async (req, res) => {
   await ensureData();
   const pin = String((req.body || {}).pin || "").trim();
@@ -456,6 +468,11 @@ const PERMISSIONS = [
   { id: "closed_bill_access", scope: "app", label: "Closed bills (view/refund, approve)", labelTr: "Closed bills (view/refund, approve)" },
   { id: "kds_mode", scope: "app", label: "Kitchen Display (KDS)", labelTr: "Kitchen Display (KDS)" },
   { id: "web_dashboard", scope: "web", label: "Web: Dashboard", labelTr: "Web: Dashboard" },
+  { id: "web_floorplan", scope: "web", label: "Web: Floor Plan", labelTr: "Web: Floor Plan" },
+  { id: "web_products", scope: "web", label: "Web: Products", labelTr: "Web: Products" },
+  { id: "web_modifiers", scope: "web", label: "Web: Modifiers", labelTr: "Web: Modifiers" },
+  { id: "web_categories", scope: "web", label: "Web: Categories", labelTr: "Web: Categories" },
+  { id: "web_printers", scope: "web", label: "Web: Printers", labelTr: "Web: Printers" },
   { id: "web_reports", scope: "web", label: "Web: Reports", labelTr: "Web: Reports" },
   { id: "web_settings", scope: "web", label: "Web: Settings", labelTr: "Web: Settings" },
   { id: "web_users", scope: "web", label: "Web: Users", labelTr: "Web: Users" },

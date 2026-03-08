@@ -1,0 +1,9 @@
+# Railway API service - ONLY backend. No web/backoffice.
+# Root Directory MUST be set to "backend" in Railway dashboard for this to work.
+# Alternative: If deploying from repo root, this forces backend-only start.
+
+[build]
+buildCommand = "cd backend && npm install"
+
+[deploy]
+startCommand = "cd backend && node server.js"

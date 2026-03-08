@@ -93,13 +93,13 @@ export default function Home() {
         {/* Total Sales, Card, Cash, Open Tables — küçük ikonlar, okunaklı yazı (mobil) */}
         <section className="mb-6">
           <div className="flex items-center justify-between mb-2">
-            <h2 className="text-sm font-medium text-slate-400">Bugün</h2>
+            <h2 className="text-sm font-medium text-slate-400">Today</h2>
             <button
               type="button"
               onClick={loadSummary}
               disabled={summaryLoading}
               className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 disabled:opacity-50"
-              aria-label="Yenile"
+              aria-label="Refresh"
             >
               <RefreshCw className={`w-4 h-4 ${summaryLoading ? "animate-spin" : ""}`} />
             </button>
@@ -144,7 +144,7 @@ export default function Home() {
           </div>
         </section>
 
-        <h2 className="text-sm font-semibold text-slate-200 mb-3">Menü</h2>
+        <h2 className="text-sm font-semibold text-slate-200 mb-3">Menu</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <Link
             href="/dashboard"

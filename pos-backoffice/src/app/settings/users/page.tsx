@@ -123,7 +123,7 @@ export default function UsersSettingsPage() {
     e.preventDefault();
     const label = newRoleLabel.trim();
     if (!label) {
-      alert("Rol adı gerekli");
+      alert("Role name is required");
       return;
     }
     setAddingRole(true);
@@ -140,7 +140,7 @@ export default function UsersSettingsPage() {
   }
 
   async function removeRole(roleId: string) {
-    if (!confirm("Bu rolü silmek istediğinize emin misiniz? Bu role atanmış kullanıcılar etkilenebilir.")) return;
+    if (!confirm("Are you sure you want to delete this role? Users with this role may be affected.")) return;
     try {
       await deleteRole(roleId);
       await load();
