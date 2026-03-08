@@ -4,24 +4,24 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Download, Mail } from "lucide-react";
 import { getDailySales } from "@/lib/api";
+import { ReportDateFilter, toYYYYMMDD } from "@/components/ReportDateFilter";
 
 function fmt(n: number) {
   return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function toYYYYMMDD(d: Date) {
-  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
-}
-
 export default function CategorySalesReportPage() {
-  const [date, setDate] = useState(toYYYYMMDD(new Date()));
+  const today = toYYYYMMDD(new Date());
+  const [dateFrom, setDateFrom] = useState(today);
+  const [dateTo, setDateTo] = useState(today);
   const [data, setData] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     setLoading(true);
-    getDailySales(date).then(setData).catch(() => setData(null)).finally(() => setLoading(false));
-  }, [date]);
+    const single = dateFrom === dateTo ? dateFrom : undefined;
+    getDailySales(single, dateFrom, dateTo).then(setData).catch(() => setData(null)).finally(() => setLoading(false));
+  }, [dateFrom, dateTo]);
 
   const categorySales = (data as { categorySales?: Array<{ categoryId: string; categoryName: string; totalAmount: number; totalQuantity: number }> })?.categorySales ?? [];
 
@@ -33,7 +33,7 @@ export default function CategorySalesReportPage() {
     const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = "category-sales-" + date + ".csv";
+    a.download = "category-sales-" + dateFrom + "-" + dateTo + ".csv";
     a.click();
     URL.revokeObjectURL(a.href);
   }
@@ -48,8 +48,8 @@ export default function CategorySalesReportPage() {
             <p className="text-slate-400 text-sm">Export to Excel · Email</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <input type="date" value={date} max={toYYYYMMDD(new Date())} onChange={(e) => setDate(e.target.value)} className="px-3 py-2 rounded-lg bg-slate-800 text-slate-200 border border-slate-600" />
+        <div className="flex flex-wrap items-center gap-2">
+          <ReportDateFilter dateFrom={dateFrom} dateTo={dateTo} onDateFromChange={setDateFrom} onDateToChange={setDateTo} />
           <button type="button" onClick={exportExcel} disabled={!categorySales.length} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50"><Download className="w-4 h-4" /> Export Excel (CSV)</button>
           <button type="button" className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200"><Mail className="w-4 h-4" /> Email</button>
         </div>

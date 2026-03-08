@@ -8,8 +8,9 @@ import {
   RefreshCw,
   ChevronRight,
 } from "lucide-react";
-import { getDashboardStats, getDailySales, getOpenOrders, getClosedBillChanges, getCashDrawerOpens, getDiscountsToday, getDiscountRequestsPending } from "@/lib/api";
-import type { DiscountTodayRow } from "@/lib/api";
+import { getDashboardStats, getDailySales, getOpenOrders, getClosedBillChanges, getCashDrawerOpens, getDiscountsToday, getDiscountRequestsPending, getBusinessDayStatus, markWarningShown, getOpenTablesNotClosed } from "@/lib/api";
+import type { DiscountTodayRow, OpenTableNotClosed } from "@/lib/api";
+import { useUser } from "@/context/UserContext";
 
 type PaidTicket = { order_id: string; receipt_no?: string; table_number: string; total: number; paid_at: number; waiter_name?: string; cash_amount: number; card_amount: number; discount_amount?: number };
 type OpenOrderRow = { order_id: string; receipt_no: string; table_number: string; total: number; waiter_name: string; created_at: number; status: string };
@@ -68,6 +69,14 @@ export default function DashboardPage() {
   const [pendingDiscountRequestsCount, setPendingDiscountRequestsCount] = useState(0);
   const [approvalRequestsCountPrev, setApprovalRequestsCountPrev] = useState(0);
   const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(null);
+  const [warningBanner, setWarningBanner] = useState(false);
+  const [openTablesNotClosed, setOpenTablesNotClosed] = useState<OpenTableNotClosed[]>([]);
+  const [openTablesNotClosedModal, setOpenTablesNotClosedModal] = useState(false);
+  const [openTablesNotClosedLoading, setOpenTablesNotClosedLoading] = useState(false);
+  const [selectedTableOrderId, setSelectedTableOrderId] = useState<string | null>(null);
+  const [currentBusinessDayKey, setCurrentBusinessDayKey] = useState<string | null>(null);
+  const { user } = useUser();
+  const canSeeWarning = user && (["admin", "manager", "supervisor"].includes(user.role) || (user.permissions || []).includes("web_settings"));
   const router = useRouter();
 
   const fetchData = useCallback(async () => {
@@ -135,6 +144,36 @@ export default function DashboardPage() {
     return () => clearInterval(id);
   }, [fetchData]);
 
+  useEffect(() => {
+    getBusinessDayStatus()
+      .then((s) => {
+        if (s.currentBusinessDayKey) setCurrentBusinessDayKey(s.currentBusinessDayKey);
+        if (canSeeWarning && s.shouldShowWarning) setWarningBanner(true);
+      })
+      .catch(() => {});
+  }, [stats.openTablesCount, canSeeWarning]);
+
+  async function handleOpenTablesNotClosedClick() {
+    setOpenTablesNotClosedModal(true);
+    setOpenTablesNotClosedLoading(true);
+    setSelectedTableOrderId(null);
+    try {
+      const r = await getOpenTablesNotClosed();
+      setOpenTablesNotClosed(r.list);
+    } catch {
+      setOpenTablesNotClosed([]);
+    } finally {
+      setOpenTablesNotClosedLoading(false);
+    }
+  }
+
+  async function dismissWarning() {
+    try {
+      await markWarningShown();
+      setWarningBanner(false);
+    } catch { /* ignore */ }
+  }
+
   const totalApprovalRequests = (stats.pendingVoidRequestsCount ?? 0) + (stats.pendingClosedBillAccessRequestsCount ?? 0);
   useEffect(() => {
     if (totalApprovalRequests > 0 && totalApprovalRequests > approvalRequestsCountPrev) {
@@ -169,7 +208,10 @@ export default function DashboardPage() {
           </Link>
           <div>
             <h1 className="text-xl font-bold text-sky-400">Dashboard</h1>
-            <p className="text-slate-400 text-sm">Sales, open checks, reports · Auto-refresh 8s</p>
+            <p className="text-slate-400 text-sm">
+              {currentBusinessDayKey ? `Business Day: ${currentBusinessDayKey} · ` : ""}
+              Sales, open checks, reports · Auto-refresh 8s
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -187,6 +229,12 @@ export default function DashboardPage() {
       </header>
 
       <main className="p-6 space-y-8 max-w-4xl mx-auto">
+        {warningBanner && (
+          <div className="flex items-center justify-between gap-4 p-4 rounded-xl bg-amber-900/60 border border-amber-600/50 text-amber-100">
+            <p className="font-medium">Business day is closing soon. Please close open tables.</p>
+            <button type="button" onClick={dismissWarning} className="px-3 py-1.5 rounded-lg bg-amber-700 hover:bg-amber-600 text-white text-sm">Dismiss</button>
+          </div>
+        )}
         {/* Overview blocks — tap to view tickets */}
         <section>
           <h2 className="text-lg font-semibold text-slate-200 mb-4">Overview (tap to view tickets)</h2>
@@ -261,6 +309,13 @@ export default function DashboardPage() {
                 <p className="text-base font-semibold uppercase tracking-wide mb-1">Discount Requests</p>
                 <p className="text-lg font-bold">{pendingDiscountRequestsCount}</p>
                 <p className="text-base opacity-90">Pending approval</p>
+              </div>
+            </button>
+            <button type="button" className={`${blockBaseClass} bg-rose-900/80 border-rose-600/50 text-rose-100`} onClick={handleOpenTablesNotClosedClick}>
+              <div className="min-w-0 flex-1">
+                <p className="text-base font-semibold uppercase tracking-wide mb-1">Open Tables Pending Close</p>
+                <p className="text-lg font-bold">{loading ? "..." : stats.openTablesCount}</p>
+                <p className="text-base opacity-90">End-of-day open tables</p>
               </div>
             </button>
           </div>
@@ -482,6 +537,59 @@ export default function DashboardPage() {
                 </ul>
               ) : (
                 <p className="text-slate-500 py-4">No approved discounts in this period.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Open Tables Not Closed modal */}
+      {openTablesNotClosedModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={() => setOpenTablesNotClosedModal(false)}>
+          <div className="bg-slate-900 rounded-xl border border-slate-700 max-w-2xl w-full max-h-[85vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="p-4 border-b border-slate-700 flex justify-between items-center">
+              <h3 className="text-lg font-semibold text-slate-200">Open Tables Not Closed</h3>
+              <button type="button" onClick={() => setOpenTablesNotClosedModal(false)} className="text-slate-400 hover:text-white">Close</button>
+            </div>
+            <div className="overflow-y-auto flex-1 p-4 flex gap-4">
+              <div className="flex-1 min-w-0">
+                {openTablesNotClosedLoading ? (
+                  <p className="text-slate-500 py-4">Loading...</p>
+                ) : openTablesNotClosed.length === 0 ? (
+                  <p className="text-slate-500 py-4">No open tables</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {openTablesNotClosed.map((t) => (
+                      <li key={t.order_id}>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedTableOrderId(selectedTableOrderId === t.order_id ? null : t.order_id)}
+                          className={`w-full p-3 rounded-lg text-left transition-colors ${selectedTableOrderId === t.order_id ? "bg-sky-800/60 border border-sky-500/50" : "bg-slate-800 hover:bg-slate-700"}`}
+                        >
+                          <div className="flex justify-between items-center">
+                            <span className="font-medium text-slate-200">Table {t.table_number} · {t.receipt_no}</span>
+                            <span className="text-sky-400">{fmt(t.total)} AED</span>
+                          </div>
+                          <p className="text-slate-500 text-xs mt-1">
+                            {t.item_count} item(s) · {t.duration_minutes} min open · {t.waiter_name}
+                          </p>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              {selectedTableOrderId && (
+                <div className="w-64 shrink-0 border-l border-slate-700 pl-4">
+                  <p className="text-sm text-slate-400 mb-2">Order detail</p>
+                  <Link
+                    href={`/orders/${selectedTableOrderId}`}
+                    onClick={() => setOpenTablesNotClosedModal(false)}
+                    className="text-sky-400 hover:underline text-sm"
+                  >
+                    View receipt →
+                  </Link>
+                </div>
               )}
             </div>
           </div>

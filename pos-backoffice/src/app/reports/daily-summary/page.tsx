@@ -4,17 +4,16 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Download, Mail } from "lucide-react";
 import { getDailySales } from "@/lib/api";
+import { ReportDateFilter, toYYYYMMDD } from "@/components/ReportDateFilter";
 
 function fmt(n: number) {
   return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function toYYYYMMDD(d: Date) {
-  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
-}
-
 export default function DailySummaryReportPage() {
-  const [date, setDate] = useState(toYYYYMMDD(new Date()));
+  const today = toYYYYMMDD(new Date());
+  const [dateFrom, setDateFrom] = useState(today);
+  const [dateTo, setDateTo] = useState(today);
   const [data, setData] = useState<{
     totalSales: number;
     totalCash: number;
@@ -29,19 +28,21 @@ export default function DailySummaryReportPage() {
 
   useEffect(() => {
     setLoading(true);
-    getDailySales(date)
+    const single = dateFrom === dateTo ? dateFrom : undefined;
+    getDailySales(single, dateFrom, dateTo)
       .then(setData)
       .catch(() => setData(null))
       .finally(() => setLoading(false));
-  }, [date]);
+  }, [dateFrom, dateTo]);
 
   function exportExcel() {
     if (!data) {
       alert("No data to export");
       return;
     }
+    const rangeLabel = dateFrom === dateTo ? dateFrom : `${dateFrom} – ${dateTo}`;
     const lines = [
-      ["Daily Summary Report", date],
+      ["Daily Summary Report", rangeLabel],
       [],
       ["Total Sales (AED)", fmt(data.totalSales ?? 0)],
       ["Total Cash (AED)", fmt(data.totalCash ?? 0)],
@@ -62,7 +63,7 @@ export default function DailySummaryReportPage() {
     const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `daily-summary-${date}.csv`;
+    a.download = `daily-summary-${dateFrom}-${dateTo}.csv`;
     a.click();
     URL.revokeObjectURL(a.href);
   }
@@ -79,9 +80,9 @@ export default function DailySummaryReportPage() {
             <p className="text-slate-400 text-sm">Export to Excel · Email</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <input type="date" value={date} max={toYYYYMMDD(new Date())} onChange={(e) => setDate(e.target.value)} className="px-3 py-2 rounded-lg bg-slate-800 text-slate-200 border border-slate-600" />
-          <button type="button" onClick={exportExcel} disabled={!data} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50">
+        <div className="flex flex-wrap items-center gap-2">
+          <ReportDateFilter dateFrom={dateFrom} dateTo={dateTo} onDateFromChange={setDateFrom} onDateToChange={setDateTo} />
+          <button type="button" onClick={exportExcel} disabled={!data} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50 shrink-0">
             <Download className="w-4 h-4" /> Export Excel (CSV)
           </button>
           <button type="button" className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200">

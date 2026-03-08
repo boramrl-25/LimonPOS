@@ -378,6 +378,34 @@ export type Settings = {
   receipt_header?: string;
   receipt_footer_message?: string;
   kitchen_header?: string;
+  opening_time?: string;
+  closing_time?: string;
+  open_tables_warning_time?: string;
+  auto_close_open_tables?: boolean;
+  auto_close_payment_method?: string;
+  grace_minutes?: number;
+  warning_enabled?: boolean;
+};
+
+export type BusinessDayStatus = {
+  currentBusinessDayKey: string | null;
+  isAfterWarningTime: boolean;
+  openTablesCount: number;
+  shouldShowWarning: boolean;
+};
+
+export type OpenTableNotClosed = {
+  table_id: string;
+  table_number: string;
+  order_id: string;
+  receipt_no: string;
+  total: number;
+  item_count: number;
+  order_count: number;
+  opened_at: number;
+  duration_minutes: number;
+  waiter_name: string;
+  business_day_key: string | null;
 };
 
 export async function getSettings(): Promise<Settings> {
@@ -428,6 +456,27 @@ export async function getDailySales(date?: string, dateFrom?: string, dateTo?: s
 export async function getOpenOrders() {
   const res = await fetchWithTimeout(`${API_URL}/dashboard/open-orders`, { headers: headers() });
   if (!res.ok) throw new Error("Failed to fetch open orders");
+  return res.json();
+}
+
+export async function getBusinessDayStatus(): Promise<BusinessDayStatus> {
+  const res = await fetchWithTimeout(`${API_URL}/dashboard/business-day-status`, { headers: headers() });
+  if (!res.ok) throw new Error("Failed to fetch business day status");
+  return res.json();
+}
+
+export async function markWarningShown(): Promise<void> {
+  const res = await fetchWithTimeout(`${API_URL}/dashboard/warning-shown`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({}),
+  });
+  if (!res.ok) throw new Error("Failed to mark warning shown");
+}
+
+export async function getOpenTablesNotClosed(): Promise<{ list: OpenTableNotClosed[]; count: number }> {
+  const res = await fetchWithTimeout(`${API_URL}/dashboard/open-tables-not-closed`, { headers: headers() });
+  if (!res.ok) throw new Error("Failed to fetch open tables not closed");
   return res.json();
 }
 

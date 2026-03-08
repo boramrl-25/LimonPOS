@@ -4,6 +4,14 @@ import cors from "cors";
 import { v4 as uuid } from "uuid";
 import { db, getDataFileInfo } from "./db.js";
 import { pushToZohoBooks, getZohoItems, getZohoItemGroups, syncFromZoho } from "./zoho.js";
+import {
+  parseTimeToMinutes,
+  getBusinessDayRange,
+  getBusinessDayKey,
+  isAfterWarningTime,
+  getBusinessDayRangeForDate,
+  getBusinessDayRangesForDateRange,
+} from "./businessDay.js";
 
 // Railway / production: yakalanmamış hatalar loglansın, process çökmesin veya net exit ile yeniden başlasın
 process.on("uncaughtException", (err) => {
@@ -24,27 +32,43 @@ app.use(express.json());
 
 const DEFAULT_SETUP = { id: "u1", name: "Setup", pin: "2222", role: "setup", active: 1, permissions: "[]", cash_drawer_permission: 0 };
 
-/** Bugünün başlangıç timestamp'i (iş saatleri timezone'una göre). settings.timezone_offset_minutes kullanılır (örn. 180 = GMT+3). */
-function getTodayStartTimestamp() {
-  const offsetMin = (db.data?.settings?.timezone_offset_minutes ?? 0) | 0;
+const offsetMin = () => (db.data?.settings?.timezone_offset_minutes ?? 0) | 0;
+
+/** Business day range if opening/closing configured; else calendar day. */
+function getTodayRange() {
+  const s = db.data?.settings || {};
+  const opening = s.opening_time;
+  const closing = s.closing_time;
+  const off = offsetMin();
   const now = Date.now();
+  if (opening && closing && !isNaN(parseTimeToMinutes(opening)) && !isNaN(parseTimeToMinutes(closing))) {
+    const r = getBusinessDayRange(now, opening, closing, off);
+    if (r) return r;
+  }
   const dayMs = 24 * 60 * 60 * 1000;
-  const localNow = now + offsetMin * 60 * 1000;
-  return Math.floor(localNow / dayMs) * dayMs - offsetMin * 60 * 1000;
+  const localNow = now + off * 60 * 1000;
+  const startTs = Math.floor(localNow / dayMs) * dayMs - off * 60 * 1000;
+  return { startTs, endTs: startTs + dayMs };
 }
 
-/** Verilen gün (YYYY-MM-DD) için timezone'a göre başlangıç ve bitiş timestamp'leri. */
+/** Verilen gün (YYYY-MM-DD) için: business day kullanılıyorsa o güne ait range; değilse calendar day. */
 function getDayBounds(dateStr) {
-  const offsetMin = (db.data?.settings?.timezone_offset_minutes ?? 0) | 0;
+  const s = db.data?.settings || {};
+  const opening = s.opening_time;
+  const closing = s.closing_time;
+  const off = offsetMin();
+  if (opening && closing && !isNaN(parseTimeToMinutes(opening)) && !isNaN(parseTimeToMinutes(closing))) {
+    const r = getBusinessDayRangeForDate(dateStr, opening, closing, off);
+    if (r) return r;
+  }
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
   if (!match) return null;
   const y = parseInt(match[1], 10);
   const m = parseInt(match[2], 10) - 1;
   const d = parseInt(match[3], 10);
   const dayMs = 24 * 60 * 60 * 1000;
-  const startTs = Date.UTC(y, m, d) - offsetMin * 60 * 1000;
-  const endTs = startTs + dayMs;
-  return { startTs, endTs };
+  const startTs = Date.UTC(y, m, d) - off * 60 * 1000;
+  return { startTs, endTs: startTs + dayMs };
 }
 
 /** Belirli gün aralığı [startTs, endTs) için satış özeti. */
@@ -101,10 +125,9 @@ function resolvePaymentMethodCode(method, paymentMethods) {
 
 /** Tek kaynak: bugünkü ödemeler + iade/void. Dashboard ve daily-sales aynı mantığı kullanır. */
 function getTodaySalesSummary() {
-  const todayTs = getTodayStartTimestamp();
-  const dayMs = 24 * 60 * 60 * 1000;
-  const summary = getSalesSummaryForRange(todayTs, todayTs + dayMs);
-  return { ...summary, todayTs, todayEndTs: todayTs + dayMs };
+  const range = getTodayRange();
+  const summary = getSalesSummaryForRange(range.startTs, range.endTs);
+  return { ...summary, todayTs: range.startTs, todayEndTs: range.endTs };
 }
 
 async function ensureData() {
@@ -148,6 +171,15 @@ async function ensureData() {
   if (typeof db.data.settings.overdue_undelivered_minutes !== "number") {
     db.data.settings.overdue_undelivered_minutes = Math.min(1440, Math.max(1, (db.data.settings.overdue_undelivered_minutes ?? 10) | 0));
   }
+  if (typeof db.data.settings.opening_time !== "string") db.data.settings.opening_time = db.data.settings.opening_time ?? "07:00";
+  if (typeof db.data.settings.closing_time !== "string") db.data.settings.closing_time = db.data.settings.closing_time ?? "01:30";
+  if (typeof db.data.settings.open_tables_warning_time !== "string") db.data.settings.open_tables_warning_time = db.data.settings.open_tables_warning_time ?? "01:00";
+  if (typeof db.data.settings.auto_close_open_tables !== "boolean") db.data.settings.auto_close_open_tables = !!db.data.settings.auto_close_open_tables;
+  if (typeof db.data.settings.auto_close_payment_method !== "string") db.data.settings.auto_close_payment_method = db.data.settings.auto_close_payment_method ?? "cash";
+  if (typeof db.data.settings.grace_minutes !== "number") db.data.settings.grace_minutes = Math.min(60, Math.max(0, (db.data.settings.grace_minutes ?? 0) | 0));
+  if (typeof db.data.settings.warning_enabled !== "boolean") db.data.settings.warning_enabled = db.data.settings.warning_enabled !== false;
+  if (!Array.isArray(db.data.business_operation_log)) db.data.business_operation_log = [];
+  if (typeof db.data.settings.last_auto_close_for_business_day !== "string") db.data.settings.last_auto_close_for_business_day = db.data.settings.last_auto_close_for_business_day ?? null;
   if (db.data.tables.length === 0) {
     const defaultTable = (i) => ({
       id: `main-${i + 1}`,
@@ -873,21 +905,40 @@ app.delete("/api/modifier-groups/:id", authMiddleware, async (req, res) => {
 // Settings (timezone, receipt/bill, kitchen)
 app.get("/api/settings", authMiddleware, async (req, res) => {
   await ensureData();
-  const settings = db.data.settings || {};
+  const s = db.data.settings || {};
   res.json({
-    timezone_offset_minutes: settings.timezone_offset_minutes ?? 0,
-    overdue_undelivered_minutes: Math.min(1440, Math.max(1, (settings.overdue_undelivered_minutes ?? 10) | 0)),
-    company_name: settings.company_name ?? "",
-    company_address: settings.company_address ?? "",
-    receipt_header: settings.receipt_header ?? "BILL / RECEIPT",
-    receipt_footer_message: settings.receipt_footer_message ?? "Thank you!",
-    kitchen_header: settings.kitchen_header ?? "KITCHEN",
+    timezone_offset_minutes: s.timezone_offset_minutes ?? 0,
+    overdue_undelivered_minutes: Math.min(1440, Math.max(1, (s.overdue_undelivered_minutes ?? 10) | 0)),
+    company_name: s.company_name ?? "",
+    company_address: s.company_address ?? "",
+    receipt_header: s.receipt_header ?? "BILL / RECEIPT",
+    receipt_footer_message: s.receipt_footer_message ?? "Thank you!",
+    kitchen_header: s.kitchen_header ?? "KITCHEN",
+    opening_time: s.opening_time ?? "07:00",
+    closing_time: s.closing_time ?? "01:30",
+    open_tables_warning_time: s.open_tables_warning_time ?? "01:00",
+    auto_close_open_tables: !!s.auto_close_open_tables,
+    auto_close_payment_method: s.auto_close_payment_method ?? "cash",
+    grace_minutes: Math.min(60, Math.max(0, (s.grace_minutes ?? 0) | 0)),
+    warning_enabled: s.warning_enabled !== false,
   });
 });
 
+function validateTimeHHMM(str) {
+  if (typeof str !== "string" || !/^\d{1,2}:\d{2}$/.test(str.trim())) return null;
+  const [h, m] = str.trim().split(":").map(Number);
+  if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
 app.patch("/api/settings", authMiddleware, async (req, res) => {
   await ensureData();
+  const perms = JSON.parse(req.user?.permissions || "[]");
+  if (req.user?.role !== "admin" && req.user?.role !== "manager" && !perms.includes("web_settings")) {
+    return res.status(403).json({ error: "Permission denied. Settings require admin, manager, or web_settings." });
+  }
   db.data.settings = db.data.settings || {};
+  const prevSettings = { ...db.data.settings };
   if (typeof req.body.timezone_offset_minutes === "number") {
     db.data.settings.timezone_offset_minutes = Math.round(req.body.timezone_offset_minutes);
     if (db.data.settings.timezone_offset_minutes < -720) db.data.settings.timezone_offset_minutes = -720;
@@ -902,6 +953,29 @@ app.patch("/api/settings", authMiddleware, async (req, res) => {
   if (typeof req.body.receipt_header === "string") db.data.settings.receipt_header = req.body.receipt_header.slice(0, 100) || "BILL / RECEIPT";
   if (typeof req.body.receipt_footer_message === "string") db.data.settings.receipt_footer_message = req.body.receipt_footer_message.slice(0, 300) || "Thank you!";
   if (typeof req.body.kitchen_header === "string") db.data.settings.kitchen_header = req.body.kitchen_header.slice(0, 100) || "KITCHEN";
+  const ot = validateTimeHHMM(req.body.opening_time);
+  if (ot) db.data.settings.opening_time = ot;
+  const ct = validateTimeHHMM(req.body.closing_time);
+  if (ct) db.data.settings.closing_time = ct;
+  const wt = validateTimeHHMM(req.body.open_tables_warning_time);
+  if (wt) db.data.settings.open_tables_warning_time = wt;
+  if (typeof req.body.auto_close_open_tables === "boolean") db.data.settings.auto_close_open_tables = req.body.auto_close_open_tables;
+  if (typeof req.body.auto_close_payment_method === "string") db.data.settings.auto_close_payment_method = req.body.auto_close_payment_method.slice(0, 50) || "cash";
+  if (typeof req.body.grace_minutes === "number") db.data.settings.grace_minutes = Math.min(60, Math.max(0, Math.round(req.body.grace_minutes)));
+  if (typeof req.body.warning_enabled === "boolean") db.data.settings.warning_enabled = req.body.warning_enabled;
+  const businessKeys = ["opening_time", "closing_time", "open_tables_warning_time", "auto_close_open_tables", "auto_close_payment_method", "grace_minutes", "warning_enabled"];
+  const changed = businessKeys.filter((k) => String(prevSettings[k] ?? "") !== String(db.data.settings[k] ?? ""));
+  if (changed.length > 0) {
+    db.data.business_operation_log = db.data.business_operation_log || [];
+    db.data.business_operation_log.push({
+      ts: Date.now(),
+      action: "settings_changed",
+      user_id: req.user?.id,
+      user_name: req.user?.name,
+      changed,
+    });
+    if (db.data.business_operation_log.length > 2000) db.data.business_operation_log = db.data.business_operation_log.slice(-2000);
+  }
   await db.write();
   const s = db.data.settings;
   res.json({
@@ -912,6 +986,13 @@ app.patch("/api/settings", authMiddleware, async (req, res) => {
     receipt_header: s.receipt_header ?? "BILL / RECEIPT",
     receipt_footer_message: s.receipt_footer_message ?? "Thank you!",
     kitchen_header: s.kitchen_header ?? "KITCHEN",
+    opening_time: s.opening_time ?? "07:00",
+    closing_time: s.closing_time ?? "01:30",
+    open_tables_warning_time: s.open_tables_warning_time ?? "01:00",
+    auto_close_open_tables: !!s.auto_close_open_tables,
+    auto_close_payment_method: s.auto_close_payment_method ?? "cash",
+    grace_minutes: Math.min(60, Math.max(0, (s.grace_minutes ?? 0) | 0)),
+    warning_enabled: s.warning_enabled !== false,
   });
 });
 
@@ -1037,6 +1118,82 @@ app.get("/api/dashboard/stats", authMiddleware, async (req, res) => {
     pendingVoidRequestsCount,
     pendingClosedBillAccessRequestsCount,
   });
+});
+
+// Business day status: for warning banner, open tables count. Supervisor/manager only.
+app.get("/api/dashboard/business-day-status", authMiddleware, async (req, res) => {
+  await ensureData();
+  const s = db.data.settings || {};
+  const opening = s.opening_time ?? "07:00";
+  const closing = s.closing_time ?? "01:30";
+  const warning = s.open_tables_warning_time ?? "01:00";
+  const off = offsetMin();
+  const now = Date.now();
+  const key = getBusinessDayKey(now, opening, closing, off);
+  const afterWarning = isAfterWarningTime(now, warning, opening, closing, off);
+  const tables = db.data.tables || [];
+  const orders = db.data.orders || [];
+  const orderIdsOpenOrSent = new Set(orders.filter((o) => o.status === "open" || o.status === "sent").map((o) => o.id));
+  const openCount = tables.filter((t) => t.current_order_id && orderIdsOpenOrSent.has(t.current_order_id)).length;
+  const lastShown = s.last_warning_shown_for_business_day;
+  const shouldShow = !!(s.warning_enabled !== false && afterWarning && openCount > 0 && lastShown !== key);
+  res.json({
+    currentBusinessDayKey: key,
+    isAfterWarningTime: afterWarning,
+    openTablesCount: openCount,
+    shouldShowWarning: shouldShow,
+  });
+});
+
+app.post("/api/dashboard/warning-shown", authMiddleware, async (req, res) => {
+  await ensureData();
+  const s = db.data.settings || {};
+  const key = getBusinessDayKey(Date.now(), s.opening_time ?? "07:00", s.closing_time ?? "01:30", offsetMin());
+  if (key) {
+    db.data.settings.last_warning_shown_for_business_day = key;
+    db.data.business_operation_log = db.data.business_operation_log || [];
+    db.data.business_operation_log.push({
+      ts: Date.now(),
+      action: "warning_shown",
+      user_id: req.user?.id,
+      user_name: req.user?.name,
+      business_day_key: key,
+    });
+    if (db.data.business_operation_log.length > 2000) db.data.business_operation_log = db.data.business_operation_log.slice(-2000);
+    await db.write();
+  }
+  res.json({ ok: true });
+});
+
+// Open tables not closed: detailed list for dashboard "end of day" section.
+app.get("/api/dashboard/open-tables-not-closed", authMiddleware, async (req, res) => {
+  await ensureData();
+  const orders = db.data.orders || [];
+  const orderItems = db.data.order_items || [];
+  const tables = db.data.tables || [];
+  const s = db.data.settings || {};
+  const key = getBusinessDayKey(Date.now(), s.opening_time ?? "07:00", s.closing_time ?? "01:30", offsetMin());
+  const orderIdsLinkedToTable = new Set(tables.filter((t) => t.current_order_id).map((t) => t.current_order_id));
+  const openOrders = orders.filter((o) => (o.status === "open" || o.status === "sent") && orderIdsLinkedToTable.has(o.id));
+  const list = openOrders.map((o) => {
+    const items = orderItems.filter((i) => i.order_id === o.id);
+    const itemCount = items.reduce((s, i) => s + (i.quantity || 0), 0);
+    const openedAt = o.created_at ?? o.updated_at ?? 0;
+    return {
+      table_id: o.table_id,
+      table_number: o.table_number || "",
+      order_id: o.id,
+      receipt_no: `#${(o.table_number || o.id).toString().slice(-6)}`,
+      total: Number(o.total) || 0,
+      item_count: itemCount,
+      order_count: 1,
+      opened_at: openedAt,
+      duration_minutes: openedAt ? Math.floor((Date.now() - openedAt) / 60000) : 0,
+      waiter_name: o.waiter_name || "—",
+      business_day_key: key,
+    };
+  });
+  res.json({ list, count: list.length });
 });
 
 // Open orders: only orders that are linked to a table (current_order_id). App ile uyumlu.
@@ -2069,6 +2226,98 @@ app.get("/", (req, res) => {
 const HOST = process.env.HOST || "0.0.0.0";
 const DATA_DIR = process.env.DATA_DIR;
 
+let lastAutoCloseRunTs = 0;
+
+async function runAutoCloseIfDue() {
+  try {
+    await db.read();
+  } catch {
+    return;
+  }
+  const s = db.data?.settings || {};
+  if (!s.auto_close_open_tables) return;
+  const opening = s.opening_time ?? "07:00";
+  const closing = s.closing_time ?? "01:30";
+  const grace = Math.min(60, Math.max(0, (s.grace_minutes ?? 0) | 0));
+  const off = (s.timezone_offset_minutes ?? 0) | 0;
+  const now = Date.now();
+  const dayMs = 24 * 60 * 60 * 1000;
+  const localNow = now + off * 60 * 1000;
+  const minutesSinceMidnight = ((localNow % dayMs) + dayMs) % dayMs / (60 * 1000);
+  const closeMin = parseTimeToMinutes(closing);
+  if (isNaN(closeMin)) return;
+  const openMin = parseTimeToMinutes(opening);
+  const threshold = closeMin + grace;
+  const wrap = closeMin <= openMin;
+  const pastClosing = wrap
+    ? minutesSinceMidnight >= threshold && minutesSinceMidnight < openMin
+    : minutesSinceMidnight >= threshold;
+  if (!pastClosing) return;
+  if (now - lastAutoCloseRunTs < 30 * 60 * 1000) return;
+  const key = getBusinessDayKey(now, opening, closing, off);
+  if (s.last_auto_close_for_business_day === key) return;
+
+  const tables = db.data.tables || [];
+  const orders = db.data.orders || [];
+  const openTables = tables.filter((t) => t.current_order_id);
+  const tablesClosed = [];
+  const pmCode = (s.auto_close_payment_method || "cash").toLowerCase();
+  for (const t of openTables) {
+    const order = orders.find((o) => o.id === t.current_order_id);
+    if (!order || order.status === "paid") continue;
+    const amount = order.total ?? 0;
+    db.data.payments = db.data.payments || [];
+    db.data.payments.push({
+      id: `pay_${uuid().slice(0, 8)}`,
+      order_id: order.id,
+      amount,
+      method: pmCode === "cash" ? "cash" : pmCode,
+      received_amount: amount,
+      change_amount: 0,
+      user_id: "system",
+      created_at: now,
+    });
+    const oidx = orders.findIndex((o) => o.id === order.id);
+    if (oidx >= 0) {
+      db.data.orders[oidx].status = "paid";
+      db.data.orders[oidx].paid_at = now;
+    }
+    db.data.tables.forEach((tbl) => {
+      if (tbl.current_order_id === order.id) {
+        tbl.status = "free";
+        tbl.current_order_id = null;
+        tbl.guest_count = 0;
+        tbl.waiter_id = null;
+        tbl.waiter_name = null;
+        tbl.opened_at = null;
+      }
+    });
+    tablesClosed.push({ table_id: t.id, table_number: t.number ?? t.id, order_id: order.id, amount });
+  }
+  if (tablesClosed.length > 0) {
+    db.data.settings.last_auto_close_for_business_day = key;
+    db.data.eod_logs = db.data.eod_logs || [];
+    db.data.eod_logs.push({
+      id: `eod_auto_${uuid().slice(0, 8)}`,
+      ran_at: now,
+      user_id: "system",
+      user_name: "Auto-close",
+      tables_closed: tablesClosed,
+      orders_closed_count: tablesClosed.length,
+    });
+    db.data.business_operation_log = db.data.business_operation_log || [];
+    db.data.business_operation_log.push({
+      ts: now,
+      action: "open_tables_auto_closed",
+      business_day_key: key,
+      tables_closed: tablesClosed,
+    });
+    if (db.data.business_operation_log.length > 2000) db.data.business_operation_log = db.data.business_operation_log.slice(-2000);
+    await db.write();
+    lastAutoCloseRunTs = now;
+  }
+}
+
 async function startServer() {
   try {
     await ensureData();
@@ -2076,6 +2325,7 @@ async function startServer() {
   } catch (e) {
     console.error("[startup] ensureData failed (server will still start):", e?.message || e);
   }
+  setInterval(() => runAutoCloseIfDue().catch((e) => console.error("[auto-close]", e?.message)), 60 * 1000);
   const server = app.listen(PORT, HOST, () => {
     console.log(`LimonPOS Backend running on http://${HOST}:${PORT}`);
     if (DATA_DIR) {
