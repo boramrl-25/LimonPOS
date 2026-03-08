@@ -25,3 +25,12 @@ data class HeartbeatRequest(
     @SerializedName("device_name") val deviceName: String? = null,
     @SerializedName("app_version") val appVersion: String? = null
 )
+
+data class HeartbeatResponse(
+    @SerializedName("ok") val ok: Boolean = true,
+    @SerializedName("clear_local_data_requested") val clearLocalDataRequested: Boolean = false
+)
+
+data class AckClearRequest(
+    @SerializedName("device_id") val deviceId: String
+)

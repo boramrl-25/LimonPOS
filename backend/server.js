@@ -465,7 +465,37 @@ app.post("/api/devices/heartbeat", authMiddleware, async (req, res) => {
     db.data.devices.push(device);
   }
   await db.write();
-  res.json({ ok: true, last_seen: now });
+  const dev = db.data.devices.find((d) => d.id === deviceId);
+  const clearRequested = !!(dev && dev.clear_local_data_requested);
+  res.json({ ok: true, last_seen: now, clear_local_data_requested: clearRequested });
+});
+
+app.post("/api/devices/:id/request-clear-local-data", authMiddleware, async (req, res) => {
+  await ensureData();
+  const perms = JSON.parse(req.user?.permissions || "[]");
+  if (req.user?.role !== "admin" && req.user?.role !== "manager" && !perms.includes("web_settings")) {
+    return res.status(403).json({ error: "Permission denied" });
+  }
+  const deviceId = req.params.id;
+  const idx = db.data.devices.findIndex((d) => d.id === deviceId);
+  if (idx < 0) {
+    return res.status(404).json({ error: "Device not found" });
+  }
+  db.data.devices[idx].clear_local_data_requested = true;
+  await db.write();
+  res.json({ ok: true, message: "Clear request sent. Device will clear local sales data on next sync." });
+});
+
+app.post("/api/devices/ack-clear", authMiddleware, async (req, res) => {
+  await ensureData();
+  const deviceId = String(req.body?.device_id || req.body?.deviceId || "").trim();
+  if (!deviceId) return res.status(400).json({ error: "device_id required" });
+  const idx = db.data.devices.findIndex((d) => d.id === deviceId);
+  if (idx >= 0) {
+    delete db.data.devices[idx].clear_local_data_requested;
+    await db.write();
+  }
+  res.json({ ok: true });
 });
 
 app.get("/api/devices", authMiddleware, async (req, res) => {

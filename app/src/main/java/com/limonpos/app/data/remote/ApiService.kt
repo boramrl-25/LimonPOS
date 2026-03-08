@@ -180,7 +180,10 @@ interface ApiService {
     suspend fun updateClosedBillAccessRequest(@Path("id") id: String, @Body request: ClosedBillAccessRequestDto): Response<ClosedBillAccessRequestDto>
 
     @POST("devices/heartbeat")
-    suspend fun sendHeartbeat(@Body request: HeartbeatRequest): Response<Unit>
+    suspend fun sendHeartbeat(@Body request: HeartbeatRequest): Response<HeartbeatResponse>
+
+    @POST("devices/ack-clear")
+    suspend fun ackClearLocalData(@Body request: AckClearRequest): Response<Unit>
 
     @GET("settings")
     suspend fun getSettings(): Response<SettingsDto>

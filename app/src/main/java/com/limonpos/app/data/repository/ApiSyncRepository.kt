@@ -222,7 +222,20 @@ class ApiSyncRepository @Inject constructor(
                 appVersion = null
             )
             val res = apiService.sendHeartbeat(request)
-            if (!res.isSuccessful) Log.e("ApiSync", "heartbeat failed: ${res.code()}")
+            if (!res.isSuccessful) {
+                Log.e("ApiSync", "heartbeat failed: ${res.code()}")
+                return
+            }
+            val body = res.body()
+            if (body?.clearLocalDataRequested == true) {
+                Log.d("ApiSync", "Clear local data requested from web - clearing local sales data")
+                clearLocalSales()
+                try {
+                    apiService.ackClearLocalData(AckClearRequest(deviceId = deviceId))
+                } catch (e: Exception) {
+                    Log.e("ApiSync", "ackClearLocalData failed: ${e.message}")
+                }
+            }
         } catch (e: Exception) {
             Log.e("ApiSync", "sendHeartbeat error: ${e.message}")
         }

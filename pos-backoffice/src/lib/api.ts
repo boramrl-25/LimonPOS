@@ -631,6 +631,17 @@ export async function getDevices(): Promise<DeviceInfo[]> {
   return res.json();
 }
 
+/** Request a POS device to clear its local sales data. Device will perform clear on next sync. */
+export async function requestClearLocalData(deviceId: string): Promise<{ ok: boolean; message: string }> {
+  const res = await fetchWithTimeout(`${API_URL}/devices/${encodeURIComponent(deviceId)}/request-clear-local-data`, {
+    method: "POST",
+    headers: headers(),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Request failed");
+  return data;
+}
+
 export type EodStatus = {
   lastEod: { ran_at: number; user_name: string; tables_closed_count: number; orders_closed_count: number } | null;
   openTablesNow: Array<{ table_id: string; table_number: string | number; order_id: string; order_total: number }>;
