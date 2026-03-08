@@ -428,15 +428,16 @@ class ApiSyncRepository @Inject constructor(
 
     /** KDS status hierarchy: delivered > ready > preparing > sent > pending. Never regress — local-first. */
     private fun resolveStatusForSync(localStatus: String?, localDeliveredAt: Long?, apiStatus: String?): Pair<String, Long?> {
+        if (localDeliveredAt != null) return "delivered" to localDeliveredAt
+        if (localStatus == "ready" || localStatus == "delivered") return localStatus!! to null
         val rank = { s: String? -> when (s) { "delivered" -> 5; "ready" -> 4; "preparing" -> 3; "sent" -> 2; "pending" -> 1; else -> 0 } }
-        val localRank = if (localDeliveredAt != null) 5 else rank(localStatus)
+        val localRank = rank(localStatus)
         val apiRank = rank(apiStatus)
         return when {
-            localRank >= apiRank && localDeliveredAt != null -> "delivered" to localDeliveredAt
             localRank >= apiRank && localStatus != null -> localStatus to null
             apiRank > localRank && apiStatus == "delivered" -> "delivered" to null
-            apiRank > localRank -> apiStatus!! to null
-            else -> (localStatus ?: apiStatus ?: "pending") to localDeliveredAt
+            apiRank > localRank && apiStatus != null -> apiStatus to null
+            else -> (localStatus ?: apiStatus ?: "pending") to null
         }
     }
 
