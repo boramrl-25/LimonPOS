@@ -266,7 +266,7 @@ class PaymentViewModel @Inject constructor(
                 // Fiş yazdırma arka planda; sadece hiçbir printer'da basılamadıysa uyarı (Retry/Dismiss)
                 viewModelScope.launch(Dispatchers.IO) {
                     val cashierPrinters = printerRepository.getAllPrinters().first()
-                        .filter { (it.printerType == "cashier" || it.printerType.equals("receipt", true)) && it.ipAddress.isNotBlank() }
+                        .filter { (it.printerType == "cashier" || it.printerType.equals("receipt", true)) && it.ipAddress.isNotBlank() && it.enabled }
                     val receiptFailedPrinters = mutableListOf<String>()
                     val drawerFailedPrinters = mutableListOf<String>()
                     for (printer in cashierPrinters) {
@@ -312,7 +312,7 @@ class PaymentViewModel @Inject constructor(
                     val failedReceiptPrinters = mutableListOf<String>()
                     withContext(Dispatchers.IO) {
                         val cashierPrinters = printerRepository.getAllPrinters().first()
-                            .filter { (it.printerType == "cashier" || it.printerType.equals("receipt", true)) && it.ipAddress.isNotBlank() }
+                            .filter { (it.printerType == "cashier" || it.printerType.equals("receipt", true)) && it.ipAddress.isNotBlank() && it.enabled }
                         cashierCount = cashierPrinters.size
                         val itemSize = printerPreferences.getReceiptItemSize()
                         val receiptSettings = receiptPreferences.getReceiptSettings()
@@ -401,7 +401,7 @@ class PaymentViewModel @Inject constructor(
                 val drawerFailedPrinters = mutableListOf<String>()
                 withContext(Dispatchers.IO) {
                     val cashierPrinters = printerRepository.getAllPrinters().first()
-                        .filter { (it.printerType == "cashier" || it.printerType.equals("receipt", true)) && it.ipAddress.isNotBlank() }
+                        .filter { (it.printerType == "cashier" || it.printerType.equals("receipt", true)) && it.ipAddress.isNotBlank() && it.enabled }
                     cashierCount = cashierPrinters.size
                     val itemSize = printerPreferences.getReceiptItemSize()
                     val receiptSettings = receiptPreferences.getReceiptSettings()
@@ -483,7 +483,7 @@ class PaymentViewModel @Inject constructor(
         viewModelScope.launch {
             val ow = _uiState.value.orderWithItems ?: return@launch
             val cashierPrinters = printerRepository.getAllPrinters().first()
-                .filter { (it.printerType == "cashier" || it.printerType.equals("receipt", true)) && it.ipAddress.isNotBlank() }
+                .filter { (it.printerType == "cashier" || it.printerType.equals("receipt", true)) && it.ipAddress.isNotBlank() && it.enabled }
             if (cashierPrinters.isEmpty()) {
                 _uiState.update { it.copy(message = "No cashier printer configured") }
                 return@launch
@@ -521,7 +521,7 @@ class PaymentViewModel @Inject constructor(
             var cashierCount = 0
             withContext(Dispatchers.IO) {
                 val cashierPrinters = printerRepository.getAllPrinters().first()
-                    .filter { (it.printerType == "cashier" || it.printerType.equals("receipt", true)) && it.ipAddress.isNotBlank() }
+                    .filter { (it.printerType == "cashier" || it.printerType.equals("receipt", true)) && it.ipAddress.isNotBlank() && it.enabled }
                 cashierCount = cashierPrinters.size
                 if (warning.isPartial) {
                     val receipt = printerService.buildPartialReceipt(

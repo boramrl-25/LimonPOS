@@ -34,7 +34,7 @@ class KitchenPrintHelper @Inject constructor(
             return KitchenPrintResult.Success
         }
         val allKitchenPrinters = printerRepository.getAllPrinters().first().filter { p ->
-            p.printerType == "kitchen" && p.ipAddress.isNotBlank()
+            p.printerType == "kitchen" && p.ipAddress.isNotBlank() && p.enabled
         }
         val pendingItemIds = pendingItems.map { it.id }
         if (allKitchenPrinters.isEmpty()) {
@@ -89,7 +89,7 @@ class KitchenPrintHelper @Inject constructor(
         val itemsToPrint = ow.items.filter { it.id in itemIds }
         if (itemsToPrint.isEmpty()) return KitchenPrintResult.Success
         val allKitchenPrinters = printerRepository.getAllPrinters().first().filter { p ->
-            p.printerType == "kitchen" && p.ipAddress.isNotBlank()
+            p.printerType == "kitchen" && p.ipAddress.isNotBlank() && p.enabled
         }
         if (allKitchenPrinters.isEmpty()) {
             return KitchenPrintResult.Failure(
@@ -140,7 +140,7 @@ class KitchenPrintHelper @Inject constructor(
         val itemsToPrint = ow.items.filter { it.id in itemIds }
         if (itemsToPrint.isEmpty()) return KitchenPrintResult.Success
         val allKitchenPrinters = printerRepository.getAllPrinters().first().filter { p ->
-            p.printerType == "kitchen" && p.ipAddress.isNotBlank()
+            p.printerType == "kitchen" && p.ipAddress.isNotBlank() && p.enabled
         }
         if (allKitchenPrinters.isEmpty()) {
             return KitchenPrintResult.Failure(

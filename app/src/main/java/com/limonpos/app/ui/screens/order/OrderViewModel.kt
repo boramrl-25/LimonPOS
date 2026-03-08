@@ -504,7 +504,7 @@ class OrderViewModel @Inject constructor(
                 return@launch
             }
             val printers = printerRepository.getAllPrinters().first().filter { p ->
-                p.printerType == "kitchen" && p.ipAddress.isNotBlank()
+                p.printerType == "kitchen" && p.ipAddress.isNotBlank() && p.enabled
             }
             if (printers.isEmpty()) {
                 printerWarningHolder.setWarning(PrinterWarningState("Table $tableNumber: No kitchen printer configured", orderId, tableId, pendingItemIds))
@@ -768,7 +768,7 @@ class OrderViewModel @Inject constructor(
                     userName = nameForPrinter
                 )
                 val kitchenPrinters = printerRepository.getAllPrinters().first()
-                    .filter { it.printerType == "kitchen" && it.ipAddress.isNotBlank() }
+                    .filter { it.printerType == "kitchen" && it.ipAddress.isNotBlank() && it.enabled }
                 for (printer in kitchenPrinters) {
                     printerService.sendToPrinter(printer.ipAddress, printer.port, voidSlip)
                 }

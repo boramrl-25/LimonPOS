@@ -39,10 +39,6 @@ fun KdsScreen(
     onSync: () -> Unit = {}
 ) {
     val kdsUrl by viewModel.kdsUrl.collectAsState()
-    val pendingVoidCount by viewModel.pendingVoidRequestCount.collectAsState(0)
-    var showVoidRequestPopup by remember { mutableStateOf(true) }
-
-    LaunchedEffect(Unit) { showVoidRequestPopup = true }
 
     val view = LocalView.current
     DisposableEffect(Unit) {
@@ -63,36 +59,6 @@ fun KdsScreen(
                 WindowCompat.setDecorFitsSystemWindows(window, true)
             }
         }
-    }
-
-    if (pendingVoidCount > 0 && showVoidRequestPopup) {
-        AlertDialog(
-            onDismissRequest = { showVoidRequestPopup = false },
-            title = { Text("Void Request", fontWeight = FontWeight.Bold, color = LimonText) },
-            text = {
-                Text(
-                    "You have $pendingVoidCount pending void request(s) waiting for approval.",
-                    color = LimonTextSecondary
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showVoidRequestPopup = false
-                        onNavigateToVoidApprovals()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = LimonPrimary)
-                ) {
-                    Text("Go to Void Approvals", color = Color.White)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showVoidRequestPopup = false }) {
-                    Text("Dismiss", color = LimonTextSecondary)
-                }
-            },
-            containerColor = LimonSurface
-        )
     }
 
     Scaffold(contentWindowInsets = WindowInsets(0, 0, 0, 0)) { padding ->

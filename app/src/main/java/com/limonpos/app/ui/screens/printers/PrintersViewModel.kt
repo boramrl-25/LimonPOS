@@ -89,4 +89,10 @@ class PrintersViewModel @Inject constructor(
             printerRepository.deletePrinter(printer)
         }
     }
+
+    fun setPrinterEnabled(printer: PrinterEntity, enabled: Boolean) {
+        viewModelScope.launch {
+            printerRepository.updatePrinter(printer.copy(enabled = enabled))
+        }
+    }
 }

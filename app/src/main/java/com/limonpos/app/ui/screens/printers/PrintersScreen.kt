@@ -110,7 +110,8 @@ fun PrintersScreen(
                     printer = printer,
                     onEdit = { viewModel.showEditPrinterDialog(printer) },
                     onTestPrint = { viewModel.testPrint(printer) },
-                    onDelete = { viewModel.deletePrinter(printer) }
+                    onDelete = { viewModel.deletePrinter(printer) },
+                    onEnabledChange = { viewModel.setPrinterEnabled(printer, it) }
                 )
             }
         }
@@ -144,7 +145,8 @@ private fun PrinterCard(
     printer: PrinterEntity,
     onEdit: () -> Unit,
     onTestPrint: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onEnabledChange: (Boolean) -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -158,10 +160,24 @@ private fun PrinterCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Default.Print, contentDescription = null, tint = LimonPrimary, modifier = Modifier.size(24.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Print, contentDescription = null, tint = LimonPrimary, modifier = Modifier.size(24.dp))
+                        Switch(
+                            checked = printer.enabled,
+                            onCheckedChange = onEnabledChange,
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = LimonPrimary,
+                                checkedTrackColor = LimonPrimary.copy(alpha = 0.5f)
+                            )
+                        )
+                    }
                     Spacer(Modifier.height(8.dp))
                     Text(printer.name, fontWeight = FontWeight.Bold, color = LimonText, fontSize = 18.sp)
-                    Text("Type: ${printer.printerType}", color = LimonTextSecondary, fontSize = 14.sp)
+                    Text("Type: ${printer.printerType} • ${if (printer.enabled) "On" else "Off"}", color = LimonTextSecondary, fontSize = 14.sp)
                     if (printer.printerType.equals("kitchen", ignoreCase = true)) {
                         Text("KDS: ${if (printer.kdsEnabled) "On" else "Off"}", color = LimonTextSecondary, fontSize = 14.sp)
                     }

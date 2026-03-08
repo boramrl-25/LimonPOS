@@ -15,5 +15,7 @@ data class PrinterEntity(
     val status: String = "offline",
     val isDefault: Boolean = false,
     val kdsEnabled: Boolean = true,
+    /** User-controlled ON/OFF. When false, printer is excluded from all print jobs. */
+    val enabled: Boolean = true,
     val syncStatus: String = "SYNCED"
 )

@@ -824,6 +824,7 @@ class ApiSyncRepository @Inject constructor(
                     else -> true
                 }
             }
+            val existingEnabled = printerDao.getAllPrinters().first().associate { it.id to it.enabled }
             printerDao.deleteAll()
             val entities = dtos.map { dto ->
                 PrinterEntity(
@@ -836,6 +837,7 @@ class ApiSyncRepository @Inject constructor(
                     status = dto.status,
                     isDefault = isBackup(dto.isBackup),
                     kdsEnabled = kdsOn(dto.kdsEnabled),
+                    enabled = existingEnabled[dto.id] ?: true,
                     syncStatus = "SYNCED"
                 )
             }

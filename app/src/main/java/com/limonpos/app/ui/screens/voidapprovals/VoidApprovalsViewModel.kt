@@ -125,7 +125,7 @@ class VoidApprovalsViewModel @Inject constructor(
                     userName = userName
                 )
                 val kitchenPrinters = printerRepository.getAllPrinters().first()
-                    .filter { it.printerType == "kitchen" && it.ipAddress.isNotBlank() }
+                    .filter { it.printerType == "kitchen" && it.ipAddress.isNotBlank() && it.enabled }
                 for (printer in kitchenPrinters) {
                     printerService.sendToPrinter(printer.ipAddress, printer.port, voidSlip)
                 }
