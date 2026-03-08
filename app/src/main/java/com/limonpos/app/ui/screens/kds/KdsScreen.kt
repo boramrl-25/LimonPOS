@@ -1,19 +1,12 @@
 package com.limonpos.app.ui.screens.kds
 
+import android.app.Activity
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.layout.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Restaurant
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -26,7 +19,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.limonpos.app.ui.theme.*
 
@@ -45,6 +43,27 @@ fun KdsScreen(
     var showVoidRequestPopup by remember { mutableStateOf(true) }
 
     LaunchedEffect(Unit) { showVoidRequestPopup = true }
+
+    val view = LocalView.current
+    DisposableEffect(Unit) {
+        val activity = view.context as? Activity
+        val window = activity?.window
+        if (window != null) {
+            WindowCompat.setDecorFitsSystemWindows(window, false)
+            val insetsController = WindowCompat.getInsetsController(window, view)
+            insetsController.hide(WindowInsetsCompat.Type.statusBars())
+            insetsController.hide(WindowInsetsCompat.Type.navigationBars())
+            insetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
+        onDispose {
+            if (window != null) {
+                val insetsController = WindowCompat.getInsetsController(window, view)
+                insetsController.show(WindowInsetsCompat.Type.statusBars())
+                insetsController.show(WindowInsetsCompat.Type.navigationBars())
+                WindowCompat.setDecorFitsSystemWindows(window, true)
+            }
+        }
+    }
 
     if (pendingVoidCount > 0 && showVoidRequestPopup) {
         AlertDialog(
@@ -76,63 +95,7 @@ fun KdsScreen(
         )
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(
-                            "Kitchen Display (KDS)",
-                            fontWeight = FontWeight.Bold,
-                            color = LimonText
-                        )
-                        Text(
-                            "Local-first • Works offline. Syncs to server when online.",
-                            fontSize = 11.sp,
-                            color = LimonTextSecondary
-                        )
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = LimonText)
-                    }
-                },
-                actions = {
-                    IconButton(onClick = onNavigateToFloorPlan) {
-                        Icon(Icons.Default.Home, contentDescription = "Floor Plan", tint = LimonPrimary)
-                    }
-                    var menuExpanded by remember { mutableStateOf(false) }
-                    Box {
-                        IconButton(onClick = { menuExpanded = true }) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "Menu", tint = LimonPrimary)
-                        }
-                        DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-                            DropdownMenuItem(
-                                text = { Text("Sync Data", color = LimonText) },
-                                onClick = { menuExpanded = false; onSync() },
-                                leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null, tint = LimonPrimary) }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Void Approvals", color = LimonText) },
-                                onClick = { menuExpanded = false; onNavigateToVoidApprovals() },
-                                leadingIcon = { Icon(Icons.Default.Check, contentDescription = null, tint = LimonPrimary) }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Settings", color = LimonText) },
-                                onClick = { menuExpanded = false; onNavigateToSettings() },
-                                leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null, tint = LimonPrimary) }
-                            )
-                        }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = LimonSurface,
-                    titleContentColor = LimonText
-                )
-            )
-        }
-    ) { padding ->
+    Scaffold(contentWindowInsets = WindowInsets(0, 0, 0, 0)) { padding ->
         if (kdsUrl != null) {
             AndroidView(
                 factory = { ctx ->

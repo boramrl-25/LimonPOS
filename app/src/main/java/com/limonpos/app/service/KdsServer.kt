@@ -432,7 +432,7 @@ class KdsServer @Inject constructor(
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Limon POS — Back Office</title>
+<title></title>
 <style>
 *{box-sizing:border-box}
 body{font-family:system-ui,-apple-system,sans-serif;margin:0;background:#000;color:#e2e8f0;min-height:100vh}
@@ -536,21 +536,13 @@ pre{background:#0a0a0a;padding:16px;border-radius:8px;overflow:auto;font-size:13
 </style>
 </head>
 <body>
-<header class="site-header">
-  <h1>Limon POS — Back Office</h1>
-  <div class="info">Device: <code id="url"></code> — Synced with API</div>
-</header>
-<nav class="site-nav">
-  <a href="#" class="nav-link active" data-page="kds">KDS</a>
-</nav>
 <main class="main">
   <div id="kds" class="panel active">
     <div class="kds-header">
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-        <div class="kds-title">🍳 Kitchen Display</div>
         <div class="kds-printer-btns">
           <span>Printer:</span>
-          <button type="button" class="kds-printer-btn active" id="kds-printer-all" data-id="all" onclick="selectKdsPrinter('all')">All</button>
+          <button type="button" class="kds-printer-btn active" id="kds-printer-all" data-id="all" onclick="toggleKdsPrinterBtn('all')">All</button>
           <div id="kds-printer-list" style="display:inline-flex;flex-wrap:wrap;gap:6px"></div>
         </div>
       </div>
@@ -568,7 +560,7 @@ pre{background:#0a0a0a;padding:16px;border-radius:8px;overflow:auto;font-size:13
     <div id="late-modal" class="modal-overlay" style="display:none">
       <div class="modal-box late">
         <h3>Delayed (Late)</h3>
-        <p style="color:#94a3b8;margin:0 0 12px">Items not prepared for 10 minutes or not removed from KDS:</p>
+        <p style="color:#94a3b8;margin:0 0 12px">Items not prepared for 10 minutes or not removed from display:</p>
         <ul id="late-list"></ul>
         <button class="btn-close" onclick="closeLateModal()">OK</button>
       </div>
@@ -588,11 +580,25 @@ pre{background:#0a0a0a;padding:16px;border-radius:8px;overflow:auto;font-size:13
 </main>
 <script>
 const base = location.origin;
-document.getElementById('url').textContent = base;
 let currentOrderId = null, currentTableNumber = null, products = [], tables = [], waiters = [], orderItems = [];
 var lastSeenItemIds = {};
 var kdsKitchenPrinters = [];
 var kdsSelectedPrinterIds = null;
+var KDS_STORAGE_KEY = 'kds_selected_printers';
+function loadStoredPrinterSelection() {
+  try {
+    var s = localStorage.getItem(KDS_STORAGE_KEY);
+    if (!s || s === 'null') return null;
+    var arr = JSON.parse(s);
+    return Array.isArray(arr) && arr.length > 0 ? arr : null;
+  } catch (e) { return null; }
+}
+function savePrinterSelection() {
+  try {
+    if (kdsSelectedPrinterIds == null || kdsSelectedPrinterIds.length === 0) localStorage.removeItem(KDS_STORAGE_KEY);
+    else localStorage.setItem(KDS_STORAGE_KEY, JSON.stringify(kdsSelectedPrinterIds));
+  } catch (e) {}
+}
 function escapeHtml(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 function formatProductNameLines(name) {
   if (!name) return ''; var words = name.trim().split(/\s+/);
@@ -651,27 +657,55 @@ function isLate(it) {
 }
 function closeLateModal() { document.getElementById('late-modal').style.display = 'none'; }
 function loadKdsPrinters() {
+  kdsSelectedPrinterIds = loadStoredPrinterSelection();
   fetch(base + '/printers').then(function(r) { return r.json(); }).then(function(list) {
     kdsKitchenPrinters = (list || []).filter(function(p) { return (p.printerType || '').toLowerCase() === 'kitchen' && p.kdsEnabled !== false; });
     var container = document.getElementById('kds-printer-list');
     if (!container) return;
+    var selected = kdsSelectedPrinterIds || [];
+    var allActive = selected.length === 0;
+    if (document.getElementById('kds-printer-all')) document.getElementById('kds-printer-all').classList.toggle('active', allActive);
     container.innerHTML = kdsKitchenPrinters.map(function(p) {
-      return '<button type="button" class="kds-printer-btn kds-printer-id" data-id="' + (p.id || '').replace(/"/g, '&quot;') + '" onclick="selectKdsPrinter(\'' + (p.id || '').replace(/'/g, "\\\\'") + '\')">' + (p.name || p.id) + '</button>';
+      var pid = p.id || '';
+      var isActive = !allActive && selected.indexOf(pid) >= 0;
+      return '<button type="button" class="kds-printer-btn kds-printer-id' + (isActive ? ' active' : '') + '" data-id="' + pid.replace(/"/g, '&quot;') + '" onclick="toggleKdsPrinterBtn(\'' + pid.replace(/'/g, "\\\\'") + '\')">' + (p.name || p.id) + '</button>';
     }).join('');
   });
 }
-function selectKdsPrinter(id) {
-  document.querySelectorAll('.kds-printer-btn').forEach(function(b) { b.classList.remove('active'); });
-  var btn = id === 'all' ? document.getElementById('kds-printer-all') : document.querySelector('.kds-printer-id[data-id="' + id.replace(/"/g, '&quot;') + '"]');
-  if (btn) btn.classList.add('active');
-  kdsSelectedPrinterIds = (id === 'all' || !id) ? null : (id ? [id] : null);
+function toggleKdsPrinterBtn(id) {
+  if (id === 'all') {
+    var allBtn = document.getElementById('kds-printer-all');
+    if (allBtn && allBtn.classList.contains('active')) return;
+    document.querySelectorAll('.kds-printer-btn').forEach(function(b) { b.classList.remove('active'); });
+    if (allBtn) allBtn.classList.add('active');
+    kdsSelectedPrinterIds = null;
+    savePrinterSelection();
+  } else {
+    var allBtn = document.getElementById('kds-printer-all');
+    if (allBtn) allBtn.classList.remove('active');
+    var btn = document.querySelector('.kds-printer-id[data-id="' + id.replace(/"/g, '&quot;') + '"]');
+    if (!btn) return;
+    btn.classList.toggle('active');
+    var activeIds = [];
+    document.querySelectorAll('.kds-printer-id.active').forEach(function(b) {
+      var did = b.getAttribute('data-id');
+      if (did) activeIds.push(did);
+    });
+    kdsSelectedPrinterIds = activeIds.length === 0 ? null : activeIds;
+    if (activeIds.length === 0 && allBtn) allBtn.classList.add('active');
+    savePrinterSelection();
+  }
   loadKitchen();
 }
 function updateKdsPrinterSelection() {
-  var activeBtn = document.querySelector('.kds-printer-btn.active');
-  if (!activeBtn) { kdsSelectedPrinterIds = null; return; }
-  var id = activeBtn.getAttribute('data-id');
-  kdsSelectedPrinterIds = (id === 'all' || !id) ? null : (id ? [id] : null);
+  var allBtn = document.getElementById('kds-printer-all');
+  if (allBtn && allBtn.classList.contains('active')) { kdsSelectedPrinterIds = null; return; }
+  var activeIds = [];
+  document.querySelectorAll('.kds-printer-id.active').forEach(function(b) {
+    var id = b.getAttribute('data-id');
+    if (id) activeIds.push(id);
+  });
+  kdsSelectedPrinterIds = activeIds.length === 0 ? null : activeIds;
 }
 async function loadKitchen() {
   try {
@@ -959,7 +993,7 @@ body{font-family:system-ui,-apple-system,sans-serif;margin:0;background:#0a0a0a;
 <header class="fp-header">
   <h1>Floor Plan — Synced with App</h1>
   <div class="info">Device: <code id="fp-url"></code> — Auto-refresh every 3s</div>
-  <a href="/" style="color:#f59e0b;text-decoration:none;margin-right:12px">← Back to KDS</a>
+  <a href="/" style="color:#f59e0b;text-decoration:none;margin-right:12px">← Back to Kitchen</a>
   <button class="fp-refresh" onclick="loadFloorPlan()">Refresh</button>
 </header>
 <div class="fp-legend">

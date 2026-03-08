@@ -6,6 +6,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.*
@@ -24,6 +25,8 @@ import kotlinx.coroutines.delay
 @Composable
 fun ServerSettingsScreen(
     viewModel: ServerSettingsViewModel = hiltViewModel(),
+    isSetupUser: Boolean = false,
+    isMaintenanceAccess: Boolean = false,
     onBack: () -> Unit
 ) {
     val baseUrl by viewModel.baseUrl.collectAsState()
@@ -54,7 +57,11 @@ fun ServerSettingsScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = LimonText)
+                        Icon(
+                            if (isSetupUser && !isMaintenanceAccess) Icons.Default.Logout else Icons.Default.ArrowBack,
+                            contentDescription = if (isSetupUser && !isMaintenanceAccess) "Logout" else "Back",
+                            tint = LimonText
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

@@ -20,6 +20,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
             android:showWhenLocked="true"
             android:turnScreenOn="true"
             android:theme="@style/Theme.LimonPOS">

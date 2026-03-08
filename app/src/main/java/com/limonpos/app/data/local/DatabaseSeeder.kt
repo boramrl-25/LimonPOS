@@ -33,15 +33,10 @@ class DatabaseSeeder @Inject constructor(
     }
 
     private suspend fun seedUsers() {
-        // PINs must match backend (data.json) for sync to work; backend accepts user.pin as token
-        val users = listOf(
-            UserEntity("u1", "Admin", "1234", "admin", true, "[\"post_void\",\"pre_void\"]", true),
-            UserEntity("u_87b6a7e4", "Bora Meral", "0072", "admin", true, "[]", true),
-            UserEntity("u_62e15c03", "Muhlishayal", "9611", "manager", true, "[]", false),
-            UserEntity("u_5a2682f4", "Latif Yilmaz", "2929", "cashier", true, "[]", true),
-            UserEntity("u_ced88cd2", "Khaled Bar", "3425", "waiter", true, "[\"floor_plan\",\"orders\"]", false)
-        )
-        userDao.insertUsers(users)
+        // Varsayılan kullanıcı yok. 1234/2222 sadece Server URL için (users tablosunda değil).
+        // Kullanıcılar backoffice üzerinden eklenir, sync ile gelir.
+        val users = emptyList<UserEntity>()
+        if (users.isNotEmpty()) userDao.insertUsers(users)
     }
 
     private suspend fun seedTables() {

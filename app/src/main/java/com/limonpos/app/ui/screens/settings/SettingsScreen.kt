@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.*
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material.icons.Icons
@@ -50,6 +51,7 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val userRole by viewModel.userRole.collectAsState(null)
+    val apiBaseUrl by viewModel.apiBaseUrl.collectAsState(initial = "")
     val isManager by viewModel.isManager.collectAsState(false)
     val isKdsOnly = userRole == "kds"
     val message by viewModel.message.collectAsState()
@@ -68,7 +70,19 @@ fun SettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (isKdsOnly) "KDS" else "Settings", fontWeight = FontWeight.Bold, color = LimonText) },
+                title = {
+                    Column {
+                        Text(if (isKdsOnly) "Kitchen" else "Settings", fontWeight = FontWeight.Bold, color = LimonText)
+                        if (apiBaseUrl.isNotEmpty()) {
+                            Text(
+                                "Device: $apiBaseUrl — Synced with API",
+                                color = LimonTextSecondary,
+                                fontSize = 11.sp,
+                                modifier = Modifier.padding(top = 2.dp)
+                            )
+                        }
+                    }
+                },
                 navigationIcon = {
                     if (!isKdsOnly) {
                         IconButton(onClick = onBack) {

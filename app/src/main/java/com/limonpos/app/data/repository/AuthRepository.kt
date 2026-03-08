@@ -35,6 +35,10 @@ class AuthRepository @Inject constructor(
     fun isLoggedIn(): Flow<Boolean> = sessionManager.isLoggedIn
 
     suspend fun login(pin: String): Result<UserEntity> {
+        // 1234/2222 maintenance PIN - asla session açma, users tablosu kullanma
+        if (pin == "1234" || pin == "2222") {
+            return Result.failure(Exception("Use Server URL to configure API"))
+        }
         // Önce API ile dene — Web'de On olan kullanıcılar sync beklemeden giriş yapabilsin
         try {
             val response = apiService.login(LoginRequest(pin = pin))

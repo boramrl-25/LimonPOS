@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3002;
 app.use(cors());
 app.use(express.json());
 
-const DEFAULT_ADMIN = { id: "u1", name: "Admin", pin: "1234", role: "admin", active: 1, permissions: "[\"post_void\",\"pre_void\"]", cash_drawer_permission: 1 };
+const DEFAULT_SETUP = { id: "u1", name: "Setup", pin: "2222", role: "setup", active: 1, permissions: "[]", cash_drawer_permission: 0 };
 
 /** Bugünün başlangıç timestamp'i (iş saatleri timezone'una göre). settings.timezone_offset_minutes kullanılır (örn. 180 = GMT+3). */
 function getTodayStartTimestamp() {
@@ -192,19 +192,64 @@ async function ensureData() {
   if (!Array.isArray(db.data.printers)) db.data.printers = [];
   if (!Array.isArray(db.data.modifier_groups)) db.data.modifier_groups = [];
   if (needWrite) await db.write();
-  // Migration: ensure admin with PIN 1234 exists (for web login)
+  // Migration: ensure setup user with PIN 2222 exists
   if (!db.data.migrations.ensureAdminPin1234) {
-    const hasPin1234 = (db.data.users || []).some((u) => String(u.pin) === "1234");
-    if (!hasPin1234) {
+    const hasSetupPin = (db.data.users || []).some((u) => String(u.pin) === "2222");
+    if (!hasSetupPin) {
       const existing = db.data.users.find((u) => u.id === "u1");
       if (existing) {
-        existing.pin = "1234";
+        existing.pin = "2222";
+        existing.name = "Setup";
+        existing.role = "setup";
+        existing.permissions = "[]";
+        existing.cash_drawer_permission = 0;
       } else {
-        db.data.users = [DEFAULT_ADMIN, ...(db.data.users || [])];
+        db.data.users = [DEFAULT_SETUP, ...(db.data.users || [])];
       }
       await db.write();
     }
     db.data.migrations.ensureAdminPin1234 = true;
+    await db.write();
+  }
+  // Migration: Replace 1234 with 2222 as setup PIN
+  if (!db.data.migrations.replace1234With2222) {
+    const user1234 = (db.data.users || []).find((u) => String(u.pin) === "1234");
+    if (user1234) {
+      user1234.pin = "2222";
+      user1234.role = "setup";
+      user1234.name = "Setup";
+      user1234.permissions = "[]";
+      user1234.cash_drawer_permission = 0;
+      await db.write();
+    }
+    const has2222 = (db.data.users || []).some((u) => String(u.pin) === "2222");
+    if (!has2222) {
+      db.data.users = [DEFAULT_SETUP, ...(db.data.users || [])];
+      await db.write();
+    }
+    db.data.migrations.replace1234With2222 = true;
+    await db.write();
+  }
+  // Migration: PIN 2222 must be setup role only (API URL)
+  if (!db.data.migrations.pin2222SetupOnly) {
+    const setupUser = (db.data.users || []).find((u) => String(u.pin) === "2222");
+    if (setupUser) {
+      setupUser.role = "setup";
+      setupUser.name = "Setup";
+      setupUser.permissions = "[]";
+      setupUser.cash_drawer_permission = 0;
+      await db.write();
+    }
+    db.data.migrations.pin2222SetupOnly = true;
+    await db.write();
+  }
+  // Migration: Remove 1234/2222 from users — maintenance PIN only (Server URL), not login
+  if (!db.data.migrations.removeMaintenancePinsFromUsers) {
+    db.data.users = (db.data.users || []).filter((u) => {
+      const p = String(u?.pin ?? "");
+      return p !== "1234" && p !== "2222";
+    });
+    db.data.migrations.removeMaintenancePinsFromUsers = true;
     await db.write();
   }
   // Migration: ensure default category has show_till and structure (one-time fix for old DBs)
@@ -395,6 +440,7 @@ app.get("/api/devices", authMiddleware, async (req, res) => {
 
 // Roles and permissions list (for Web user management – assign to users; App reads same keys from user.permissions)
 const ROLES = [
+  { id: "setup", label: "Setup", labelTr: "Kurulum (sadece API URL)" },
   { id: "admin", label: "Admin", labelTr: "Admin" },
   { id: "manager", label: "Manager", labelTr: "Müdür" },
   { id: "supervisor", label: "Supervisor", labelTr: "Süpervizör" },

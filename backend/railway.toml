@@ -1,0 +1,4 @@
+# API only - no web/backoffice. Used when Root Directory = backend.
+
+[deploy]
+startCommand = "node server.js"

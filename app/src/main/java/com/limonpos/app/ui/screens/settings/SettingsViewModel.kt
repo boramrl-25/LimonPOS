@@ -3,6 +3,7 @@ package com.limonpos.app.ui.screens.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.limonpos.app.data.repository.ApiSyncRepository
+import com.limonpos.app.data.prefs.ServerPreferences
 import com.limonpos.app.data.repository.AuthRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,7 +18,8 @@ import javax.inject.Inject
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val authRepository: AuthRepository,
-    private val apiSyncRepository: ApiSyncRepository
+    private val apiSyncRepository: ApiSyncRepository,
+    private val serverPreferences: ServerPreferences
 ) : ViewModel() {
 
     val userRole: StateFlow<String?> = authRepository.getCurrentUserRole()
@@ -26,6 +28,9 @@ class SettingsViewModel @Inject constructor(
     val isManager: StateFlow<Boolean> = authRepository.getCurrentUserRole()
         .map { it in listOf("manager", "admin", "supervisor") }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    val apiBaseUrl: StateFlow<String> = serverPreferences.baseUrl
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
 
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()

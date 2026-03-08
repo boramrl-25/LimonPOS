@@ -14,6 +14,7 @@ import com.limonpos.app.data.repository.OverdueWarningHolder
 import com.limonpos.app.data.repository.ReservationReminderHolder
 import com.limonpos.app.data.repository.UpcomingReservationAlert
 import com.limonpos.app.data.repository.TableRepository
+import com.limonpos.app.data.prefs.ServerPreferences
 import com.limonpos.app.data.repository.OverdueUndelivered
 import com.limonpos.app.data.repository.VoidRequestRepository
 import com.limonpos.app.data.local.dao.ClosedBillAccessRequestDao
@@ -73,7 +74,8 @@ class FloorPlanViewModel @Inject constructor(
     private val voidRequestRepository: VoidRequestRepository,
     private val closedBillAccessRequestDao: ClosedBillAccessRequestDao,
     private val overdueWarningHolder: OverdueWarningHolder,
-    private val reservationReminderHolder: ReservationReminderHolder
+    private val reservationReminderHolder: ReservationReminderHolder,
+    private val serverPreferences: ServerPreferences
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(FloorPlanUiState())
@@ -98,6 +100,9 @@ class FloorPlanViewModel @Inject constructor(
     val floorPlanSections: StateFlow<Map<String, List<Int>>> = apiSyncRepository.getFloorPlanSections()
         .map { if (it.isEmpty()) DEFAULT_FLOOR_PLAN_SECTIONS else it }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DEFAULT_FLOOR_PLAN_SECTIONS)
+
+    val apiBaseUrl: StateFlow<String> = serverPreferences.baseUrl
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
 
     val overdueWarning: StateFlow<List<OverdueUndelivered>?> = overdueWarningHolder.overdue
 

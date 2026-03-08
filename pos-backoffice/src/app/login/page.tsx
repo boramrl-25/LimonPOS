@@ -23,7 +23,7 @@ function LoginForm() {
       if (msg.includes("fetch") || msg.includes("Failed") || msg.includes("timeout") || msg.includes("Network"))
         setError("Cannot reach API. Check https://api.the-limon.com/api is up and CORS allows this site.");
       else
-        setError("Invalid PIN. Default admin: 1234");
+        setError("Invalid PIN. Setup: 2222");
     }
   }
 

@@ -17,18 +17,75 @@ import com.limonpos.app.ui.theme.*
 fun LoginScreen(
     viewModel: LoginViewModel = hiltViewModel(),
     onLoginSuccess: () -> Unit,
+    onServerSettingsAccessGranted: () -> Unit = {},
     loginScreenKey: Int = 0
 ) {
     val pin by viewModel.pin.collectAsState()
     val error by viewModel.error.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
-
+    val showMaintenanceDialog by viewModel.showMaintenanceDialog.collectAsState()
+    val maintenancePin by viewModel.maintenancePin.collectAsState()
+    val maintenanceError by viewModel.maintenanceError.collectAsState()
+    val maintenanceAccessGranted by viewModel.maintenanceAccessGranted.collectAsState()
     val loginSuccess by viewModel.loginSuccess.collectAsState()
+
     LaunchedEffect(loginSuccess) {
         if (loginSuccess) onLoginSuccess()
     }
+    LaunchedEffect(maintenanceAccessGranted) {
+        if (maintenanceAccessGranted) {
+            onServerSettingsAccessGranted()
+            viewModel.consumeMaintenanceAccess()
+        }
+    }
     LaunchedEffect(loginScreenKey) {
         viewModel.clearPin()
+    }
+
+    if (showMaintenanceDialog) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissMaintenanceDialog() },
+            title = { Text("Server URL — Kurulum", color = LimonText) },
+            text = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        "Kurulum PIN'i girin (sadece Server URL ekranı açılır)",
+                        color = LimonTextSecondary,
+                        fontSize = 14.sp,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+                    Text(
+                        text = "●".repeat(maintenancePin.length).padEnd(4, '_').take(4),
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = LimonPrimary,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    maintenanceError?.let { err ->
+                        Text(
+                            text = err,
+                            color = LimonError,
+                            fontSize = 13.sp,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                    }
+                    Numpad(
+                        onDigit = { viewModel.addMaintenanceDigit(it) },
+                        onClear = { viewModel.dismissMaintenanceDialog() },
+                        onBackspace = { viewModel.backspaceMaintenance() },
+                        onEnter = { viewModel.validateMaintenancePin() },
+                        enabled = true
+                    )
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { viewModel.dismissMaintenanceDialog() }) {
+                    Text("İptal", color = LimonTextSecondary)
+                }
+            },
+            containerColor = LimonSurface
+        )
     }
 
     Column(
@@ -81,6 +138,11 @@ fun LoginScreen(
             onEnter = { viewModel.login() },
             enabled = !isLoading
         )
+
+        Spacer(modifier = Modifier.height(24.dp))
+        TextButton(onClick = { viewModel.openMaintenanceDialog() }) {
+            Text("Server URL (Kurulum)", color = LimonTextSecondary, fontSize = 14.sp)
+        }
     }
 }
 

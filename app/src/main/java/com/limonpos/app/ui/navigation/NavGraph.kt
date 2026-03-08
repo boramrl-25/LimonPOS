@@ -106,13 +106,22 @@ fun NavGraph(
     val onSync: () -> Unit = { scope.launch { if (apiSyncRepository.isOnline()) apiSyncRepository.syncFromApi() } }
     val isLoggedIn by authRepository.isLoggedIn().collectAsState(initial = false)
     val loginScreenKey by authRepository.loginScreenKey.collectAsState(initial = 0)
+    var showMaintenanceServerSettings by remember { mutableStateOf(false) }
 
     if (!isLoggedIn) {
-        key(loginScreenKey) {
-            LoginScreen(
-                onLoginSuccess = { /* isLoggedIn flow will trigger recomposition */ },
-                loginScreenKey = loginScreenKey
+        if (showMaintenanceServerSettings) {
+            ServerSettingsScreen(
+                isMaintenanceAccess = true,
+                onBack = { showMaintenanceServerSettings = false }
             )
+        } else {
+            key(loginScreenKey) {
+                LoginScreen(
+                    onLoginSuccess = { /* isLoggedIn flow will trigger recomposition */ },
+                    onServerSettingsAccessGranted = { showMaintenanceServerSettings = true },
+                    loginScreenKey = loginScreenKey
+                )
+            }
         }
     } else {
         val context = LocalContext.current
@@ -152,7 +161,10 @@ fun NavGraph(
             composable(Routes.GATE) {
                 LaunchedEffect(Unit) {
                     val user = authRepository.getCurrentUser()
-                    val dest = if (user?.role == "kds") Routes.SETTINGS else Routes.FLOOR_PLAN
+                    val dest = when (user?.role) {
+                        "kds" -> Routes.SETTINGS
+                        else -> Routes.FLOOR_PLAN
+                    }
                     navController.navigate(dest) {
                         popUpTo(Routes.GATE) { inclusive = true }
                         launchSingleTop = true
@@ -347,7 +359,20 @@ fun NavGraph(
                 )
             }
             composable(Routes.SERVER_SETTINGS) {
-                ServerSettingsScreen(onBack = { navController.popBackStack() })
+                var userRole by remember { mutableStateOf<String?>(null) }
+                LaunchedEffect(Unit) {
+                    userRole = authRepository.getCurrentUser()?.role
+                }
+                ServerSettingsScreen(
+                    isSetupUser = userRole == "setup",
+                    onBack = {
+                        if (userRole == "setup") {
+                            scope.launch { authRepository.logout() }
+                        } else {
+                            navController.popBackStack()
+                        }
+                    }
+                )
             }
             composable(Routes.SETTINGS) {
                 SettingsScreen(

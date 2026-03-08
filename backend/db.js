@@ -23,7 +23,7 @@ const DATA_FILE = join(DATA_DIR, "data.json");
 const BACKUP_FILE = join(DATA_DIR, "data.json.backup");
 
 const defaultData = {
-  users: [{ id: "u1", name: "Admin", pin: "1234", role: "admin", active: 1, permissions: "[\"post_void\",\"pre_void\"]", cash_drawer_permission: 1 }],
+  users: [],
   categories: [{ id: "cat1", name: "İçecekler", color: "#84CC16", sort_order: 0, active: 1 }],
   products: [],
   printers: [],
