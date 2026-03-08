@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LimonPOS User Guide</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 800px; margin: 0 auto; padding: 24px; line-height: 1.6; color: #333; }
+        h1 { font-size: 28px; color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 8px; }
+        h2 { font-size: 20px; color: #2c3e50; margin-top: 28px; }
+        h3 { font-size: 16px; color: #34495e; margin-top: 20px; }
+        table { border-collapse: collapse; width: 100%; margin: 16px 0; }
+        th, td { border: 1px solid #ddd; padding: 10px 12px; text-align: left; }
+        th { background: #3498db; color: white; }
+        tr:nth-child(even) { background: #f9f9f9; }
+        ul, ol { margin: 8px 0; }
+        li { margin: 4px 0; }
+        hr { border: none; border-top: 1px solid #ddd; margin: 24px 0; }
+        .meta { color: #7f8c8d; font-size: 14px; margin-bottom: 20px; }
+        @media print { body { padding: 16px; } }
+    </style>
+</head>
+<body>
+<h1>LimonPOS User Guide</h1>
+<p class="meta">Complete Guide for Taking Orders, Payments, Discounts, and Managing Items | Version 1.2 | English | March 2026</p>
+
+<h2>Table of Contents</h2>
+<ol>
+    <li>Getting Started</li>
+    <li>Taking Orders</li>
+    <li>Removing Products</li>
+    <li>Void Requests (Items Sent to Kitchen)</li>
+    <li>Refunds (Recalled Orders)</li>
+    <li>Discount Requests</li>
+    <li>Collecting Payment</li>
+    <li>Other Actions</li>
+</ol>
+<hr>
+
+<h2>1. Getting Started</h2>
+
+<h3>Login</h3>
+<ol>
+    <li>Open the LimonPOS app.</li>
+    <li>Enter your 4-digit PIN using the on-screen numpad or a connected keyboard.</li>
+    <li>Use <strong>C</strong> to clear your PIN, <strong>⌫</strong> (backspace) to delete the last digit.</li>
+    <li>Tap the PIN display or press <strong>Enter</strong> to log in.</li>
+</ol>
+
+<h3>Main Flow</h3>
+<ol>
+    <li><strong>Floor Plan</strong> – View all tables. Tap a table to open or create an order.</li>
+    <li><strong>Order Screen</strong> – Add products, manage cart, send to kitchen, go to payment.</li>
+    <li><strong>Payment Screen</strong> – Apply discounts, collect payment, close the bill.</li>
+</ol>
+<hr>
+
+<h2>2. Taking Orders</h2>
+
+<h3>Step 1: Open a Table</h3>
+<ul>
+    <li>On the <strong>Floor Plan</strong>, tap a <strong>free</strong> table to start a new order.</li>
+    <li>Tap an <strong>occupied</strong> table to view or edit the current order.</li>
+</ul>
+
+<h3>Step 2: Add Products</h3>
+<ul>
+    <li>Tap a <strong>product</strong> on the order screen to add it to the cart.</li>
+    <li>Products may be:
+        <ul>
+            <li><strong>Simple</strong> – Added immediately.</li>
+            <li><strong>With modifiers</strong> – A modifier dialog opens. Select required options (e.g. size, toppings), then tap <strong>Add</strong>.</li>
+            <li><strong>With notes</strong> – A notes dialog opens. Add special instructions if needed, then tap <strong>Add</strong>.</li>
+        </ul>
+    </li>
+</ul>
+
+<h3>Step 3: Modifiers</h3>
+<ul>
+    <li>Each modifier group has minimum and maximum selections (e.g. 1–2).</li>
+    <li>Select required options (checkboxes).</li>
+    <li>For paid modifiers, adjust quantity with <strong>+</strong> / <strong>−</strong> or type a number.</li>
+    <li>Tap <strong>Add</strong> when selections are valid.</li>
+</ul>
+
+<h3>Step 4: Edit Item Note or Quantity</h3>
+<ul>
+    <li>In the <strong>Cart</strong>, tap an item.</li>
+    <li>Update <strong>Note</strong> or <strong>Quantity</strong>.</li>
+    <li>Tap <strong>Save</strong> to confirm, or <strong>Remove Note</strong> to clear the note.</li>
+</ul>
+
+<h3>Step 5: Send to Kitchen</h3>
+<ul>
+    <li>Tap <strong>Send to Kitchen</strong> in the cart to send pending items to the kitchen display (KDS).</li>
+    <li>Items must be sent to kitchen before payment is enabled.</li>
+    <li>If a printer warning appears, either retry printing or dismiss it to continue.</li>
+</ul>
+
+<h3>Step 6: Mark Items as Delivered</h3>
+<ul>
+    <li>For items sent to kitchen but not yet marked delivered, tap the item in the cart to mark it as delivered.</li>
+</ul>
+<hr>
+
+<h2>3. Removing Products</h2>
+
+<h3>When Can You Remove?</h3>
+<p>You can <strong>remove</strong> an item only if it has <strong>not</strong> been sent to the kitchen (status: <strong>pending</strong>).</p>
+
+<h3>How to Remove</h3>
+<ol>
+    <li>Open the <strong>Cart</strong> (cart icon or summary at bottom).</li>
+    <li>Find the item under <strong>New items</strong>.</li>
+    <li>Tap the <strong>delete / remove</strong> icon (trash) next to the item.</li>
+    <li>The item is removed immediately. No approval is needed.</li>
+</ol>
+
+<h3>If the Item Was Sent to Kitchen</h3>
+<ul>
+    <li>Use <strong>Void</strong> instead (see Section 4).</li>
+    <li>Or use <strong>Refund</strong> if the bill was already closed and recalled (see Section 5).</li>
+</ul>
+<hr>
+
+<h2>4. Void Requests (Items Sent to Kitchen)</h2>
+
+<h3>When to Use Void</h3>
+<p>Use <strong>Void</strong> when an item has been <strong>sent to the kitchen</strong> but must be cancelled (e.g. wrong order, customer change).</p>
+
+<h3>How to Void</h3>
+<ol>
+    <li>Open the <strong>Cart</strong>.</li>
+    <li>Find the item under <strong>Sent to kitchen</strong>.</li>
+    <li>Tap the <strong>Void</strong> button for that item.</li>
+</ol>
+
+<h3>Two Options to Void</h3>
+<p><strong>Option 1: Void with PIN (fastest)</strong></p>
+<ul>
+    <li>Enter the 4-digit PIN of an <strong>admin</strong> or <strong>manager</strong> (or user with post_void permission).</li>
+    <li>Tap <strong>Void with PIN</strong>. The item is voided immediately.</li>
+</ul>
+
+<p><strong>Option 2: Request Approval</strong></p>
+<ul>
+    <li>Tap <strong>Request Approval</strong>.</li>
+    <li>Both the <strong>Supervisor</strong> (on web) and <strong>KDS</strong> (kitchen display) must approve the void.</li>
+    <li>After both approvals, sync the app to update the order.</li>
+</ul>
+
+<p><strong>Important:</strong> Once you enter a valid manager/admin PIN, you can void several items without entering the PIN again in the same session.</p>
+<hr>
+
+<h2>5. Refunds (Recalled Orders)</h2>
+
+<h3>When to Use Refund</h3>
+<p>Use <strong>Refund</strong> when the bill was <strong>already closed</strong> and the order was <strong>recalled</strong> from Closed Bills (e.g. customer returned, wrong payment).</p>
+
+<h3>Refund Single Item</h3>
+<ol>
+    <li>Open the recalled order.</li>
+    <li>Open the <strong>Cart</strong>.</li>
+    <li>Find the item and tap the <strong>Refund</strong> button.</li>
+    <li>Confirm <strong>Refund</strong>. The item is removed and recorded as a refund.</li>
+</ol>
+
+<h3>Refund Full Bill</h3>
+<ol>
+    <li>Open the recalled order.</li>
+    <li>Open the <strong>Cart</strong>.</li>
+    <li>Tap <strong>Refund Full Bill</strong>.</li>
+    <li>Confirm – all items will be removed and the table closed.</li>
+</ol>
+<hr>
+
+<h2>6. Discount Requests</h2>
+
+<p>Discounts require approval from an authorized user on the web backoffice.</p>
+
+<h3>How to Request a Discount</h3>
+<ol>
+    <li>Go to the <strong>Payment</strong> screen.</li>
+    <li>In the <strong>Discount</strong> section, tap <strong>Send discount request</strong>.</li>
+    <li>In the dialog:
+        <ul>
+            <li><strong>Requested discount %</strong> (optional) – e.g. 10 for 10%.</li>
+            <li><strong>Requested discount amount</strong> (optional) – e.g. 5 for 5 AED.</li>
+            <li><strong>Notes</strong> (optional) – e.g. "Loyalty discount".</li>
+        </ul>
+    </li>
+    <li>Enter at least one of: percentage or amount.</li>
+    <li>Tap <strong>Send</strong>.</li>
+</ol>
+
+<h3>After Sending the Request</h3>
+<ul>
+    <li>An authorized user approves the discount on the web backoffice.</li>
+    <li>On the payment screen, tap <strong>Sync / Update</strong> to refresh the order.</li>
+    <li>Once approved, the total updates and you can collect payment.</li>
+</ul>
+<hr>
+
+<h2>7. Collecting Payment</h2>
+
+<h3>Step 1: Open Payment Screen</h3>
+<ul>
+    <li>From the order screen, open the <strong>Cart</strong> and tap <strong>Payment</strong>.</li>
+    <li>Items must be <strong>sent to kitchen</strong> before payment can be taken.</li>
+</ul>
+
+<h3>Step 2: Choose Payment Mode</h3>
+<ul>
+    <li><strong>CASH</strong> – Single cash payment.</li>
+    <li><strong>CARD</strong> – Single card payment.</li>
+    <li><strong>SPLIT</strong> – Multiple payment methods (e.g. part cash, part card).</li>
+</ul>
+
+<h3>Step 3: Enter Amount and Complete</h3>
+<p><strong>For CASH or CARD (single payment):</strong></p>
+<ol>
+    <li>Enter the <strong>amount received</strong>.</li>
+    <li>The app shows <strong>Change</strong> if the amount exceeds the total.</li>
+    <li>Tap <strong>Complete Payment</strong>.</li>
+</ol>
+
+<p><strong>For SPLIT payment:</strong></p>
+<ol>
+    <li>Enter amount and select method for the first split (e.g. Cash 50 AED).</li>
+    <li>Tap <strong>Pay</strong> for that split.</li>
+    <li>Add more splits as needed.</li>
+    <li>When <strong>Balance</strong> is 0, all payments are complete.</li>
+</ol>
+
+<h3>Other Actions on Payment Screen</h3>
+<ul>
+    <li><strong>Print Bill</strong> – Print a bill before or during payment.</li>
+    <li><strong>Fix Overpayment</strong> – If the total received is more than the bill, tap this to remove excess payments.</li>
+    <li><strong>Clear previous payments</strong> (recalled order) – If you need to change the payment method for a recalled bill.</li>
+</ul>
+<hr>
+
+<h2>8. Other Actions</h2>
+
+<h3>Transfer Table</h3>
+<ul>
+    <li>On the order screen, tap the <strong>transfer</strong> icon (arrows).</li>
+    <li>Select <strong>source table</strong> and <strong>target table</strong>.</li>
+    <li>Tap <strong>Transfer</strong> to move the order.</li>
+</ul>
+
+<h3>Close Table Without Payment</h3>
+<ul>
+    <li>Use only if you must abandon the order (e.g. customer left).</li>
+    <li>Tap the menu (⋮) and choose <strong>Close table</strong>. Confirm – items are discarded and the table becomes free.</li>
+</ul>
+
+<h3>Sync Data</h3>
+<ul>
+    <li>Use <strong>Sync</strong> to sync orders, tables, products, and users with the server.</li>
+    <li>Sync after discount approval or void approvals to see updated totals.</li>
+</ul>
+
+<h3>Settings</h3>
+<ul>
+    <li><strong>Receipt size</strong> – Normal, Large, or XLarge.</li>
+    <li><strong>Printer Setup</strong> – Configure printers for bills and kitchen tickets.</li>
+</ul>
+<hr>
+
+<h2>Quick Reference</h2>
+<table>
+    <tr><th>Action</th><th>Location</th><th>Notes</th></tr>
+    <tr><td>Add product</td><td>Order screen</td><td>Tap product; select modifiers/notes if needed</td></tr>
+    <tr><td>Remove item</td><td>Cart</td><td><strong>New items</strong> only (not sent to kitchen)</td></tr>
+    <tr><td>Void item</td><td>Cart</td><td><strong>Sent items</strong> only; PIN or Supervisor + KDS approval</td></tr>
+    <tr><td>Refund item</td><td>Cart</td><td><strong>Recalled order</strong> only</td></tr>
+    <tr><td>Discount</td><td>Payment</td><td>Send request → web approval → Sync</td></tr>
+    <tr><td>Payment</td><td>Payment</td><td>CASH / CARD / SPLIT; Complete when balance is 0</td></tr>
+    <tr><td>Transfer table</td><td>Order</td><td>Transfer icon → source + target table</td></tr>
+    <tr><td>Send to kitchen</td><td>Cart</td><td>Required before payment</td></tr>
+</table>
+<hr>
+
+<p><strong>Support:</strong> For technical support or questions, contact your system administrator.</p>
+
+</body>
+</html>

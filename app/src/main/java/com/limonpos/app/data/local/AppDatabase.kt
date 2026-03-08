@@ -73,6 +73,18 @@ val MIGRATION_15_16 = object : Migration(15, 16) {
     }
 }
 
+val MIGRATION_16_17 = object : Migration(16, 17) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS pending_order_item_deletes (" +
+                "id TEXT PRIMARY KEY NOT NULL, " +
+                "orderId TEXT NOT NULL, " +
+                "apiItemId TEXT NOT NULL, " +
+                "createdAt INTEGER NOT NULL)"
+        )
+    }
+}
+
 @Database(
     entities = [
         TableEntity::class,
@@ -90,9 +102,10 @@ val MIGRATION_15_16 = object : Migration(15, 16) {
         UserEntity::class,
         VoidRequestEntity::class,
         ClosedBillAccessRequestEntity::class,
-        AppliedClientActionEntity::class
+        AppliedClientActionEntity::class,
+        PendingOrderItemDeleteEntity::class
     ],
-    version = 16,
+    version = 17,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -112,4 +125,5 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun voidRequestDao(): VoidRequestDao
     abstract fun closedBillAccessRequestDao(): ClosedBillAccessRequestDao
     abstract fun appliedClientActionDao(): AppliedClientActionDao
+    abstract fun pendingOrderItemDeleteDao(): PendingOrderItemDeleteDao
 }

@@ -49,13 +49,6 @@ class SettingsViewModel @Inject constructor(
 
     fun clearMessage() { _message.value = null }
 
-    fun clearLocalSales() {
-        viewModelScope.launch {
-            apiSyncRepository.clearLocalSales()
-            _message.value = "Local sales cleared"
-        }
-    }
-
     fun logout() {
         viewModelScope.launch { authRepository.logout() }
     }

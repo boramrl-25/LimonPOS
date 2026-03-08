@@ -39,6 +39,7 @@ class ApiSyncRepository @Inject constructor(
     private val voidLogDao: VoidLogDao,
     private val voidRequestDao: VoidRequestDao,
     private val closedBillAccessRequestDao: ClosedBillAccessRequestDao,
+    private val pendingOrderItemDeleteDao: PendingOrderItemDeleteDao,
     private val transferLogDao: TransferLogDao,
     private val floorPlanSectionsPreferences: FloorPlanSectionsPreferences,
     private val receiptPreferences: ReceiptPreferences,
@@ -76,6 +77,7 @@ class ApiSyncRepository @Inject constructor(
 
     /** Clears all sales data from local database (orders, items, payments, voids, transfer logs) and resets tables. */
     suspend fun clearLocalSales() {
+        pendingOrderItemDeleteDao.deleteAll()
         orderItemDao.deleteAll()
         paymentDao.deleteAll()
         voidLogDao.deleteAll()
@@ -93,6 +95,7 @@ class ApiSyncRepository @Inject constructor(
         return try {
             // Heartbeat: web’de “POS Cihazları” sayfasında bu cihazı çevrimiçi göster
             sendHeartbeat()
+            pushPendingItemDeletes()
             pushOpenOrdersAndTables()
             pushOrderItemStatusUpdates()
             pushPendingPayments()
@@ -244,6 +247,38 @@ class ApiSyncRepository @Inject constructor(
         }
     }
 
+    /** Schedule API delete for item that was on API (apiId != null). If online, push immediately; if offline, store tombstone for later push. */
+    suspend fun scheduleItemDelete(orderId: String, item: OrderItemEntity) {
+        val apiItemId = item.apiId ?: return
+        if (isOnline()) {
+            try {
+                restoreAuthTokenIfNeeded()
+                val res = apiService.deleteOrderItem(orderId, apiItemId)
+                if (res.isSuccessful) return
+            } catch (e: Exception) {
+                Log.e("ApiSync", "scheduleItemDelete push failed: ${e.message}")
+            }
+        }
+        val id = "$orderId:$apiItemId"
+        pendingOrderItemDeleteDao.insert(PendingOrderItemDeleteEntity(id = id, orderId = orderId, apiItemId = apiItemId))
+    }
+
+    private suspend fun pushPendingItemDeletes() {
+        if (!isOnline()) return
+        val tombstones = pendingOrderItemDeleteDao.getAll()
+        for (t in tombstones) {
+            try {
+                restoreAuthTokenIfNeeded()
+                val res = apiService.deleteOrderItem(t.orderId, t.apiItemId)
+                if (res.isSuccessful) {
+                    pendingOrderItemDeleteDao.delete(t.orderId, t.apiItemId)
+                }
+            } catch (e: Exception) {
+                Log.e("ApiSync", "pushPendingItemDeletes failed for ${t.orderId}/${t.apiItemId}: ${e.message}")
+            }
+        }
+    }
+
     /** Pushes open orders and occupied tables to API so web has latest state */
     private suspend fun pushOpenOrdersAndTables() {
         val occupiedTables = tableDao.getOccupiedTables()
@@ -352,9 +387,11 @@ class ApiSyncRepository @Inject constructor(
         apiItems: List<OrderItemDto>,
         localItems: List<OrderItemEntity>
     ) {
+        val tombstoneIds = pendingOrderItemDeleteDao.getApiItemIdsForOrder(orderId).toSet()
+        val filteredApiItems = apiItems.filter { it.id !in tombstoneIds }
         val localByClientLineId = localItems.filter { it.clientLineId != null }.associateBy { it.clientLineId!! }
         val localByApiId = localItems.filter { it.apiId != null }.associateBy { it.apiId!! }
-        val apiIds = apiItems.map { it.id }.toSet()
+        val apiIds = filteredApiItems.map { it.id }.toSet()
 
         for (local in localItems) {
             if (local.apiId != null && local.apiId !in apiIds) {
@@ -362,7 +399,7 @@ class ApiSyncRepository @Inject constructor(
             }
         }
 
-        for (item in apiItems) {
+        for (item in filteredApiItems) {
             val local = item.clientLineId?.let { localByClientLineId[it] }
                 ?: localByApiId[item.id]
             val (resolvedStatus, resolvedDeliveredAt) = resolveStatusForSync(local?.status, local?.deliveredAt, item.status)
@@ -401,12 +438,13 @@ class ApiSyncRepository @Inject constructor(
         }
     }
 
-    /** Ensures order exists on API with items. Line-identity: one local line = one API line, client_line_id for idempotency. sendOrderToKitchen is NOT called here — only via explicit ensureOrderAndSendToKitchen. */
+    /** Ensures order exists on API with items. Line-identity: one local line = one API line, client_line_id for idempotency. sendOrderToKitchen is NOT called here — only via explicit ensureOrderAndSendToKitchen. Pending items (sentAt==null) stay local-only; only sent items are pushed. */
     private suspend fun ensureOrderExistsOnApi(localOrderId: String): String? {
         if (!isOnline()) return null
         val order = orderDao.getOrderById(localOrderId) ?: return null
         val table = tableDao.getTableById(order.tableId) ?: return null
-        val localItems = orderItemDao.getOrderItems(localOrderId).first()
+        val allLocalItems = orderItemDao.getOrderItems(localOrderId).first()
+        val localItems = allLocalItems.filter { it.sentAt != null }
         val guestCount = table.guestCount.coerceAtLeast(1)
 
         return try {

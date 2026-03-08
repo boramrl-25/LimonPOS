@@ -1,3 +1,6 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -7,18 +10,33 @@ plugins {
 
 android {
     namespace = "com.limonpos.app"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.limonpos.app"
         minSdk = 24
-        targetSdk = 34
-        versionCode = 2
-        versionName = "1.1"
+        targetSdk = 35
+        versionCode = 3
+        versionName = "1.2"
+    }
+
+    val keystoreFile = rootProject.file("keystore.properties")
+    if (keystoreFile.exists()) {
+        signingConfigs {
+            create("release") {
+                val p = Properties()
+                p.load(FileInputStream(keystoreFile))
+                storeFile = rootProject.file(p["storeFile"]!!.toString())
+                storePassword = p["storePassword"]!!.toString()
+                keyAlias = p["keyAlias"]!!.toString()
+                keyPassword = p["keyPassword"]!!.toString()
+            }
+        }
     }
 
     buildTypes {
         release {
+            if (keystoreFile.exists()) signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

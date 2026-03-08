@@ -656,8 +656,13 @@ class OrderViewModel @Inject constructor(
 
     fun removeItem(itemId: String) {
         viewModelScope.launch {
-            val orderId = _uiState.value.orderWithItems?.order?.id ?: return@launch
-            orderRepository.removeItem(itemId)
+            val ow = _uiState.value.orderWithItems ?: return@launch
+            val orderId = ow.order.id
+            val item = ow.items.find { it.id == itemId } ?: return@launch
+            withContext(Dispatchers.IO) {
+                apiSyncRepository.scheduleItemDelete(orderId, item)
+                orderRepository.removeItem(itemId)
+            }
             val updated = withContext(Dispatchers.IO) {
                 orderRepository.getOrderWithItems(orderId).first()
             }

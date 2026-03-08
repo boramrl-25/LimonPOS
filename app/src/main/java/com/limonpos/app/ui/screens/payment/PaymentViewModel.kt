@@ -263,11 +263,12 @@ class PaymentViewModel @Inject constructor(
                     )
                 }
 
-                // Fiş yazdırma arka planda; başarısız olursa uyarı (Retry/Dismiss) göster
+                // Fiş yazdırma arka planda; sadece hiçbir printer'da basılamadıysa uyarı (Retry/Dismiss)
                 viewModelScope.launch(Dispatchers.IO) {
                     val cashierPrinters = printerRepository.getAllPrinters().first()
                         .filter { (it.printerType == "cashier" || it.printerType.equals("receipt", true)) && it.ipAddress.isNotBlank() }
-                    val failedPrinters = mutableListOf<String>()
+                    val receiptFailedPrinters = mutableListOf<String>()
+                    val drawerFailedPrinters = mutableListOf<String>()
                     for (printer in cashierPrinters) {
                         val receipt = printerService.buildPartialReceipt(
                             order = ow.order,
@@ -278,15 +279,16 @@ class PaymentViewModel @Inject constructor(
                             balanceRemaining = newBalance
                         )
                         val printResult = printerService.sendToPrinter(printer.ipAddress, printer.port, receipt)
-                        if (printResult.isFailure) failedPrinters.add(printer.name)
-                        if (split.method == "cash") {
+                        if (printResult.isFailure) receiptFailedPrinters.add(printer.name)
+                        else if (split.method == "cash") {
                             val drawerResult = printerService.openCashDrawer(printer.ipAddress, printer.port)
-                            if (drawerResult.isFailure && printer.name !in failedPrinters) failedPrinters.add("${printer.name} (drawer)")
+                            if (drawerResult.isFailure) drawerFailedPrinters.add(printer.name)
                         }
                     }
-                    if (failedPrinters.isNotEmpty()) {
+                    val anyReceiptPrinted = receiptFailedPrinters.size < cashierPrinters.size
+                    if (!anyReceiptPrinted) {
                         receiptPrintWarningHolder.setWarning(ReceiptPrintWarningState(
-                            message = "Receipt print failed: ${failedPrinters.joinToString(", ")}",
+                            message = "Receipt print failed: ${receiptFailedPrinters.joinToString(", ")}",
                             orderId = ow.order.id,
                             tableId = tableId,
                             isPartial = true,
@@ -295,6 +297,8 @@ class PaymentViewModel @Inject constructor(
                             totalPaidSoFar = totalPaidAfter,
                             balanceRemaining = newBalance
                         ))
+                    } else if (drawerFailedPrinters.isNotEmpty()) {
+                        _uiState.update { it.copy(message = "Receipt printed. Cash drawer did not open: ${drawerFailedPrinters.joinToString(", ")}") }
                     }
                 }
 
@@ -303,22 +307,25 @@ class PaymentViewModel @Inject constructor(
                         orderRepository.markOrderPaid(ow.order.id)
                         tableRepository.closeTable(tableId)
                     }
-                    // Try final receipt print before navigating away; if it fails show Retry/Dismiss and stay on screen
-                    val failedPrinters = mutableListOf<String>()
+                    // Try final receipt print; only show failure if no printer printed
+                    var cashierCount = 0
+                    val failedReceiptPrinters = mutableListOf<String>()
                     withContext(Dispatchers.IO) {
                         val cashierPrinters = printerRepository.getAllPrinters().first()
                             .filter { (it.printerType == "cashier" || it.printerType.equals("receipt", true)) && it.ipAddress.isNotBlank() }
+                        cashierCount = cashierPrinters.size
                         val itemSize = printerPreferences.getReceiptItemSize()
                         val receiptSettings = receiptPreferences.getReceiptSettings()
                         val finalReceipt = printerService.buildReceipt(ow.order, ow.items, itemSize, receiptSettings)
                         for (printer in cashierPrinters) {
                             val printResult = printerService.sendToPrinter(printer.ipAddress, printer.port, finalReceipt)
-                            if (printResult.isFailure) failedPrinters.add(printer.name)
+                            if (printResult.isFailure) failedReceiptPrinters.add(printer.name)
                         }
                     }
-                    if (failedPrinters.isNotEmpty()) {
+                    val anyReceiptPrinted = failedReceiptPrinters.size < cashierCount
+                    if (!anyReceiptPrinted) {
                         receiptPrintWarningHolder.setWarning(ReceiptPrintWarningState(
-                            message = "Receipt print failed: ${failedPrinters.joinToString(", ")}",
+                            message = "Receipt print failed: ${failedReceiptPrinters.joinToString(", ")}",
                             orderId = ow.order.id,
                             tableId = tableId,
                             isPartial = false
@@ -326,6 +333,9 @@ class PaymentViewModel @Inject constructor(
                         _uiState.update { it.copy(receiptFailedBeforeNavigate = true) }
                     } else {
                         _uiState.update { it.copy(paymentComplete = true, message = "Payment completed") }
+                        if (failedReceiptPrinters.isNotEmpty()) {
+                            _uiState.update { it.copy(message = "Printed; failed on: ${failedReceiptPrinters.joinToString(", ")}") }
+                        }
                     }
 
                     viewModelScope.launch(Dispatchers.IO) {
@@ -385,24 +395,30 @@ class PaymentViewModel @Inject constructor(
                     tableRepository.closeTable(tableId)
                 }
 
-                // Try receipt print before navigating; if it fails show Retry/Dismiss and stay on screen
-                val failedPrinters = mutableListOf<String>()
+                // Try receipt print; only show failure if no printer printed. Drawer failure is separate.
+                var cashierCount = 0
+                val receiptFailedPrinters = mutableListOf<String>()
+                val drawerFailedPrinters = mutableListOf<String>()
                 withContext(Dispatchers.IO) {
                     val cashierPrinters = printerRepository.getAllPrinters().first()
                         .filter { (it.printerType == "cashier" || it.printerType.equals("receipt", true)) && it.ipAddress.isNotBlank() }
+                    cashierCount = cashierPrinters.size
                     val itemSize = printerPreferences.getReceiptItemSize()
                     val receiptSettings = receiptPreferences.getReceiptSettings()
                     val receipt = printerService.buildReceipt(ow.order, ow.items, itemSize, receiptSettings)
                     for (printer in cashierPrinters) {
                         val printResult = printerService.sendToPrinter(printer.ipAddress, printer.port, receipt)
-                        if (printResult.isFailure) failedPrinters.add(printer.name)
-                        val drawerResult = printerService.openCashDrawer(printer.ipAddress, printer.port)
-                        if (drawerResult.isFailure && printer.name !in failedPrinters) failedPrinters.add("${printer.name} (drawer)")
+                        if (printResult.isFailure) receiptFailedPrinters.add(printer.name)
+                        else {
+                            val drawerResult = printerService.openCashDrawer(printer.ipAddress, printer.port)
+                            if (drawerResult.isFailure) drawerFailedPrinters.add(printer.name)
+                        }
                     }
                 }
-                if (failedPrinters.isNotEmpty()) {
+                val anyReceiptPrinted = receiptFailedPrinters.size < cashierCount
+                if (!anyReceiptPrinted) {
                     receiptPrintWarningHolder.setWarning(ReceiptPrintWarningState(
-                        message = "Receipt print failed: ${failedPrinters.joinToString(", ")}",
+                        message = "Receipt print failed: ${receiptFailedPrinters.joinToString(", ")}",
                         orderId = ow.order.id,
                         tableId = tableId,
                         isPartial = false
@@ -410,6 +426,11 @@ class PaymentViewModel @Inject constructor(
                     _uiState.update { it.copy(receiptFailedBeforeNavigate = true) }
                 } else {
                     _uiState.update { it.copy(paymentComplete = true, message = "Payment completed") }
+                    if (receiptFailedPrinters.isNotEmpty()) {
+                        _uiState.update { it.copy(message = "Printed; failed on: ${receiptFailedPrinters.joinToString(", ")}") }
+                    } else if (drawerFailedPrinters.isNotEmpty()) {
+                        _uiState.update { it.copy(message = "Receipt printed. Cash drawer did not open: ${drawerFailedPrinters.joinToString(", ")}") }
+                    }
                 }
 
                 viewModelScope.launch(Dispatchers.IO) {
@@ -467,23 +488,26 @@ class PaymentViewModel @Inject constructor(
                 _uiState.update { it.copy(message = "No cashier printer configured") }
                 return@launch
             }
-            val failed = mutableListOf<String>()
-            val itemSize = printerPreferences.getReceiptItemSize()
-            val receiptSettings = receiptPreferences.getReceiptSettings()
-            for (printer in cashierPrinters) {
+            val failedReceiptPrinters = mutableListOf<String>()
+            withContext(Dispatchers.IO) {
+                val itemSize = printerPreferences.getReceiptItemSize()
+                val receiptSettings = receiptPreferences.getReceiptSettings()
                 val receipt = printerService.buildReceipt(ow.order, ow.items, itemSize, receiptSettings)
-                val result = printerService.sendToPrinter(printer.ipAddress, printer.port, receipt)
-                if (result.isFailure) failed.add(printer.name)
+                for (printer in cashierPrinters) {
+                    val result = printerService.sendToPrinter(printer.ipAddress, printer.port, receipt)
+                    if (result.isFailure) failedReceiptPrinters.add(printer.name)
+                }
             }
-            if (failed.isNotEmpty()) {
+            val anyReceiptPrinted = failedReceiptPrinters.size < cashierPrinters.size
+            if (!anyReceiptPrinted) {
                 receiptPrintWarningHolder.setWarning(ReceiptPrintWarningState(
-                    message = "Receipt print failed: ${failed.joinToString(", ")}",
+                    message = "Receipt print failed: ${failedReceiptPrinters.joinToString(", ")}",
                     orderId = ow.order.id,
                     tableId = tableId,
                     isPartial = false
                 ))
             } else {
-                _uiState.update { it.copy(message = "Bill printed") }
+                _uiState.update { it.copy(message = if (failedReceiptPrinters.isEmpty()) "Bill printed" else "Printed; failed on: ${failedReceiptPrinters.joinToString(", ")}") }
             }
         }
     }
@@ -493,10 +517,12 @@ class PaymentViewModel @Inject constructor(
             val warning = receiptPrintWarningHolder.state.value ?: return@launch
             receiptPrintWarningHolder.clear()
             val ow = orderRepository.getOrderWithItems(warning.orderId).first() ?: return@launch
+            val failedReceiptPrinters = mutableListOf<String>()
+            var cashierCount = 0
             withContext(Dispatchers.IO) {
                 val cashierPrinters = printerRepository.getAllPrinters().first()
                     .filter { (it.printerType == "cashier" || it.printerType.equals("receipt", true)) && it.ipAddress.isNotBlank() }
-                val failedPrinters = mutableListOf<String>()
+                cashierCount = cashierPrinters.size
                 if (warning.isPartial) {
                     val receipt = printerService.buildPartialReceipt(
                         ow.order, ow.items,
@@ -505,7 +531,7 @@ class PaymentViewModel @Inject constructor(
                     )
                     for (printer in cashierPrinters) {
                         if (printerService.sendToPrinter(printer.ipAddress, printer.port, receipt).isFailure) {
-                            failedPrinters.add(printer.name)
+                            failedReceiptPrinters.add(printer.name)
                         }
                     }
                 } else {
@@ -514,15 +540,18 @@ class PaymentViewModel @Inject constructor(
                     val receipt = printerService.buildReceipt(ow.order, ow.items, itemSize, receiptSettings)
                     for (printer in cashierPrinters) {
                         if (printerService.sendToPrinter(printer.ipAddress, printer.port, receipt).isFailure) {
-                            failedPrinters.add(printer.name)
+                            failedReceiptPrinters.add(printer.name)
                         }
                     }
                 }
-                if (failedPrinters.isNotEmpty()) {
-                    receiptPrintWarningHolder.setWarning(warning.copy(message = "Receipt print failed: ${failedPrinters.joinToString(", ")}"))
-                } else if (_uiState.value.receiptFailedBeforeNavigate) {
-                    _uiState.update { it.copy(receiptFailedBeforeNavigate = false, paymentComplete = true) }
-                }
+            }
+            val anyReceiptPrinted = failedReceiptPrinters.size < cashierCount
+            if (!anyReceiptPrinted) {
+                receiptPrintWarningHolder.setWarning(warning.copy(message = "Receipt print failed: ${failedReceiptPrinters.joinToString(", ")}"))
+            } else if (_uiState.value.receiptFailedBeforeNavigate) {
+                _uiState.update { it.copy(receiptFailedBeforeNavigate = false, paymentComplete = true) }
+            } else if (failedReceiptPrinters.isNotEmpty()) {
+                _uiState.update { it.copy(message = "Printed; failed on: ${failedReceiptPrinters.joinToString(", ")}") }
             }
         }
     }

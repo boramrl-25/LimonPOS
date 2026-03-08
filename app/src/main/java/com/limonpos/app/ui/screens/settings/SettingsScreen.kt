@@ -19,7 +19,6 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Wifi
-import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -59,7 +58,6 @@ fun SettingsScreen(
     val needsNotificationPermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
         ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
     var menuExpanded by remember { mutableStateOf(false) }
-    var showClearSalesConfirm by remember { mutableStateOf(false) }
 
     LaunchedEffect(message) {
         message?.let {
@@ -217,16 +215,6 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("Server URL (WiFi)", color = LimonText)
                 }
-                Spacer(modifier = Modifier.height(12.dp))
-                OutlinedButton(
-                    onClick = { showClearSalesConfirm = true },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = LimonError)
-                ) {
-                    Icon(Icons.Default.DeleteForever, contentDescription = null, modifier = Modifier.size(20.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Clear Local Sales", color = LimonError)
-                }
                 Spacer(modifier = Modifier.height(24.dp))
                 Button(
                     onClick = { viewModel.logout() },
@@ -239,25 +227,6 @@ fun SettingsScreen(
                 }
             }
         }
-    }
-
-    if (showClearSalesConfirm) {
-        AlertDialog(
-            onDismissRequest = { showClearSalesConfirm = false },
-            title = { Text("Clear Local Sales?", fontWeight = FontWeight.Bold) },
-            text = { Text("This will delete all orders, payments and void data from this device. Tables will be reset. Continue?", color = LimonText) },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        viewModel.clearLocalSales()
-                        showClearSalesConfirm = false
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = LimonError)
-                ) { Text("Clear") }
-            },
-            dismissButton = { TextButton(onClick = { showClearSalesConfirm = false }) { Text("Cancel", color = LimonTextSecondary) } },
-            containerColor = LimonSurface
-        )
     }
 
 }
