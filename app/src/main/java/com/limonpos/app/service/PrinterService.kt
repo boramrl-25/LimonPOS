@@ -75,7 +75,7 @@ class PrinterService @Inject constructor() {
         addBytes(p.INIT)
 
         addBytes(p.ALIGN_CENTER)
-        addBytes(p.DOUBLE_HEIGHT)
+        addBytes(p.DOUBLE_SIZE)
         addText("** ${receiptSettings.kitchenHeader} **\n")
         addBytes(p.NORMAL_SIZE)
         addText("$printerName\n")
