@@ -132,10 +132,15 @@ class KdsServer @Inject constructor(
                                         } else {
                                             allItems.filter { item ->
                                                 val product = productDao.getProductById(item.productId) ?: return@filter false
-                                                val productPrinterIds = try {
-                                                    (gson.fromJson(product.printers, Array<String>::class.java)?.toSet() ?: emptySet())
-                                                } catch (_: Exception) { emptySet() }
-                                                productPrinterIds.isNotEmpty() && productPrinterIds.any { it in selectedPrinterIds }
+                                                val effectivePrinterIds = printerService.parsePrinterIds(product.printers)
+                                                    .ifEmpty {
+                                                        val category = categoryDao.getCategoryById(product.categoryId)
+                                                        category?.let { printerService.parsePrinterIds(it.printers) } ?: emptyList()
+                                                    }
+                                                when {
+                                                    effectivePrinterIds.isEmpty() -> false
+                                                    else -> effectivePrinterIds.any { it in selectedPrinterIds }
+                                                }
                                             }
                                         }
                                         if (items.isEmpty()) null
