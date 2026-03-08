@@ -7,6 +7,8 @@ import com.google.gson.Gson
 import com.limonpos.app.data.local.dao.*
 import com.limonpos.app.data.local.entity.*
 import com.limonpos.app.data.prefs.FloorPlanSectionsPreferences
+import com.limonpos.app.data.prefs.PrinterPreferences
+import com.limonpos.app.data.prefs.ReceiptItemSize
 import com.limonpos.app.data.prefs.ReceiptPreferences
 import com.limonpos.app.data.prefs.ReceiptSettingsData
 import com.limonpos.app.data.prefs.ServerPreferences
@@ -40,6 +42,7 @@ class ApiSyncRepository @Inject constructor(
     private val transferLogDao: TransferLogDao,
     private val floorPlanSectionsPreferences: FloorPlanSectionsPreferences,
     private val receiptPreferences: ReceiptPreferences,
+    private val printerPreferences: PrinterPreferences,
     private val serverPreferences: ServerPreferences,
     private val sessionManager: SessionManager,
     private val authTokenProvider: AuthTokenProvider,
@@ -755,6 +758,10 @@ class ApiSyncRepository @Inject constructor(
                     kitchenHeader = dto.kitchenHeader?.take(100)?.takeIf { it.isNotBlank() } ?: "KITCHEN"
                 )
             )
+            dto.receiptItemSize?.let { size ->
+                val v = size.coerceIn(ReceiptItemSize.NORMAL, ReceiptItemSize.XLARGE)
+                printerPreferences.setReceiptItemSize(v)
+            }
         } catch (e: Exception) {
             Log.e("ApiSync", "syncSettings error: ${e.message}", e)
         }

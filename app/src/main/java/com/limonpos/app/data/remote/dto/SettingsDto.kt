@@ -9,5 +9,6 @@ data class SettingsDto(
     @SerializedName("company_address") val companyAddress: String? = null,
     @SerializedName("receipt_header") val receiptHeader: String? = null,
     @SerializedName("receipt_footer_message") val receiptFooterMessage: String? = null,
-    @SerializedName("kitchen_header") val kitchenHeader: String? = null
+    @SerializedName("kitchen_header") val kitchenHeader: String? = null,
+    @SerializedName("receipt_item_size") val receiptItemSize: Int? = null
 )

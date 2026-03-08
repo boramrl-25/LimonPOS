@@ -954,6 +954,7 @@ app.get("/api/settings", authMiddleware, async (req, res) => {
     receipt_header: s.receipt_header ?? "BILL / RECEIPT",
     receipt_footer_message: s.receipt_footer_message ?? "Thank you!",
     kitchen_header: s.kitchen_header ?? "KITCHEN",
+    receipt_item_size: Math.min(2, Math.max(0, (s.receipt_item_size ?? 0) | 0)),
     opening_time: s.opening_time ?? "07:00",
     closing_time: s.closing_time ?? "01:30",
     open_tables_warning_time: s.open_tables_warning_time ?? "01:00",
@@ -993,6 +994,10 @@ app.patch("/api/settings", authMiddleware, async (req, res) => {
   if (typeof req.body.receipt_header === "string") db.data.settings.receipt_header = req.body.receipt_header.slice(0, 100) || "BILL / RECEIPT";
   if (typeof req.body.receipt_footer_message === "string") db.data.settings.receipt_footer_message = req.body.receipt_footer_message.slice(0, 300) || "Thank you!";
   if (typeof req.body.kitchen_header === "string") db.data.settings.kitchen_header = req.body.kitchen_header.slice(0, 100) || "KITCHEN";
+  if (typeof req.body.receipt_item_size === "number") {
+    const v = Math.round(req.body.receipt_item_size);
+    db.data.settings.receipt_item_size = Math.min(2, Math.max(0, v));
+  }
   const ot = validateTimeHHMM(req.body.opening_time);
   if (ot) db.data.settings.opening_time = ot;
   const ct = validateTimeHHMM(req.body.closing_time);
@@ -1026,6 +1031,7 @@ app.patch("/api/settings", authMiddleware, async (req, res) => {
     receipt_header: s.receipt_header ?? "BILL / RECEIPT",
     receipt_footer_message: s.receipt_footer_message ?? "Thank you!",
     kitchen_header: s.kitchen_header ?? "KITCHEN",
+    receipt_item_size: Math.min(2, Math.max(0, (s.receipt_item_size ?? 0) | 0)),
     opening_time: s.opening_time ?? "07:00",
     closing_time: s.closing_time ?? "01:30",
     open_tables_warning_time: s.open_tables_warning_time ?? "01:00",

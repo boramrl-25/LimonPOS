@@ -10,6 +10,7 @@ export default function ReceiptSettingsPage() {
   const [companyAddress, setCompanyAddress] = useState("");
   const [receiptHeader, setReceiptHeader] = useState("BILL / RECEIPT");
   const [receiptFooterMessage, setReceiptFooterMessage] = useState("Thank you!");
+  const [receiptItemSize, setReceiptItemSize] = useState<number>(0);
   const [kitchenHeader, setKitchenHeader] = useState("KITCHEN");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -26,6 +27,7 @@ export default function ReceiptSettingsPage() {
       setCompanyAddress(s.company_address ?? "");
       setReceiptHeader(s.receipt_header ?? "BILL / RECEIPT");
       setReceiptFooterMessage(s.receipt_footer_message ?? "Thank you!");
+      setReceiptItemSize(Math.min(2, Math.max(0, (s.receipt_item_size ?? 0) | 0)));
       setKitchenHeader(s.kitchen_header ?? "KITCHEN");
     } catch {
       window.location.href = "/login";
@@ -44,6 +46,7 @@ export default function ReceiptSettingsPage() {
         company_address: companyAddress,
         receipt_header: receiptHeader || "BILL / RECEIPT",
         receipt_footer_message: receiptFooterMessage || "Thank you!",
+        receipt_item_size: receiptItemSize,
         kitchen_header: kitchenHeader || "KITCHEN",
       });
       setSaved(true);
@@ -110,6 +113,27 @@ export default function ReceiptSettingsPage() {
               maxLength={100}
               className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white mb-4 placeholder-slate-500"
             />
+
+            <label className="block text-sm text-slate-300 mb-2">Receipt item size</label>
+            <div className="flex gap-3 mb-4">
+              {[
+                { value: 0, label: "Normal" },
+                { value: 1, label: "Large" },
+                { value: 2, label: "XLarge" },
+              ].map((opt) => (
+                <label key={opt.value} className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="receiptItemSize"
+                    checked={receiptItemSize === opt.value}
+                    onChange={() => setReceiptItemSize(opt.value)}
+                    className="text-sky-500"
+                  />
+                  <span className="text-slate-300">{opt.label}</span>
+                </label>
+              ))}
+            </div>
+            <p className="text-slate-500 text-xs mb-4">Fişteki ürün satırlarının font boyutu (uygulama sync ile güncellenir)</p>
 
             <label className="block text-sm text-slate-300 mb-2">Receipt footer message</label>
             <textarea

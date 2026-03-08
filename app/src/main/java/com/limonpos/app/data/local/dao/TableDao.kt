@@ -6,10 +6,10 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface TableDao {
-    @Query("SELECT * FROM tables ORDER BY floor, number")
+    @Query("SELECT * FROM tables ORDER BY floor, CAST(number AS INTEGER)")
     fun getAllTables(): Flow<List<TableEntity>>
 
-    @Query("SELECT * FROM tables WHERE floor = :floor ORDER BY number")
+    @Query("SELECT * FROM tables WHERE floor = :floor ORDER BY CAST(number AS INTEGER)")
     fun getTablesByFloor(floor: String): Flow<List<TableEntity>>
 
     @Query("SELECT * FROM tables WHERE id = :id")
@@ -33,10 +33,10 @@ interface TableDao {
     @Query("SELECT COUNT(*) FROM tables WHERE floor = :floor AND status = 'occupied'")
     fun getOccupiedTableCount(floor: String): Flow<Int>
 
-    @Query("SELECT * FROM tables WHERE status = 'occupied' ORDER BY floor, number")
+    @Query("SELECT * FROM tables WHERE status = 'occupied' ORDER BY floor, CAST(number AS INTEGER)")
     suspend fun getOccupiedTables(): List<TableEntity>
 
-    @Query("SELECT * FROM tables WHERE status = 'bill' ORDER BY floor, number")
+    @Query("SELECT * FROM tables WHERE status = 'bill' ORDER BY floor, CAST(number AS INTEGER)")
     suspend fun getBillTables(): List<TableEntity>
 
     @Query("SELECT COUNT(*) FROM tables")

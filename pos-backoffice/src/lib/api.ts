@@ -378,6 +378,7 @@ export type Settings = {
   receipt_header?: string;
   receipt_footer_message?: string;
   kitchen_header?: string;
+  receipt_item_size?: number; // 0=normal, 1=large, 2=xlarge
   opening_time?: string;
   closing_time?: string;
   open_tables_warning_time?: string;
