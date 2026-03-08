@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { CreditCard, BookOpen, Mail, Users, ArrowLeft, SlidersHorizontal, Globe, Trash2 } from "lucide-react";
+import { CreditCard, BookOpen, Mail, Users, ArrowLeft, SlidersHorizontal, Globe, Trash2, Printer } from "lucide-react";
 
 const settingsSections = [
+  { href: "/printers", label: "Yazıcılar (Müşteri fişi & Mutfak)", icon: Printer, description: "Müşteriye verilecek bill → Receipt. Mutfağa giden sipariş → Kitchen." },
   { href: "/settings/general", label: "Genel & Saat Dilimi", icon: Globe, description: "Timezone (iş günü / günlük satışlar için)" },
   { href: "/settings/payment", label: "Payment Methods & Integrations", icon: CreditCard, description: "Cash, Card, Custom payment methods" },
   { href: "/settings/zoho", label: "Zoho Books Integration", icon: BookOpen, description: "Sync sales and products" },

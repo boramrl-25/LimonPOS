@@ -151,8 +151,8 @@ export default function PrintersPage() {
 
       <div className="flex justify-between items-center mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-sky-400">Printers</h1>
-          <p className="text-slate-400">Kitchen and receipt printers</p>
+          <h1 className="text-2xl font-bold text-sky-400">Yazıcılar</h1>
+          <p className="text-slate-400">Müşteri fişi (Bill/Receipt) ve mutfak siparişi (Kitchen) yazıcıları. Sync ile POS uygulamasına aktarılır.</p>
           <p className="text-slate-500 text-sm mt-1">Excel veya CSV: Örnek dosyayı indir, doldur, yükle.</p>
         </div>
         <div className="flex gap-2 flex-wrap">
@@ -215,7 +215,11 @@ export default function PrintersPage() {
             {printers.map((p) => (
               <tr key={p.id} className="border-b border-slate-700/50">
                 <td className="p-4">{p.name}</td>
-                <td className="p-4">{p.printer_type === "kitchen" ? "Kitchen" : "Receipt"}</td>
+                <td className="p-4">
+                  <span className={p.printer_type === "kitchen" ? "text-emerald-400" : "text-amber-400"}>
+                    {p.printer_type === "kitchen" ? "Mutfak (kitchen)" : "Müşteri fişi (receipt)"}
+                  </span>
+                </td>
                 <td className="p-4">
                   <span className={`px-2 py-0.5 rounded text-xs ${(Boolean(p.kds_enabled) && p.printer_type === "kitchen") ? "bg-emerald-600/30 text-emerald-400" : p.printer_type === "kitchen" ? "bg-slate-600/30 text-slate-500" : "bg-slate-700/50 text-slate-500"}`}>
                     {p.printer_type === "kitchen" ? (Boolean(p.kds_enabled) ? "On" : "Off") : "-"}
@@ -245,8 +249,8 @@ export default function PrintersPage() {
               <div>
                 <label className="block text-sm text-slate-400 mb-1">Type</label>
                 <select value={form.printer_type} onChange={(e) => setForm((f) => ({ ...f, printer_type: e.target.value }))} className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white">
-                  <option value="kitchen">Kitchen</option>
-                  <option value="receipt">Receipt (cashier)</option>
+                  <option value="kitchen">Mutfak (kitchen) — Siparişler mutfağa gider</option>
+                  <option value="receipt">Müşteri fişi (receipt/cashier) — Bill/ödeme fişi</option>
                 </select>
               </div>
               <div>

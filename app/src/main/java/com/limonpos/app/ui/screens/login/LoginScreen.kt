@@ -83,11 +83,74 @@ fun LoginScreen(
         }
 
         Numpad(
-            onDigit = { viewModel.addDigit(it) },
+            onDigit = { d -> viewModel.addDigit(d) },
             onClear = { viewModel.clearPin() },
             onBackspace = { viewModel.backspace() },
             onEnter = { viewModel.login() },
             enabled = !isLoading
         )
+    }
+}
+
+@Composable
+private fun Numpad(
+    onDigit: (String) -> Unit,
+    onClear: () -> Unit,
+    onBackspace: () -> Unit,
+    onEnter: () -> Unit,
+    enabled: Boolean
+) {
+    val keys = listOf(
+        listOf("1", "2", "3"),
+        listOf("4", "5", "6"),
+        listOf("7", "8", "9"),
+        listOf("C", "0", "⌫")
+    )
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        keys.forEach { row ->
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                row.forEach { key ->
+                    val isAction = key in listOf("C", "⌫")
+                    Button(
+                        onClick = {
+                            when (key) {
+                                "C" -> onClear()
+                                "⌫" -> onBackspace()
+                                else -> onDigit(key)
+                            }
+                        },
+                        modifier = Modifier.size(72.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isAction) LimonTextSecondary else LimonPrimary,
+                            contentColor = LimonText
+                        ),
+                        enabled = enabled
+                    ) {
+                        Text(
+                            text = key,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Button(
+            onClick = onEnter,
+            modifier = Modifier
+                .fillMaxWidth(0.8f)
+                .height(56.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = LimonPrimary, contentColor = LimonText),
+            enabled = enabled
+        ) {
+            Text("Sign In", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        }
     }
 }

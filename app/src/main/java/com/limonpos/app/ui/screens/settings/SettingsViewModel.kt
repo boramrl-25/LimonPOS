@@ -3,6 +3,8 @@ package com.limonpos.app.ui.screens.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.limonpos.app.data.repository.ApiSyncRepository
+import com.limonpos.app.data.prefs.PrinterPreferences
+import com.limonpos.app.data.prefs.ReceiptItemSize
 import com.limonpos.app.data.prefs.ServerPreferences
 import com.limonpos.app.data.repository.AuthRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -19,7 +21,8 @@ import javax.inject.Inject
 class SettingsViewModel @Inject constructor(
     private val authRepository: AuthRepository,
     private val apiSyncRepository: ApiSyncRepository,
-    private val serverPreferences: ServerPreferences
+    private val serverPreferences: ServerPreferences,
+    private val printerPreferences: PrinterPreferences
 ) : ViewModel() {
 
     val userRole: StateFlow<String?> = authRepository.getCurrentUserRole()
@@ -31,6 +34,15 @@ class SettingsViewModel @Inject constructor(
 
     val apiBaseUrl: StateFlow<String> = serverPreferences.baseUrl
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+
+    val receiptItemSize: StateFlow<Int> = printerPreferences.receiptItemSize
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ReceiptItemSize.NORMAL)
+
+    fun setReceiptItemSize(size: Int) {
+        viewModelScope.launch {
+            printerPreferences.setReceiptItemSize(size)
+        }
+    }
 
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()

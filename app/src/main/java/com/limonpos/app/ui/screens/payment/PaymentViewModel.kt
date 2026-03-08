@@ -8,6 +8,7 @@ import com.limonpos.app.data.local.entity.PaymentEntity
 import com.limonpos.app.data.repository.ApiSyncRepository
 import com.limonpos.app.data.repository.AuthRepository
 import com.limonpos.app.data.repository.OrderRepository
+import com.limonpos.app.data.prefs.PrinterPreferences
 import com.limonpos.app.data.printer.ReceiptPrintWarningHolder
 import com.limonpos.app.data.printer.ReceiptPrintWarningState
 import com.limonpos.app.data.repository.PrinterRepository
@@ -68,6 +69,7 @@ class PaymentViewModel @Inject constructor(
     private val authRepository: AuthRepository,
     private val printerRepository: PrinterRepository,
     private val printerService: PrinterService,
+    private val printerPreferences: PrinterPreferences,
     private val zohoBooksRepository: ZohoBooksRepository,
     private val receiptPrintWarningHolder: ReceiptPrintWarningHolder
 ) : ViewModel() {
@@ -262,7 +264,7 @@ class PaymentViewModel @Inject constructor(
                 // Fiş yazdırma arka planda; başarısız olursa uyarı (Retry/Dismiss) göster
                 viewModelScope.launch(Dispatchers.IO) {
                     val cashierPrinters = printerRepository.getAllPrinters().first()
-                        .filter { it.printerType == "cashier" && it.ipAddress.isNotBlank() }
+                        .filter { (it.printerType == "cashier" || it.printerType.equals("receipt", true)) && it.ipAddress.isNotBlank() }
                     val failedPrinters = mutableListOf<String>()
                     for (printer in cashierPrinters) {
                         val receipt = printerService.buildPartialReceipt(
@@ -303,8 +305,9 @@ class PaymentViewModel @Inject constructor(
                     val failedPrinters = mutableListOf<String>()
                     withContext(Dispatchers.IO) {
                         val cashierPrinters = printerRepository.getAllPrinters().first()
-                            .filter { it.printerType == "cashier" && it.ipAddress.isNotBlank() }
-                        val finalReceipt = printerService.buildReceipt(ow.order, ow.items)
+                            .filter { (it.printerType == "cashier" || it.printerType.equals("receipt", true)) && it.ipAddress.isNotBlank() }
+                        val itemSize = printerPreferences.getReceiptItemSize()
+                        val finalReceipt = printerService.buildReceipt(ow.order, ow.items, itemSize)
                         for (printer in cashierPrinters) {
                             val printResult = printerService.sendToPrinter(printer.ipAddress, printer.port, finalReceipt)
                             if (printResult.isFailure) failedPrinters.add(printer.name)
@@ -383,8 +386,9 @@ class PaymentViewModel @Inject constructor(
                 val failedPrinters = mutableListOf<String>()
                 withContext(Dispatchers.IO) {
                     val cashierPrinters = printerRepository.getAllPrinters().first()
-                        .filter { it.printerType == "cashier" && it.ipAddress.isNotBlank() }
-                    val receipt = printerService.buildReceipt(ow.order, ow.items)
+                        .filter { (it.printerType == "cashier" || it.printerType.equals("receipt", true)) && it.ipAddress.isNotBlank() }
+                    val itemSize = printerPreferences.getReceiptItemSize()
+                    val receipt = printerService.buildReceipt(ow.order, ow.items, itemSize)
                     for (printer in cashierPrinters) {
                         val printResult = printerService.sendToPrinter(printer.ipAddress, printer.port, receipt)
                         if (printResult.isFailure) failedPrinters.add(printer.name)
@@ -454,14 +458,15 @@ class PaymentViewModel @Inject constructor(
         viewModelScope.launch {
             val ow = _uiState.value.orderWithItems ?: return@launch
             val cashierPrinters = printerRepository.getAllPrinters().first()
-                .filter { it.printerType == "cashier" && it.ipAddress.isNotBlank() }
+                .filter { (it.printerType == "cashier" || it.printerType.equals("receipt", true)) && it.ipAddress.isNotBlank() }
             if (cashierPrinters.isEmpty()) {
                 _uiState.update { it.copy(message = "No cashier printer configured") }
                 return@launch
             }
             val failed = mutableListOf<String>()
+            val itemSize = printerPreferences.getReceiptItemSize()
             for (printer in cashierPrinters) {
-                val receipt = printerService.buildReceipt(ow.order, ow.items)
+                val receipt = printerService.buildReceipt(ow.order, ow.items, itemSize)
                 val result = printerService.sendToPrinter(printer.ipAddress, printer.port, receipt)
                 if (result.isFailure) failed.add(printer.name)
             }
@@ -485,7 +490,7 @@ class PaymentViewModel @Inject constructor(
             val ow = orderRepository.getOrderWithItems(warning.orderId).first() ?: return@launch
             withContext(Dispatchers.IO) {
                 val cashierPrinters = printerRepository.getAllPrinters().first()
-                    .filter { it.printerType == "cashier" && it.ipAddress.isNotBlank() }
+                    .filter { (it.printerType == "cashier" || it.printerType.equals("receipt", true)) && it.ipAddress.isNotBlank() }
                 val failedPrinters = mutableListOf<String>()
                 if (warning.isPartial) {
                     val receipt = printerService.buildPartialReceipt(
@@ -499,7 +504,8 @@ class PaymentViewModel @Inject constructor(
                         }
                     }
                 } else {
-                    val receipt = printerService.buildReceipt(ow.order, ow.items)
+                    val itemSize = printerPreferences.getReceiptItemSize()
+                    val receipt = printerService.buildReceipt(ow.order, ow.items, itemSize)
                     for (printer in cashierPrinters) {
                         if (printerService.sendToPrinter(printer.ipAddress, printer.port, receipt).isFailure) {
                             failedPrinters.add(printer.name)

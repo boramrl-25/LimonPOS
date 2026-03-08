@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.core.content.ContextCompat
+import com.limonpos.app.data.prefs.ReceiptItemSize
 import com.limonpos.app.ui.theme.*
 import kotlinx.coroutines.delay
 import android.Manifest
@@ -54,6 +55,7 @@ fun SettingsScreen(
     val isManager by viewModel.isManager.collectAsState(false)
     val isKdsOnly = userRole == "kds"
     val message by viewModel.message.collectAsState()
+    val receiptItemSize by viewModel.receiptItemSize.collectAsState(ReceiptItemSize.NORMAL)
     val needsNotificationPermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
         ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
     var menuExpanded by remember { mutableStateOf(false) }
@@ -187,6 +189,24 @@ fun SettingsScreen(
                     Icon(Icons.Default.Print, contentDescription = null, modifier = Modifier.size(20.dp))
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("Printer Setup", color = LimonText)
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Yazıcı ürün boyutu / Receipt item size", fontWeight = FontWeight.Bold, color = LimonText, fontSize = 14.sp, modifier = Modifier.padding(bottom = 8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf(
+                        ReceiptItemSize.NORMAL to "Normal",
+                        ReceiptItemSize.LARGE to "Büyük",
+                        ReceiptItemSize.XLARGE to "Çok Büyük"
+                    ).forEach { (size, label) ->
+                        FilterChip(
+                            selected = receiptItemSize == size,
+                            onClick = { viewModel.setReceiptItemSize(size) },
+                            label = { Text(label, fontSize = 14.sp) }
+                        )
+                    }
                 }
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedButton(

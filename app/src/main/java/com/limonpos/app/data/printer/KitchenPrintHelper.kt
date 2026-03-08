@@ -4,6 +4,7 @@ import com.limonpos.app.data.local.entity.OrderItemEntity
 import com.limonpos.app.data.local.entity.PrinterEntity
 import com.limonpos.app.data.repository.OrderRepository
 import com.limonpos.app.data.repository.PrinterRepository
+import com.limonpos.app.data.prefs.PrinterPreferences
 import com.limonpos.app.data.repository.ProductRepository
 import com.limonpos.app.service.PrinterService
 import kotlinx.coroutines.flow.first
@@ -15,7 +16,8 @@ class KitchenPrintHelper @Inject constructor(
     private val orderRepository: OrderRepository,
     private val printerRepository: PrinterRepository,
     private val productRepository: ProductRepository,
-    private val printerService: PrinterService
+    private val printerService: PrinterService,
+    private val printerPreferences: PrinterPreferences
 ) {
     suspend fun sendToKitchen(orderId: String): KitchenPrintResult {
         val ow = orderRepository.getOrderWithItems(orderId).first() ?: return KitchenPrintResult.Failure(
@@ -46,11 +48,12 @@ class KitchenPrintHelper @Inject constructor(
         orderRepository.markItemsAsSent(ow.order.id, pendingItemIds)
 
         val itemsByPrinter = groupItemsByEffectivePrinter(pendingItems, allKitchenPrinters)
+        val itemSize = printerPreferences.getReceiptItemSize()
         var allSucceeded = true
         val failed = mutableListOf<String>()
         for ((printer, items) in itemsByPrinter) {
             if (items.isEmpty()) continue
-            val ticket = printerService.buildKitchenTicket(ow.order, items, printer.name)
+            val ticket = printerService.buildKitchenTicket(ow.order, items, printer.name, itemSize)
             val result = printerService.sendToPrinter(printer.ipAddress, printer.port, ticket)
             if (result.isFailure) {
                 failed.add(printer.name)
@@ -95,11 +98,12 @@ class KitchenPrintHelper @Inject constructor(
             )
         }
         val itemsByPrinter = groupItemsByEffectivePrinter(itemsToPrint, allKitchenPrinters)
+        val itemSize = printerPreferences.getReceiptItemSize()
         var allSucceeded = true
         val failed = mutableListOf<String>()
         for ((printer, items) in itemsByPrinter) {
             if (items.isEmpty()) continue
-            val ticket = printerService.buildKitchenTicket(ow.order, items, printer.name)
+            val ticket = printerService.buildKitchenTicket(ow.order, items, printer.name, itemSize)
             val result = printerService.sendToPrinter(printer.ipAddress, printer.port, ticket)
             if (result.isFailure) {
                 failed.add(printer.name)
@@ -144,11 +148,12 @@ class KitchenPrintHelper @Inject constructor(
             )
         }
         val itemsByPrinter = groupItemsByEffectivePrinter(itemsToPrint, allKitchenPrinters)
+        val itemSize = printerPreferences.getReceiptItemSize()
         var allSucceeded = true
         val failed = mutableListOf<String>()
         for ((printer, items) in itemsByPrinter) {
             if (items.isEmpty()) continue
-            val ticket = printerService.buildKitchenTicket(ow.order, items, printer.name)
+            val ticket = printerService.buildKitchenTicket(ow.order, items, printer.name, itemSize)
             val result = printerService.sendToPrinter(printer.ipAddress, printer.port, ticket)
             if (result.isFailure) {
                 failed.add(printer.name)

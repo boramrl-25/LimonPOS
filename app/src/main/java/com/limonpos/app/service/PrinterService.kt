@@ -61,7 +61,8 @@ class PrinterService @Inject constructor() {
     fun buildKitchenTicket(
         order: OrderEntity,
         items: List<OrderItemEntity>,
-        printerName: String
+        printerName: String,
+        itemSize: Int = 0
     ): ByteArray {
         val p = ESCPOSPrinter
         val buffer = mutableListOf<Byte>()
@@ -89,6 +90,7 @@ class PrinterService @Inject constructor() {
         addText("Time: ${SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())}\n")
         addText("--------------------------------\n")
 
+        addBytes(itemSizeEscPos(itemSize))
         addBytes(p.BOLD_ON)
         for (item in items) {
             addText("${item.quantity}x ${item.productName}\n")
@@ -99,6 +101,7 @@ class PrinterService @Inject constructor() {
             }
         }
         addBytes(p.BOLD_OFF)
+        addBytes(p.NORMAL_SIZE)
 
         addText("--------------------------------\n")
         addBytes(p.ALIGN_CENTER)
@@ -107,6 +110,12 @@ class PrinterService @Inject constructor() {
         addBytes(p.CUT)
 
         return buffer.toByteArray()
+    }
+
+    private fun itemSizeEscPos(size: Int): ByteArray = when (size) {
+        1 -> ESCPOSPrinter.DOUBLE_HEIGHT
+        2 -> ESCPOSPrinter.DOUBLE_SIZE
+        else -> ESCPOSPrinter.NORMAL_SIZE
     }
 
     fun buildVoidSlip(
@@ -153,7 +162,8 @@ class PrinterService @Inject constructor() {
 
     fun buildReceipt(
         order: OrderEntity,
-        items: List<OrderItemEntity>
+        items: List<OrderItemEntity>,
+        itemSize: Int = 0
     ): ByteArray {
         val p = ESCPOSPrinter
         val buffer = mutableListOf<Byte>()
@@ -175,6 +185,7 @@ class PrinterService @Inject constructor() {
         addText("Order #${order.id.takeLast(8)}\n")
         addText("--------------------------------\n")
 
+        addBytes(itemSizeEscPos(itemSize))
         addBytes(p.BOLD_ON)
         for (item in items) {
             val lineTotal = item.price * item.quantity
@@ -187,6 +198,7 @@ class PrinterService @Inject constructor() {
             }
         }
         addBytes(p.BOLD_OFF)
+        addBytes(p.NORMAL_SIZE)
         addText("--------------------------------\n")
 
         addText("Subtotal: AED ${String.format("%.2f", order.subtotal)}\n")
