@@ -44,40 +44,79 @@ export async function exchangeCodeForRefreshToken(code, client_id, client_secret
   const dcKey = (forceDc || process.env.ZOHO_DC || "com").toLowerCase();
   const { accounts: accountsUrl } = getZohoUrls(dcKey);
   const uri = redirect_uri || DC_REDIRECTS[dcKey] || DC_REDIRECTS.com;
-  const res = await axios.post(
-    `${accountsUrl}/oauth/v2/token`,
-    new URLSearchParams({
-      code,
-      client_id,
-      client_secret,
-      redirect_uri: uri,
-      grant_type: "authorization_code",
-    }).toString(),
-    { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
-  );
+  // Debug: Zoho request öncesi (invalid_client araştırması)
+  const cid = String(client_id || "");
+  const csec = String(client_secret || "");
+  console.log("[Zoho] exchangeCodeForRefreshToken BEFORE request:", {
+    dc: dcKey,
+    accountsUrl,
+    redirect_uri: uri,
+    client_id_prefix: cid.slice(0, 12) + (cid.length > 12 ? "..." : ""),
+    client_id_length: cid.length,
+    client_secret_length: csec.length,
+    client_secret_prefix: csec ? csec[0] + "***" : "(empty)",
+    code_prefix: (code || "").toString().slice(0, 10) + "...",
+    grant_type: "authorization_code",
+  });
+  let res;
+  try {
+    res = await axios.post(
+      `${accountsUrl}/oauth/v2/token`,
+      new URLSearchParams({
+        code,
+        client_id,
+        client_secret,
+        redirect_uri: uri,
+        grant_type: "authorization_code",
+      }).toString(),
+      { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
+    );
+  } catch (err) {
+    const zd = err.response?.data;
+    console.error("[Zoho] exchangeCodeForRefreshToken Zoho error:", {
+      status: err.response?.status,
+      error: zd?.error,
+      error_description: zd?.error_description,
+      data: JSON.stringify(zd || {}),
+    });
+    throw err;
+  }
   const rt = res.data?.refresh_token;
   if (!rt) {
     const err = res.data?.error_description || res.data?.error || "No refresh_token in Zoho response";
+    console.error("[Zoho] exchangeCodeForRefreshToken Zoho response:", JSON.stringify(res.data || {}));
     throw new Error(String(err));
   }
   return { refresh_token: rt };
 }
 
-/** Zoho ayarlarını env (Railway Variables) veya db'den alır. Env önceliklidir. dc=eu ise EU hesabı. */
+/** Zoho ayarlarını okur. ÖNCELİK: DB (web'de kaydedilen) > env. Böylece Railway env, web'deki doğru değerleri ezmez. */
 export function getZohoConfig(db) {
   const dbCfg = db?.data?.zoho_config || {};
-  const fromEnv = {
-    refresh_token: process.env.ZOHO_REFRESH_TOKEN || dbCfg.refresh_token,
-    client_id: process.env.ZOHO_CLIENT_ID || dbCfg.client_id,
-    client_secret: process.env.ZOHO_CLIENT_SECRET || dbCfg.client_secret,
-    organization_id: process.env.ZOHO_ORGANIZATION_ID || dbCfg.organization_id,
-    customer_id: process.env.ZOHO_CUSTOMER_ID || dbCfg.customer_id,
-    cash_account_id: process.env.ZOHO_CASH_ACCOUNT_ID || dbCfg.cash_account_id,
-    card_account_id: process.env.ZOHO_CARD_ACCOUNT_ID || dbCfg.card_account_id,
-    dc: process.env.ZOHO_DC || dbCfg.dc || "",
-    enabled: process.env.ZOHO_ENABLED || dbCfg.enabled || "true",
+  const env = {
+    refresh_token: process.env.ZOHO_REFRESH_TOKEN,
+    client_id: process.env.ZOHO_CLIENT_ID,
+    client_secret: process.env.ZOHO_CLIENT_SECRET,
+    organization_id: process.env.ZOHO_ORGANIZATION_ID,
+    customer_id: process.env.ZOHO_CUSTOMER_ID,
+    cash_account_id: process.env.ZOHO_CASH_ACCOUNT_ID,
+    card_account_id: process.env.ZOHO_CARD_ACCOUNT_ID,
+    dc: process.env.ZOHO_DC,
+    enabled: process.env.ZOHO_ENABLED,
   };
-  return fromEnv;
+  // DB önce, env fallback (kullanıcı web'de kaydettiyse onu kullan)
+  const cfg = {
+    refresh_token: (dbCfg.refresh_token ?? env.refresh_token ?? "").trim(),
+    client_id: (dbCfg.client_id ?? env.client_id ?? "").trim(),
+    client_secret: (dbCfg.client_secret ?? env.client_secret ?? "").trim(),
+    organization_id: (dbCfg.organization_id ?? env.organization_id ?? "").trim(),
+    customer_id: (dbCfg.customer_id ?? env.customer_id ?? "").trim(),
+    cash_account_id: (dbCfg.cash_account_id ?? env.cash_account_id ?? "").trim(),
+    card_account_id: (dbCfg.card_account_id ?? env.card_account_id ?? "").trim(),
+    dc: (dbCfg.dc ?? env.dc ?? "").toString().trim().toLowerCase(),
+    enabled: String(dbCfg.enabled ?? env.enabled ?? "true").trim().toLowerCase(),
+  };
+  return cfg;
 }
 
 /** 401 alındığında token cache temizlenir, tekrar denemek için. */
@@ -94,7 +133,15 @@ export async function getZohoAccessToken(db, tryAllDcs = false) {
   const refresh_token = (cfg.refresh_token || "").trim();
   const client_id = (cfg.client_id || "").trim();
   const client_secret = (cfg.client_secret || "").trim();
-  const dc = (cfg.dc || "").trim().toLowerCase();
+  const dc = (cfg.dc || "").trim().toLowerCase() || "com";
+  const dbCfg = db?.data?.zoho_config || {};
+  const fromDb = !!(dbCfg.client_id || dbCfg.client_secret || dbCfg.refresh_token);
+  console.log("[Zoho] getZohoAccessToken config source:", {
+    hasDbValues: fromDb,
+    dc,
+    client_id_prefix: client_id.slice(0, 12) + (client_id.length > 12 ? "..." : ""),
+    client_secret_length: client_secret.length,
+  });
   if (!refresh_token || !client_id || !client_secret) return null;
 
   if (cachedToken && Date.now() < tokenExpiresAt - 60000) return cachedToken;

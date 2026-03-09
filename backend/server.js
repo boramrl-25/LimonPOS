@@ -1930,9 +1930,20 @@ app.post("/api/payments", authMiddleware, async (req, res) => {
   const notSentYet = !order?.zoho_receipt_id;
   const willPushZoho = order && totalMatch && hasItems && notSentYet;
 
+  console.log("[Zoho] POST /api/payments check:", {
+    order_id,
+    order_found: !!order,
+    items_count: items.length,
+    totalPaid,
+    order_total: order?.total,
+    totalMatch,
+    notSentYet,
+    willPushZoho,
+  });
+
   if (!order) console.log("[Zoho] Skip: order", order_id, "NOT FOUND - App must sync order first (ensureOrderExistsOnApi). Check: Server URL = api.the-limon.com ?");
   else if (!totalMatch) console.log("[Zoho] Skip: totalPaid", totalPaid, "!= order.total", order.total, "- wait for all split payments?");
-  else if (!hasItems) console.log("[Zoho] Skip: 0 items for order", order_id, "- App needs rebuild with includeAllItems fix, or send to kitchen before payment");
+  else if (!hasItems) console.log("[Zoho] Skip: 0 items for order", order_id, "- App must sync items before payment (includeAllItems=true in ensureOrderExistsOnApi)");
   else if (!notSentYet) console.log("[Zoho] Skip: already sent (zoho_receipt_id:", order.zoho_receipt_id, ")");
 
   if (order && willPushZoho) {
@@ -2210,7 +2221,15 @@ app.post("/api/zoho/exchange-code", authMiddleware, async (req, res) => {
     if (!code || !client_id || !client_secret) {
       return res.status(400).json({ error: "code, client_id, client_secret gerekli" });
     }
-    // dc: "eu" or "com" - Self Client region (api-console.zoho.eu vs .com)
+    // Debug: exchange-code request değerleri (source: REQUEST BODY – UI'dan)
+    const dcVal = (dc || process.env.ZOHO_DC || "").toString().trim().toLowerCase();
+    console.log("[Zoho] exchange-code RECEIVED from request:", {
+      source: "request_body",
+      dc: dcVal,
+      client_id_prefix: String(client_id).slice(0, 12) + "...",
+      client_secret_length: String(client_secret || "").length,
+      redirect_uri_sent: redirect_uri || "(backend will choose)",
+    });
     let rt;
     try {
       const r = await exchangeCodeForRefreshToken(code, client_id, client_secret, redirect_uri, dc || process.env.ZOHO_DC);
@@ -2234,7 +2253,9 @@ app.post("/api/zoho/exchange-code", authMiddleware, async (req, res) => {
     await db.write();
     res.json({ refresh_token: rt, success: true });
   } catch (e) {
-    const msg = e.response?.data?.error_description || e.response?.data?.error || (e && e.message) || "Token alınamadı";
+    const d = e.response?.data;
+    const msg = d?.error_description || d?.error || (e && e.message) || "Token alınamadı";
+    console.error("[Zoho] exchange-code FAILED:", { status: e.response?.status, zoho: d, message: msg });
     res.status(400).json({ error: String(msg) });
   }
 });
@@ -2248,8 +2269,15 @@ app.get("/api/zoho-config", authMiddleware, async (req, res) => {
 app.put("/api/zoho-config", authMiddleware, async (req, res) => {
   await ensureData();
   db.data.zoho_config = db.data.zoho_config || {};
-  for (const [k, v] of Object.entries(req.body)) db.data.zoho_config[k] = String(v);
+  for (const [k, v] of Object.entries(req.body)) db.data.zoho_config[k] = v != null ? String(v) : "";
   await db.write();
+  const cfg = db.data.zoho_config;
+  console.log("[Zoho] updateZohoConfig SAVED to DB:", {
+    dc: cfg.dc,
+    client_id_prefix: (cfg.client_id || "").slice(0, 12) + "...",
+    client_secret_length: (cfg.client_secret || "").length,
+    has_refresh_token: !!(cfg.refresh_token),
+  });
   res.json(db.data.zoho_config);
 });
 
