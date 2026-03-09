@@ -16,7 +16,6 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Restaurant
-import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Lock
@@ -55,7 +54,6 @@ fun FloorPlanScreen(
     onNavigateToOrder: (tableId: String) -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToClosedBills: () -> Unit,
-    onNavigateToDailyCashEntry: () -> Unit = {},
     onNavigateToVoidApprovals: () -> Unit = {},
     canAccessVoidApprovals: Boolean = false,
     onNavigateToClosedBillAccessApprovals: () -> Unit = {},
@@ -290,14 +288,6 @@ fun FloorPlanScreen(
                                     onSync()
                                 },
                                 leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null, tint = LimonPrimary) }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Daily Cash Entry", color = LimonText) },
-                                onClick = {
-                                    viewModel.dismissMenu()
-                                    onNavigateToDailyCashEntry()
-                                },
-                                leadingIcon = { Icon(Icons.Default.AccountBalance, contentDescription = null, tint = LimonPrimary) }
                             )
                             if (canAccessVoidApprovals) {
                                 DropdownMenuItem(

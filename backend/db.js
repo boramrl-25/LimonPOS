@@ -76,7 +76,6 @@ const defaultData = {
   business_operation_log: [],
   eod_logs: [],
   cash_drawer_opens: [],
-  daily_cash_entries: [],
   custom_roles: [],
   discount_requests: [],
   table_reservations: [],

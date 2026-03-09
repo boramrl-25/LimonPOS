@@ -188,11 +188,5 @@ interface ApiService {
     @GET("settings")
     suspend fun getSettings(): Response<SettingsDto>
 
-    @GET("daily-cash-entry")
-    suspend fun getDailyCashEntry(@Query("date") date: String?): Response<DailyCashEntryResponse>
-
-    @POST("daily-cash-entry")
-    suspend fun postDailyCashEntry(@Body body: DailyCashEntryRequest): Response<DailyCashEntryDto>
-
     /** POS cihazını web’de “çevrimiçi” göstermek için heartbeat (senkron sırasında çağrılır). */
 }
