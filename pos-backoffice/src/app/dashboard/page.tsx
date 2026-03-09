@@ -51,6 +51,7 @@ export default function DashboardPage() {
     itemSales: Array<{ productId: string; productName: string; categoryId?: string; totalAmount: number; totalQuantity: number }>;
     voids: Array<{ id: string; order_id?: string; type: string; product_name: string; quantity: number; amount: number; user_name: string; created_at: number }>;
     refunds: Array<{ id: string; order_id?: string; type: string; product_name?: string; amount: number; user_name: string; source_table_number?: string; created_at: number }>;
+    dailyCashEntry?: { id: string; physical_cash: number; system_cash: number; difference: number; user_name: string; created_at: number } | null;
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -322,6 +323,42 @@ export default function DashboardPage() {
           {lastRefresh && (
             <p className="text-slate-500 text-xs mt-2">Last updated: {lastRefresh.toLocaleTimeString()}</p>
           )}
+        </section>
+
+        {/* Cash Dashboard — System cash, physical cash (from app), difference */}
+        <section className="rounded-xl bg-amber-950/40 border border-amber-700/50 p-5">
+          <h2 className="text-lg font-semibold text-amber-200 mb-4">Cash</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="p-4 rounded-lg bg-slate-900/60 border border-amber-700/30">
+              <p className="text-amber-200/80 text-sm mb-1">System Cash</p>
+              <p className="text-2xl font-bold text-amber-100">
+                {loading ? "..." : `${fmt(dailySales?.totalCash ?? 0)} AED`}
+              </p>
+            </div>
+            <div className="p-4 rounded-lg bg-slate-900/60 border border-slate-600">
+              <p className="text-slate-400 text-sm mb-1">Total Card</p>
+              <p className="text-2xl font-bold text-white">
+                {loading ? "..." : `${fmt(dailySales?.totalCard ?? 0)} AED`}
+              </p>
+            </div>
+            <div className="p-4 rounded-lg bg-slate-900/60 border border-slate-600">
+              <p className="text-slate-400 text-sm mb-1">Physical Cash (from app)</p>
+              <p className="text-2xl font-bold text-white">
+                {dailySales?.dailyCashEntry != null ? `${fmt(dailySales.dailyCashEntry.physical_cash)} AED` : "—"}
+              </p>
+              {dailySales?.dailyCashEntry?.user_name && (
+                <p className="text-slate-500 text-xs mt-1">By: {dailySales.dailyCashEntry.user_name}</p>
+              )}
+            </div>
+            <div className="p-4 rounded-lg bg-slate-900/60 border border-slate-600">
+              <p className="text-slate-400 text-sm mb-1">Cash Difference</p>
+              <p className={`text-2xl font-bold ${dailySales?.dailyCashEntry != null ? (dailySales.dailyCashEntry.difference >= 0 ? "text-emerald-400" : "text-red-400") : "text-slate-500"}`}>
+                {dailySales?.dailyCashEntry != null
+                  ? `${dailySales.dailyCashEntry.difference >= 0 ? "+" : ""}${fmt(dailySales.dailyCashEntry.difference)} AED (${dailySales.dailyCashEntry.difference >= 0 ? "Over" : "Short"})`
+                  : "—"}
+              </p>
+            </div>
+          </div>
         </section>
 
         {/* Daily Sales — tap blocks to view tickets (Receipt #, Date, Who) */}

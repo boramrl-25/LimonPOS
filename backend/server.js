@@ -26,9 +26,11 @@ process.on("unhandledRejection", (reason, promise) => {
 });
 
 const app = express();
-const PORT = process.env.PORT || 3002;
+// Railway sets PORT; must be number. Listen on 0.0.0.0 so external requests reach the app.
+const PORT = Number(process.env.PORT) || 3002;
 
-app.use(cors());
+// CORS: allow all origins so pos.the-limon.com and Vercel can reach this API
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 
 const DEFAULT_SETUP = { id: "u1", name: "Setup", pin: "2222", role: "setup", active: 1, permissions: "[]", cash_drawer_permission: 0 };
@@ -170,6 +172,7 @@ async function ensureData() {
   if (!Array.isArray(db.data.tables)) db.data.tables = [];
   if (!Array.isArray(db.data.audit_log)) db.data.audit_log = [];
   if (!Array.isArray(db.data.eod_logs)) db.data.eod_logs = [];
+  if (!Array.isArray(db.data.daily_cash_entries)) db.data.daily_cash_entries = [];
   if (!db.data.settings || typeof db.data.settings.timezone_offset_minutes !== "number") {
     db.data.settings = db.data.settings || {};
     db.data.settings.timezone_offset_minutes = (db.data.settings.timezone_offset_minutes ?? 0) | 0;
@@ -378,7 +381,10 @@ const authMiddleware = (req, res, next) => {
   next();
 };
 
-// No auth — telefondan tarayıcıda açıp bağlantı testi: http://192.168.1.169:3002/api/health
+// Railway / load balancer health check (no auth)
+app.get("/", (req, res) => {
+  res.status(200).send("OK");
+});
 app.get("/api/health", (req, res) => {
   const dataDir = process.env.DATA_DIR || "";
   const fileInfo = getDataFileInfo();
@@ -1411,6 +1417,61 @@ app.get("/api/dashboard/daily-sales", authMiddleware, async (req, res) => {
     paidTickets,
     lastEod: lastEod ? { ran_at: lastEod.ran_at, user_name: lastEod.user_name, tables_closed_count: lastEod.tables_closed?.length ?? 0 } : null,
     openTablesCount,
+    dailyCashEntry: getDailyCashEntryForBounds(dayStartTs, dayEndTs),
+  });
+});
+
+function getDailyCashEntryForBounds(dayStartTs, dayEndTs) {
+  const entries = (db.data.daily_cash_entries || []).filter((e) => {
+    const t = e.date_ts ?? e.created_at ?? 0;
+    return t >= dayStartTs && t < dayEndTs;
+  });
+  if (entries.length === 0) return null;
+  entries.sort((a, b) => (b.created_at ?? 0) - (a.created_at ?? 0));
+  return entries[0];
+}
+
+app.post("/api/daily-cash-entry", authMiddleware, async (req, res) => {
+  await ensureData();
+  const physicalCash = parseFloat(req.body.physical_cash);
+  if (isNaN(physicalCash) || physicalCash < 0) {
+    return res.status(400).json({ error: "invalid_physical_cash", message: "physical_cash must be a non-negative number" });
+  }
+  const dateStr = (req.body.date || "").toString().trim() || new Date().toISOString().slice(0, 10);
+  const bounds = getDayBounds(dateStr);
+  const dayStartTs = bounds ? bounds.startTs : getTodayRange().startTs;
+  const dayEndTs = bounds ? bounds.endTs : getTodayRange().endTs;
+  const summary = getSalesSummaryForRange(dayStartTs, dayEndTs);
+  const systemCash = summary.totalCash;
+  const difference = physicalCash - systemCash;
+  const entry = {
+    id: uuid(),
+    date: dateStr,
+    date_ts: dayStartTs,
+    system_cash: systemCash,
+    physical_cash: physicalCash,
+    difference,
+    user_id: req.user?.id || "",
+    user_name: req.user?.name || "—",
+    created_at: Date.now(),
+  };
+  db.data.daily_cash_entries = db.data.daily_cash_entries || [];
+  db.data.daily_cash_entries.push(entry);
+  await db.write();
+  res.json(entry);
+});
+
+app.get("/api/daily-cash-entry", authMiddleware, async (req, res) => {
+  await ensureData();
+  const dateStr = (req.query.date || "").toString().trim() || new Date().toISOString().slice(0, 10);
+  const bounds = getDayBounds(dateStr);
+  if (!bounds) return res.status(400).json({ error: "invalid_date", message: "date must be YYYY-MM-DD" });
+  const entry = getDailyCashEntryForBounds(bounds.startTs, bounds.endTs);
+  const summary = getSalesSummaryForRange(bounds.startTs, bounds.endTs);
+  res.json({
+    date: dateStr,
+    systemCash: summary.totalCash,
+    dailyCashEntry: entry,
   });
 });
 
@@ -2407,7 +2468,7 @@ app.get("/", (req, res) => {
   `);
 });
 
-const HOST = process.env.HOST || "0.0.0.0";
+const HOST = process.env.HOST || "0.0.0.0"; // 0.0.0.0 required for Railway
 const DATA_DIR = process.env.DATA_DIR;
 
 let lastAutoCloseRunTs = 0;

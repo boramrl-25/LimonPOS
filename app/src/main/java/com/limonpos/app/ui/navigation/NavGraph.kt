@@ -41,6 +41,7 @@ import com.limonpos.app.ui.screens.printers.PrintersScreen
 import com.limonpos.app.ui.screens.products.ProductsScreen
 import com.limonpos.app.ui.screens.categories.CategoriesScreen
 import com.limonpos.app.ui.screens.modifiers.ModifiersScreen
+import com.limonpos.app.ui.screens.dailycashentry.DailyCashEntryScreen
 import com.limonpos.app.ui.screens.serversettings.ServerSettingsScreen
 import com.limonpos.app.util.showOverdueNotification
 import kotlinx.coroutines.delay
@@ -69,6 +70,7 @@ object Routes {
     const val CATEGORIES = "categories"
     const val MODIFIERS = "modifiers"
     const val SERVER_SETTINGS = "server_settings"
+    const val DAILY_CASH_ENTRY = "daily_cash_entry"
 
     fun order(tableId: String) = "order/$tableId"
     fun payment(tableId: String) = "order/$tableId/payment"
@@ -202,6 +204,7 @@ fun NavGraph(
                             onNavigateToOrder = { tableId -> navController.navigate(Routes.order(tableId)) },
                             onNavigateToSettings = { navController.navigate(Routes.SETTINGS) },
                             onNavigateToClosedBills = { navController.navigate(Routes.CLOSED_BILLS) },
+                            onNavigateToDailyCashEntry = { navController.navigate(Routes.DAILY_CASH_ENTRY) },
                             onNavigateToVoidApprovals = { navController.navigate(Routes.VOID_APPROVALS) },
                             canAccessVoidApprovals = canAccessKds,
                             onNavigateToClosedBillAccessApprovals = { navController.navigate(Routes.CLOSED_BILL_ACCESS_APPROVALS) },
@@ -397,6 +400,11 @@ fun NavGraph(
             }
             composable(Routes.BACK_OFFICE_SETTINGS) {
                 DailySalesScreen(
+                    onBack = { navController.popBackStack() }
+                )
+            }
+            composable(Routes.DAILY_CASH_ENTRY) {
+                DailyCashEntryScreen(
                     onBack = { navController.popBackStack() }
                 )
             }
