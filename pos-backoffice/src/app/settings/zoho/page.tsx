@@ -172,10 +172,12 @@ export default function ZohoSettingsPage() {
         <div>
           <label className="block text-sm text-slate-400 mb-1">Region (Hesap bölgesi)</label>
           <select value={config.dc} onChange={(e) => setConfig((c) => ({ ...c, dc: e.target.value }))} className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-600 text-white">
-            <option value="">Global (zoho.com)</option>
+            <option value="">Global / US (zoho.com)</option>
             <option value="eu">EU (zoho.eu)</option>
+            <option value="in">India (zoho.in)</option>
+            <option value="au">Australia (zoho.com.au)</option>
           </select>
-          <p className="text-xs text-slate-500 mt-1">Zoho EU hesabı kullanıyorsanız EU seçin</p>
+          <p className="text-xs text-slate-500 mt-1">Client hangi api-console&apos;da? (api-console.zoho.eu = EU, .com = Global)</p>
         </div>
         <div>
           <label className="block text-sm text-slate-400 mb-1">Organization ID</label>

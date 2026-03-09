@@ -2230,6 +2230,7 @@ app.post("/api/zoho/exchange-code", authMiddleware, async (req, res) => {
     db.data.zoho_config.refresh_token = rt;
     db.data.zoho_config.client_id = client_id;
     db.data.zoho_config.client_secret = client_secret;
+    if (dc && String(dc).trim()) db.data.zoho_config.dc = String(dc).trim().toLowerCase();
     await db.write();
     res.json({ refresh_token: rt, success: true });
   } catch (e) {

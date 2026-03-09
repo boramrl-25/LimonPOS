@@ -4,11 +4,19 @@ import axios from "axios";
 let cachedToken = null;
 let tokenExpiresAt = 0;
 
+const ZOHO_DC_URLS = {
+  eu: { accounts: "https://accounts.zoho.eu", books: "https://www.zohoapis.eu/books/v3" },
+  com: { accounts: "https://accounts.zoho.com", books: "https://www.zohoapis.com/books/v3" },
+  in: { accounts: "https://accounts.zoho.in", books: "https://www.zohoapis.in/books/v3" },
+  au: { accounts: "https://accounts.zoho.com.au", books: "https://www.zohoapis.com.au/books/v3" },
+};
+
 function getZohoUrls(dc) {
-  const useEu = (dc || process.env.ZOHO_DC || "").toLowerCase() === "eu";
+  const d = (dc || process.env.ZOHO_DC || "").toLowerCase();
+  const urls = ZOHO_DC_URLS[d] || ZOHO_DC_URLS.com;
   return {
-    accounts: process.env.ZOHO_ACCOUNTS_URL || (useEu ? "https://accounts.zoho.eu" : "https://accounts.zoho.com"),
-    books: process.env.ZOHO_APIS_URL || (useEu ? "https://www.zohoapis.eu/books/v3" : "https://www.zohoapis.com/books/v3"),
+    accounts: process.env.ZOHO_ACCOUNTS_URL || urls.accounts,
+    books: process.env.ZOHO_APIS_URL || urls.books,
   };
 }
 
@@ -24,12 +32,18 @@ function parseZohoError(err) {
   return err.message || "Zoho API hatası";
 }
 
+const DC_REDIRECTS = {
+  eu: "https://api-console.zoho.eu/oauth/redirect",
+  com: "https://api-console.zoho.com/oauth/redirect",
+  in: "https://api-console.zoho.in/oauth/redirect",
+  au: "https://api-console.zoho.com.au/oauth/redirect",
+};
+
 /** Exchange authorization code for refresh token. Returns { refresh_token } or throws. */
 export async function exchangeCodeForRefreshToken(code, client_id, client_secret, redirect_uri, forceDc) {
-  // Self Client: use API Console redirect; server-based apps use custom URI
-  const useEu = (forceDc || process.env.ZOHO_DC || "").toLowerCase() === "eu";
-  const accountsUrl = useEu ? "https://accounts.zoho.eu" : "https://accounts.zoho.com";
-  const uri = redirect_uri || (useEu ? "https://api-console.zoho.eu/oauth/redirect" : "https://api-console.zoho.com/oauth/redirect");
+  const dcKey = (forceDc || process.env.ZOHO_DC || "com").toLowerCase();
+  const { accounts: accountsUrl } = getZohoUrls(dcKey);
+  const uri = redirect_uri || DC_REDIRECTS[dcKey] || DC_REDIRECTS.com;
   const res = await axios.post(
     `${accountsUrl}/oauth/v2/token`,
     new URLSearchParams({
@@ -72,47 +86,62 @@ export function clearZohoTokenCache() {
   tokenExpiresAt = 0;
 }
 
-export async function getZohoAccessToken(db, tryAlternateDc = false) {
+const DC_ORDER = ["eu", "com", "in", "au"];
+
+export async function getZohoAccessToken(db, tryAllDcs = false) {
   await db.read();
   const cfg = getZohoConfig(db);
-  const { refresh_token, client_id, client_secret, dc } = cfg;
+  const refresh_token = (cfg.refresh_token || "").trim();
+  const client_id = (cfg.client_id || "").trim();
+  const client_secret = (cfg.client_secret || "").trim();
+  const dc = (cfg.dc || "").trim().toLowerCase();
   if (!refresh_token || !client_id || !client_secret) return null;
 
   if (cachedToken && Date.now() < tokenExpiresAt - 60000) return cachedToken;
 
-  const dcToTry = tryAlternateDc ? ((dc || "").toLowerCase() === "eu" ? "" : "eu") : (dc || "");
-  const { accounts } = getZohoUrls(dcToTry);
-  const accountsLabel = (dcToTry || "").toLowerCase() === "eu" ? "accounts.zoho.eu" : "accounts.zoho.com";
-  try {
-    const res = await axios.post(
-      `${accounts}/oauth/v2/token`,
-      new URLSearchParams({
-        refresh_token,
-        client_id,
-        client_secret,
-        grant_type: "refresh_token",
-      }).toString(),
-      { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
-    );
-    const accessToken = res.data?.access_token;
-    if (!accessToken) {
-      const errData = res.data ? JSON.stringify(res.data) : "No access_token in response";
-      console.error("[Zoho] Token response missing access_token:", errData);
-      throw new Error("Zoho token yanıtında access_token yok: " + (res.data?.error || res.data?.error_description || errData));
+  const dcsToTry = tryAllDcs ? DC_ORDER : [dc || "com"];
+  let lastErr = null;
+  for (const dcKey of dcsToTry) {
+    const { accounts } = getZohoUrls(dcKey);
+    try {
+      const res = await axios.post(
+        `${accounts}/oauth/v2/token`,
+        new URLSearchParams({
+          refresh_token,
+          client_id,
+          client_secret,
+          grant_type: "refresh_token",
+        }).toString(),
+        { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
+      );
+      const accessToken = res.data?.access_token;
+      if (!accessToken) {
+        const errData = res.data?.error || res.data?.error_description || JSON.stringify(res.data);
+        throw new Error("access_token yok: " + errData);
+      }
+      cachedToken = accessToken;
+      tokenExpiresAt = Date.now() + (res.data.expires_in || 3600) * 1000;
+      if (tryAllDcs && dcKey !== (dc || "com")) {
+        console.log("[Zoho] Token basarili, dogru bölge:", dcKey, "(önce", dc || "com", "denendi)");
+      }
+      return cachedToken;
+    } catch (err) {
+      lastErr = err;
+      const errData = err.response?.data;
+      const zohoError = errData?.error || errData?.error_description;
+      console.error("[Zoho] Token error", dcKey, err.response?.status, zohoError || err.message);
+      if (!tryAllDcs) break;
     }
-    cachedToken = accessToken;
-    tokenExpiresAt = Date.now() + (res.data.expires_in || 3600) * 1000;
-    return cachedToken;
-  } catch (err) {
-    clearZohoTokenCache();
-    const errData = err.response?.data;
-    const code = err.response?.status;
+  }
+  clearZohoTokenCache();
+  if (lastErr) {
+    const errData = lastErr.response?.data;
     const zohoError = errData?.error || errData?.error_description || errData?.message;
-    console.error("[Zoho] Token error:", accountsLabel, code, JSON.stringify(errData || err.message));
-    const msg = parseZohoError(err);
+    const msg = parseZohoError(lastErr);
     const detail = zohoError ? ` [Zoho: ${zohoError}]` : "";
     throw new Error(msg + detail);
   }
+  return null;
 }
 
 /** Map POS payment method to Zoho payment_mode */
@@ -204,8 +233,9 @@ export async function pushToZohoBooks(db, order, items, payments = [], products 
     payload.payment_options = paymentOptions;
   }
 
+  console.log("[Zoho] pushToZohoBooks: dc=", dc, "booksBase=", booksBase, "org=", organization_id, "customer=", customer_id, "line_items=", lineItems.length);
   try {
-    await axios.post(
+    const res = await axios.post(
       `${booksBase}/salesreceipts?organization_id=${organization_id}`,
       payload,
       {
@@ -215,6 +245,7 @@ export async function pushToZohoBooks(db, order, items, payments = [], products 
         },
       }
     );
+    console.log("[Zoho] Sales receipt created:", res.data?.salesreceipt?.salesreceipt_id || res.status);
     const oidx = db.data.orders.findIndex((o) => o.id === order.id);
     if (oidx >= 0) db.data.orders[oidx].zoho_receipt_id = "sent";
     await db.write();
@@ -246,7 +277,7 @@ export async function pushToZohoBooks(db, order, items, payments = [], products 
       }
     }
     const errData = err.response?.data;
-    console.error("[Zoho] Books error:", err.response?.status, JSON.stringify(errData || err.message));
+    console.error("[Zoho] Books error:", err.response?.status, JSON.stringify(errData || err.message), "payload_summary:", { customer_id, line_items_count: lineItems.length, date: payload.date });
     if (err.response?.status === 401) clearZohoTokenCache();
     return false;
   }

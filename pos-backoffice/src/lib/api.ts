@@ -776,11 +776,20 @@ export async function getZohoConfig() {
   return res.json();
 }
 
+const ZOHO_REDIRECT_BY_DC: Record<string, string> = {
+  eu: "https://api-console.zoho.eu/oauth/redirect",
+  in: "https://api-console.zoho.in/oauth/redirect",
+  au: "https://api-console.zoho.com.au/oauth/redirect",
+};
+const ZOHO_REDIRECT_DEFAULT = "https://api-console.zoho.com/oauth/redirect";
+
 export async function exchangeZohoCode(code: string, client_id: string, client_secret: string, redirect_uri?: string, dc?: string): Promise<{ refresh_token: string; success: boolean }> {
+  const dcKey = (dc || "").trim().toLowerCase();
+  const redirect = redirect_uri || ZOHO_REDIRECT_BY_DC[dcKey] || ZOHO_REDIRECT_DEFAULT;
   const res = await fetchWithTimeout(`${API_URL}/zoho/exchange-code`, {
     method: "POST",
     headers: headers(),
-    body: JSON.stringify({ code, client_id, client_secret, redirect_uri: redirect_uri || "https://www.zoho.com/books", dc: dc || "" }),
+    body: JSON.stringify({ code, client_id, client_secret, redirect_uri: redirect, dc: dcKey || "" }),
   });
   if (!res.ok) {
     const text = await res.text();
