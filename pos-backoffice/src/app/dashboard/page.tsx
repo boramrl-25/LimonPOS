@@ -8,7 +8,7 @@ import {
   RefreshCw,
   ChevronRight,
 } from "lucide-react";
-import { getDashboardStats, getDailySales, getOpenOrders, getClosedBillChanges, getCashDrawerOpens, getDiscountsToday, getDiscountRequestsPending, getBusinessDayStatus, markWarningShown, getOpenTablesNotClosed } from "@/lib/api";
+import { getDashboardStats, getDailySales, getOpenOrders, getClosedBillChanges, getCashDrawerOpens, getDiscountsToday, getDiscountRequestsPending, getBusinessDayStatus, markWarningShown, getOpenTablesNotClosed, getReconciliationSummary } from "@/lib/api";
 import type { DiscountTodayRow, OpenTableNotClosed } from "@/lib/api";
 import { useUser } from "@/context/UserContext";
 
@@ -78,6 +78,11 @@ export default function DashboardPage() {
   const [openTablesNotClosedLoading, setOpenTablesNotClosedLoading] = useState(false);
   const [selectedTableOrderId, setSelectedTableOrderId] = useState<string | null>(null);
   const [currentBusinessDayKey, setCurrentBusinessDayKey] = useState<string | null>(null);
+  const [reconciliationData, setReconciliationData] = useState<{
+    date: string;
+    cash: { systemCash: number; physicalCash: number | null; bankDeposit: number; difference: number | null; manualPhysicalCount?: { amount: number; user_name: string } | null };
+    card: { systemCard: number; utapTotal: number; bankDeposit: number; difference: number | null };
+  } | null>(null);
   const { user } = useUser();
   const canSeeWarning = user && (["admin", "manager", "supervisor"].includes(user.role) || (user.permissions || []).includes("web_settings"));
   const router = useRouter();
@@ -89,7 +94,8 @@ export default function DashboardPage() {
       const useRange = from && to;
       const singleDate = from || to;
       const dateForDiscounts = singleDate || toYYYYMMDD(new Date());
-      const [statsRes, dailyRes, closedChangesRes, cashDrawerRes, discountsRes] = await Promise.all([
+      const reconDate = singleDate || toYYYYMMDD(new Date());
+      const [statsRes, dailyRes, closedChangesRes, cashDrawerRes, discountsRes, reconRes] = await Promise.all([
         getDashboardStats(),
         useRange ? getDailySales(undefined, from, to) : getDailySales(singleDate),
         useRange ? getClosedBillChanges(undefined, from, to) : getClosedBillChanges(singleDate).catch(() => ({ count: 0, summary: { fullRefunds: 0, itemRefunds: 0, paymentMethodChanges: 0 }, changes: [] })),
@@ -111,10 +117,12 @@ export default function DashboardPage() {
         pendingClosedBillAccessRequestsCount: statsRes.pendingClosedBillAccessRequestsCount ?? 0,
       });
       setDailySales(dailyRes);
+      setReconciliationData(reconRes);
       setLastRefresh(new Date());
     } catch {
       setStats({ todaySales: 0, orderCount: 0, openTables: 0, openChecks: 0, lastEod: null, openTablesCount: 0, pendingVoidRequestsCount: 0, pendingClosedBillAccessRequestsCount: 0 });
       setDailySales(null);
+      setReconciliationData(null);
       setCashDrawerOpens({ count: 0, opens: [] });
       setDiscountsToday({ count: 0, list: [], totalDiscountAmount: 0 });
     } finally {
@@ -327,14 +335,68 @@ export default function DashboardPage() {
           )}
         </section>
 
-        {/* Cash & Card — link to full Cash Reconciliation & Card Reconciliation */}
-        <Link href="/dashboard/cash-card" className={`${blockBaseClass} bg-amber-950/80 border-amber-600/50 text-amber-100`}>
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold uppercase tracking-wide mb-0.5">Cash & Card</p>
-            <p className="text-xs font-medium truncate">Cash Reconciliation · Card Reconciliation</p>
-            <p className="text-sky-400 text-xs mt-1">Click to open →</p>
+        {/* Cash & Card — same content, link opens full page */}
+        <Link href="/dashboard/cash-card" className="block rounded-xl bg-amber-950/40 border border-amber-700/50 p-5 hover:border-amber-600/70 transition-colors">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-lg font-semibold text-amber-200">Cash & Card</h2>
+            <span className="text-sky-400 text-sm">Reconciliation →</span>
           </div>
-          <ChevronRight className="w-5 h-5 text-amber-400 flex-shrink-0" />
+          {reconciliationData ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="p-3 rounded-lg bg-slate-900/60 border border-amber-700/30">
+                  <p className="text-amber-200/80 text-xs mb-0.5">System Cash</p>
+                  <p className="font-bold text-amber-100">{fmt(reconciliationData.cash.systemCash)} AED</p>
+                </div>
+                <div className="p-3 rounded-lg bg-slate-900/60 border border-slate-600">
+                  <p className="text-slate-400 text-xs mb-0.5">Physical Cash (app)</p>
+                  <p className="font-bold text-white">{reconciliationData.cash.physicalCash != null ? `${fmt(reconciliationData.cash.physicalCash)} AED` : "—"}</p>
+                </div>
+                <div className="p-3 rounded-lg bg-slate-900/60 border border-slate-600">
+                  <p className="text-slate-400 text-xs mb-0.5">Bank Deposit</p>
+                  <p className="font-bold text-white">{reconciliationData.cash.bankDeposit > 0 ? `${fmt(reconciliationData.cash.bankDeposit)} AED` : "—"}</p>
+                </div>
+                <div className="p-3 rounded-lg bg-slate-900/60 border border-slate-600">
+                  <p className="text-slate-400 text-xs mb-0.5">Difference</p>
+                  <p className={`font-bold ${reconciliationData.cash.difference != null ? (reconciliationData.cash.difference >= 0 ? "text-emerald-400" : "text-red-400") : "text-slate-500"}`}>
+                    {reconciliationData.cash.difference != null ? `${reconciliationData.cash.difference >= 0 ? "+" : ""}${fmt(reconciliationData.cash.difference)} AED` : "—"}
+                  </p>
+                </div>
+              </div>
+              {reconciliationData.cash.manualPhysicalCount != null && (reconciliationData.cash.physicalCash ?? 0) > 0 && (
+                <p className="text-xs text-slate-400">
+                  Manuel sayım: {fmt(reconciliationData.cash.manualPhysicalCount.amount)} AED
+                  {Math.abs(reconciliationData.cash.manualPhysicalCount.amount - (reconciliationData.cash.physicalCash ?? 0)) < 0.01
+                    ? " ✓ Sorun yok"
+                    : reconciliationData.cash.manualPhysicalCount.amount < (reconciliationData.cash.physicalCash ?? 0)
+                      ? ` · Eksik ${fmt((reconciliationData.cash.physicalCash ?? 0) - reconciliationData.cash.manualPhysicalCount.amount)} AED`
+                      : ` · Fazla ${fmt(reconciliationData.cash.manualPhysicalCount.amount - (reconciliationData.cash.physicalCash ?? 0))} AED`}
+                </p>
+              )}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-slate-700">
+                <div className="p-3 rounded-lg bg-slate-900/60 border border-sky-700/30">
+                  <p className="text-sky-200/80 text-xs mb-0.5">System Card</p>
+                  <p className="font-bold text-sky-100">{fmt(reconciliationData.card.systemCard)} AED</p>
+                </div>
+                <div className="p-3 rounded-lg bg-slate-900/60 border border-slate-600">
+                  <p className="text-slate-400 text-xs mb-0.5">UTAP</p>
+                  <p className="font-bold text-white">{reconciliationData.card.utapTotal > 0 ? `${fmt(reconciliationData.card.utapTotal)} AED` : "—"}</p>
+                </div>
+                <div className="p-3 rounded-lg bg-slate-900/60 border border-slate-600">
+                  <p className="text-slate-400 text-xs mb-0.5">Bank Deposit</p>
+                  <p className="font-bold text-white">{reconciliationData.card.bankDeposit > 0 ? `${fmt(reconciliationData.card.bankDeposit)} AED` : "—"}</p>
+                </div>
+                <div className="p-3 rounded-lg bg-slate-900/60 border border-slate-600">
+                  <p className="text-slate-400 text-xs mb-0.5">Difference</p>
+                  <p className={`font-bold ${reconciliationData.card.difference != null ? (reconciliationData.card.difference >= 0 ? "text-emerald-400" : "text-red-400") : "text-slate-500"}`}>
+                    {reconciliationData.card.difference != null ? `${reconciliationData.card.difference >= 0 ? "+" : ""}${fmt(reconciliationData.card.difference)} AED` : "—"}
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="text-slate-500 text-sm py-4">Yükleniyor...</p>
+          )}
         </Link>
 
         {/* Daily Sales — tap blocks to view tickets (Receipt #, Date, Who) */}
