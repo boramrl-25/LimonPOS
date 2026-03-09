@@ -110,10 +110,24 @@ export async function pushToZohoBooks(db, order, items, payments = [], products 
   await db.read();
   const cfg = getZohoConfig(db);
   const { organization_id, customer_id, enabled, cash_account_id, card_account_id } = cfg;
-  if (enabled !== "true" || !organization_id || !customer_id) return false;
+  if (enabled !== "true") {
+    console.log("[Zoho] pushToZohoBooks: skipped - enabled is not true:", enabled);
+    return false;
+  }
+  if (!organization_id) {
+    console.log("[Zoho] pushToZohoBooks: skipped - organization_id missing");
+    return false;
+  }
+  if (!customer_id) {
+    console.log("[Zoho] pushToZohoBooks: skipped - customer_id missing");
+    return false;
+  }
 
   const token = await getZohoAccessToken(db);
-  if (!token) return false;
+  if (!token) {
+    console.log("[Zoho] pushToZohoBooks: skipped - token alinamadi (refresh_token/istemci bilgisi kontrol)");
+    return false;
+  }
 
   const paidAt = order.paid_at || order.created_at;
   const date = new Date(paidAt).toISOString().split("T")[0];

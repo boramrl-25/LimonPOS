@@ -1916,10 +1916,20 @@ app.post("/api/payments", authMiddleware, async (req, res) => {
   const totalPaid = (db.data.payments || []).filter((p) => p.order_id === order_id).reduce((s, p) => s + p.amount, 0);
   const order = db.data.orders.find((o) => o.id === order_id);
   const items = (db.data.order_items || []).filter((i) => i.order_id === order_id);
-  if (order && Math.abs(totalPaid - (order.total || 0)) < 0.01 && items.length > 0 && !order.zoho_receipt_id) {
-    const orderPayments = (db.data.payments || []).filter((p) => p.order_id === order_id);
-    const products = db.data.products || [];
-    await pushToZohoBooks(db, order, items, orderPayments.map((p) => ({ amount: p.amount, method: p.method })), products);
+  if (!order) console.log("[Zoho] Skip: order", order_id, "not found in backend (siparis backend DB'de yok - sync kontrol)");
+  if (order) {
+    const willPushZoho = Math.abs(totalPaid - (order.total || 0)) < 0.01 && items.length > 0 && !order.zoho_receipt_id;
+    if (!willPushZoho) {
+      if (Math.abs(totalPaid - (order.total || 0)) >= 0.01) console.log("[Zoho] Skip: totalPaid", totalPaid, "!= order.total", order.total);
+      else if (items.length === 0) console.log("[Zoho] Skip: no items for order", order_id);
+      else if (order.zoho_receipt_id) console.log("[Zoho] Skip: already sent (zoho_receipt_id)", order.zoho_receipt_id);
+    } else {
+      console.log("[Zoho] Pushing order", order_id, "to Zoho Books...");
+      const orderPayments = (db.data.payments || []).filter((p) => p.order_id === order_id);
+      const products = db.data.products || [];
+      const ok = await pushToZohoBooks(db, order, items, orderPayments.map((p) => ({ amount: p.amount, method: p.method })), products);
+      console.log("[Zoho] Result:", ok ? "OK" : "FAILED");
+    }
   }
   if (order && Math.abs(totalPaid - (order.total || 0)) < 0.01) {
     const oidx = db.data.orders.findIndex((o) => o.id === order_id);
