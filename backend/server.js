@@ -6,12 +6,14 @@ import { v4 as uuid } from "uuid";
 import { db, getDataFileInfo } from "./db.js";
 import { pushToZohoBooks, getZohoItems, getZohoItemGroups, getZohoContacts, syncFromZoho } from "./zoho.js";
 import {
-  parseTimeToMinutes,
   getBusinessDayRange,
   getBusinessDayKey,
   isAfterWarningTime,
+  isInAutoCloseWindow,
+  getClosedBusinessDayKeyForAutoClose,
   getBusinessDayRangeForDate,
   getBusinessDayRangesForDateRange,
+  parseTimeToMinutes,
 } from "./businessDay.js";
 import { fetchReconciliationEmails, aggregateReconciliationByDate } from "./reconciliation.js";
 
@@ -1608,11 +1610,12 @@ app.get("/api/reconciliation/summary", authMiddleware, async (req, res) => {
     const expectedDeduction = summary.totalCard * (defaultPct / 100);
     const deductionDiff = totalUtapDeduction > 0 ? totalUtapDeduction - expectedDeduction : null;
 
-    const cashDiff = physicalCashTotal > 0 ? physicalCashTotal - summary.totalCash : null;
-
     // Manual physical count (next day) - for verification
     const physicalCountStore = db.data.physical_cash_count_by_date || {};
     const manualPhysicalCount = physicalCountStore[dateStr] || null;
+    // When manual count exists, use it for difference (manually counted cash - system); else use app deposits
+    const effectivePhysicalCash = manualPhysicalCount ? manualPhysicalCount.amount : (physicalCashTotal > 0 ? physicalCashTotal : null);
+    const cashDiff = effectivePhysicalCash != null ? effectivePhysicalCash - summary.totalCash : null;
 
     // Bank cash deposits near this date (date±2): bank may process next day or aggregate several days
     const addDaysStr = (s, n) => {
@@ -2779,21 +2782,10 @@ async function runAutoCloseIfDue() {
   const grace = Math.min(60, Math.max(0, (s.grace_minutes ?? 0) | 0));
   const off = (s.timezone_offset_minutes ?? 0) | 0;
   const now = Date.now();
-  const dayMs = 24 * 60 * 60 * 1000;
-  const localNow = now + off * 60 * 1000;
-  const minutesSinceMidnight = ((localNow % dayMs) + dayMs) % dayMs / (60 * 1000);
-  const closeMin = parseTimeToMinutes(closing);
-  if (isNaN(closeMin)) return;
-  const openMin = parseTimeToMinutes(opening);
-  const threshold = closeMin + grace;
-  const wrap = closeMin <= openMin;
-  const pastClosing = wrap
-    ? minutesSinceMidnight >= threshold && minutesSinceMidnight < openMin
-    : minutesSinceMidnight >= threshold;
-  if (!pastClosing) return;
-  if (now - lastAutoCloseRunTs < 30 * 60 * 1000) return;
-  const key = getBusinessDayKey(now, opening, closing, off);
-  if (s.last_auto_close_for_business_day === key) return;
+  if (!isInAutoCloseWindow(now, closing, opening, grace, off)) return;
+  if (now - lastAutoCloseRunTs < 2 * 60 * 1000) return;
+  const key = getClosedBusinessDayKeyForAutoClose(now, opening, closing, off);
+  if (!key || s.last_auto_close_for_business_day === key) return;
 
   const tables = db.data.tables || [];
   const orders = db.data.orders || [];

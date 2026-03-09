@@ -226,7 +226,13 @@ export default function CashCardPage() {
               {/* Manual physical count (next day) - verification */}
               <div className="mt-4 p-4 rounded-lg bg-slate-900/60 border border-amber-700/30">
                 <p className="text-amber-200/80 text-sm mb-2">Fiziksel para sayımı (ertesi gün)</p>
-                <p className="text-xs text-slate-500 mb-2">Ertesi gün saydığınız parayı girin. App depozitleri ile karşılaştırılır.</p>
+                <p className="text-xs text-slate-500 mb-2">
+                  {data.cash.manualPhysicalCount != null && (data.cash.physicalCash ?? 0) > 0 && Math.abs((data.cash.manualPhysicalCount.amount ?? 0) - (data.cash.physicalCash ?? 0)) >= 0.01
+                    ? (data.cash.manualPhysicalCount.amount ?? 0) < (data.cash.physicalCash ?? 0)
+                      ? `Fark: Eksik ${fmt((data.cash.physicalCash ?? 0) - (data.cash.manualPhysicalCount?.amount ?? 0))} AED`
+                      : `Fark: Fazla ${fmt((data.cash.manualPhysicalCount?.amount ?? 0) - (data.cash.physicalCash ?? 0))} AED`
+                    : "Ertesi gün saydığınız parayı girin. App depozitleri ile karşılaştırılır."}
+                </p>
                 <div className="flex flex-wrap items-center gap-3">
                   <input
                     type="number"

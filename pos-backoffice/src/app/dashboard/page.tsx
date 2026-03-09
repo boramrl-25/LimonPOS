@@ -378,7 +378,13 @@ export default function DashboardPage() {
                 </div>
                 <div className="p-3 rounded-lg bg-slate-900/60 border border-amber-700/30">
                   <p className="text-amber-200/80 text-xs mb-1">Fiziksel para sayımı (ertesi gün)</p>
-                  <p className="text-slate-500 text-xs mb-2">Ertesi gün saydığınız parayı girin. App depozitleri ile karşılaştırılır.</p>
+                  <p className="text-slate-500 text-xs mb-2">
+                    {reconciliationData.cash.manualPhysicalCount != null && (reconciliationData.cash.physicalCash ?? 0) > 0 && Math.abs((reconciliationData.cash.manualPhysicalCount.amount ?? 0) - (reconciliationData.cash.physicalCash ?? 0)) >= 0.01
+                      ? (reconciliationData.cash.manualPhysicalCount.amount ?? 0) < (reconciliationData.cash.physicalCash ?? 0)
+                        ? `Fark: Eksik ${fmt((reconciliationData.cash.physicalCash ?? 0) - (reconciliationData.cash.manualPhysicalCount?.amount ?? 0))} AED`
+                        : `Fark: Fazla ${fmt((reconciliationData.cash.manualPhysicalCount?.amount ?? 0) - (reconciliationData.cash.physicalCash ?? 0))} AED`
+                      : "Ertesi gün saydığınız parayı girin. App depozitleri ile karşılaştırılır."}
+                  </p>
                   <div className="flex items-center gap-2">
                     <input
                       type="number"
