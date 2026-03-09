@@ -8,7 +8,7 @@ import {
   RefreshCw,
   ChevronRight,
 } from "lucide-react";
-import { getDashboardStats, getDailySales, getOpenOrders, getClosedBillChanges, getCashDrawerOpens, getDiscountsToday, getDiscountRequestsPending, getBusinessDayStatus, markWarningShown, getOpenTablesNotClosed, getReconciliationSummary } from "@/lib/api";
+import { getDashboardStats, getDailySales, getOpenOrders, getClosedBillChanges, getCashDrawerOpens, getDiscountsToday, getDiscountRequestsPending, getBusinessDayStatus, markWarningShown, getOpenTablesNotClosed, getReconciliationSummary, setReconciliationPhysicalCount } from "@/lib/api";
 import type { DiscountTodayRow, OpenTableNotClosed } from "@/lib/api";
 import { useUser } from "@/context/UserContext";
 
@@ -83,6 +83,8 @@ export default function DashboardPage() {
     cash: { systemCash: number; physicalCash: number | null; bankDeposit: number; difference: number | null; manualPhysicalCount?: { amount: number; user_name: string } | null };
     card: { systemCard: number; utapTotal: number; bankDeposit: number; difference: number | null };
   } | null>(null);
+  const [manualCountInput, setManualCountInput] = useState("");
+  const [manualCountSaving, setManualCountSaving] = useState(false);
   const { user } = useUser();
   const canSeeWarning = user && (["admin", "manager", "supervisor"].includes(user.role) || (user.permissions || []).includes("web_settings"));
   const router = useRouter();
@@ -131,6 +133,27 @@ export default function DashboardPage() {
       setRefreshing(false);
     }
   }, [selectedDateFrom, selectedDateTo]);
+
+  const reconDate = selectedDateFrom || selectedDateTo || toYYYYMMDD(new Date());
+  useEffect(() => {
+    if (reconciliationData?.cash?.manualPhysicalCount != null) setManualCountInput(String(reconciliationData.cash.manualPhysicalCount.amount));
+    else setManualCountInput("");
+  }, [reconciliationData?.date, reconciliationData?.cash?.manualPhysicalCount?.amount]);
+
+  async function handleSaveManualCount(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    const val = parseFloat(manualCountInput.replace(/,/g, "."));
+    if (isNaN(val) || val < 0) return;
+    setManualCountSaving(true);
+    try {
+      await setReconciliationPhysicalCount(reconDate, val);
+      const fresh = await getReconciliationSummary(reconDate);
+      setReconciliationData(fresh);
+    } catch { /* ignore */ } finally {
+      setManualCountSaving(false);
+    }
+  }
 
   async function handleOpenTablesClick() {
     setTicketModalType("open");
@@ -336,11 +359,11 @@ export default function DashboardPage() {
           )}
         </section>
 
-        {/* Cash & Card — same content, link opens full page */}
-        <Link href="/dashboard/cash-card" className="block rounded-xl bg-amber-950/40 border border-amber-700/50 p-5 hover:border-amber-600/70 transition-colors">
+        {/* Cash & Card — same content, link to full page */}
+        <div className="rounded-xl bg-amber-950/40 border border-amber-700/50 p-5">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-lg font-semibold text-amber-200">Cash & Card</h2>
-            <span className="text-sky-400 text-sm">Reconciliation →</span>
+            <Link href="/dashboard/cash-card" className="text-sky-400 text-sm hover:text-sky-300">Reconciliation →</Link>
           </div>
           {reconciliationData ? (
             <div className="space-y-4">
@@ -353,9 +376,28 @@ export default function DashboardPage() {
                   <p className="text-slate-400 text-xs mb-0.5">Physical Cash (app)</p>
                   <p className="font-bold text-white">{reconciliationData.cash.physicalCash != null ? `${fmt(reconciliationData.cash.physicalCash)} AED` : "—"}</p>
                 </div>
-                <div className="p-3 rounded-lg bg-slate-900/60 border border-slate-600">
-                  <p className="text-slate-400 text-xs mb-0.5">Bank Deposit</p>
-                  <p className="font-bold text-white">{reconciliationData.cash.bankDeposit > 0 ? `${fmt(reconciliationData.cash.bankDeposit)} AED` : "—"}</p>
+                <div className="p-3 rounded-lg bg-slate-900/60 border border-amber-700/30">
+                  <p className="text-amber-200/80 text-xs mb-1">Fiziksel para sayımı (ertesi gün)</p>
+                  <p className="text-slate-500 text-xs mb-2">Ertesi gün saydığınız parayı girin. App depozitleri ile karşılaştırılır.</p>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={manualCountInput}
+                      onChange={(e) => setManualCountInput(e.target.value)}
+                      placeholder="0.00"
+                      className="px-2 py-1.5 rounded bg-slate-800 border border-slate-600 text-white w-24 text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSaveManualCount}
+                      disabled={manualCountSaving || manualCountInput === ""}
+                      className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white text-xs font-medium"
+                    >
+                      {manualCountSaving ? "..." : "Kaydet"}
+                    </button>
+                  </div>
                 </div>
                 <div className="p-3 rounded-lg bg-slate-900/60 border border-slate-600">
                   <p className="text-slate-400 text-xs mb-0.5">Difference</p>
@@ -398,7 +440,7 @@ export default function DashboardPage() {
           ) : (
             <p className="text-slate-500 text-sm py-4">Yükleniyor...</p>
           )}
-        </Link>
+        </div>
 
         {/* Daily Sales — tap blocks to view tickets (Receipt #, Date, Who) */}
         <section>
