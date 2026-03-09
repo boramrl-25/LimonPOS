@@ -30,6 +30,7 @@ export default function ZohoSettingsPage() {
     itemsCount?: number;
     groupsCount?: number;
     region?: string;
+    zohoError?: string | null;
     checks?: { enabled?: boolean; orgId?: boolean; customerId?: boolean; refreshToken?: boolean; clientId?: boolean; clientSecret?: boolean };
     error?: string | null;
   } | null>(null);
@@ -280,6 +281,17 @@ export default function ZohoSettingsPage() {
             </>
           )}
           {checkResult.error && <p className="text-amber-200 text-sm mt-2 font-mono">{checkResult.error}</p>}
+          {checkResult.zohoError && (
+            <div className="text-amber-100 text-xs mt-2 space-y-1">
+              <p className="font-mono bg-amber-900/30 px-2 py-1 rounded">Zoho API: {checkResult.zohoError}</p>
+              {(checkResult.zohoError || "").includes("invalid_grant") && (
+                <p>invalid_grant: Refresh Token geçersiz veya yanlış bölgede üretilmiş. Generate Code&apos;u api-console.zoho.eu&apos;dan alın, Token Al ile yenileyin.</p>
+              )}
+              {(checkResult.zohoError || "").includes("invalid_client") && (
+                <p>invalid_client: Client ID veya Client Secret yanlış. api-console.zoho.eu&apos;dan kontrol edin.</p>
+              )}
+            </div>
+          )}
           {checkResult.checks && (
             <ul className="text-slate-300 text-sm mt-2 space-y-1">
               {Object.entries(checkResult.checks).map(([k, v]) => (

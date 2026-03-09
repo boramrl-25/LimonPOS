@@ -72,7 +72,7 @@ export function clearZohoTokenCache() {
   tokenExpiresAt = 0;
 }
 
-export async function getZohoAccessToken(db) {
+export async function getZohoAccessToken(db, tryAlternateDc = false) {
   await db.read();
   const cfg = getZohoConfig(db);
   const { refresh_token, client_id, client_secret, dc } = cfg;
@@ -80,7 +80,9 @@ export async function getZohoAccessToken(db) {
 
   if (cachedToken && Date.now() < tokenExpiresAt - 60000) return cachedToken;
 
-  const { accounts } = getZohoUrls(dc);
+  const dcToTry = tryAlternateDc ? ((dc || "").toLowerCase() === "eu" ? "" : "eu") : (dc || "");
+  const { accounts } = getZohoUrls(dcToTry);
+  const accountsLabel = (dcToTry || "").toLowerCase() === "eu" ? "accounts.zoho.eu" : "accounts.zoho.com";
   try {
     const res = await axios.post(
       `${accounts}/oauth/v2/token`,
@@ -92,13 +94,24 @@ export async function getZohoAccessToken(db) {
       }).toString(),
       { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
     );
-    cachedToken = res.data.access_token;
-    tokenExpiresAt = Date.now() + res.data.expires_in * 1000;
+    const accessToken = res.data?.access_token;
+    if (!accessToken) {
+      const errData = res.data ? JSON.stringify(res.data) : "No access_token in response";
+      console.error("[Zoho] Token response missing access_token:", errData);
+      throw new Error("Zoho token yanıtında access_token yok: " + (res.data?.error || res.data?.error_description || errData));
+    }
+    cachedToken = accessToken;
+    tokenExpiresAt = Date.now() + (res.data.expires_in || 3600) * 1000;
     return cachedToken;
   } catch (err) {
     clearZohoTokenCache();
-    console.error("[Zoho] Token error:", JSON.stringify(err.response?.data || err.message));
-    throw new Error(parseZohoError(err));
+    const errData = err.response?.data;
+    const code = err.response?.status;
+    const zohoError = errData?.error || errData?.error_description || errData?.message;
+    console.error("[Zoho] Token error:", accountsLabel, code, JSON.stringify(errData || err.message));
+    const msg = parseZohoError(err);
+    const detail = zohoError ? ` [Zoho: ${zohoError}]` : "";
+    throw new Error(msg + detail);
   }
 }
 
