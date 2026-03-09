@@ -506,7 +506,20 @@ export async function fetchReconciliationNow(): Promise<{ ok: boolean; imported?
 
 export async function getReconciliationSummary(date: string) {
   const res = await fetchWithTimeout(`${API_URL}/reconciliation/summary?date=${encodeURIComponent(date)}`, { headers: headers() });
-  if (!res.ok) throw new Error("Failed to fetch reconciliation summary");
+  if (!res.ok) {
+    let detail = "";
+    try {
+      const body = await res.json();
+      detail = body?.message || body?.error || "";
+    } catch {
+      detail = await res.text().catch(() => "") || res.statusText;
+    }
+    throw new Error(
+      res.status === 401
+        ? "Session expired. Please log in again."
+        : detail || `Failed to fetch reconciliation summary (${res.status})`
+    );
+  }
   return res.json();
 }
 

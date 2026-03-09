@@ -1571,34 +1571,37 @@ app.post("/api/reconciliation/warnings/clear", authMiddleware, async (req, res) 
 });
 
 app.get("/api/reconciliation/summary", authMiddleware, async (req, res) => {
-  await ensureData();
-  const dateStr = (req.query.date || "").toString().trim() || new Date().toISOString().slice(0, 10);
-  const bounds = getDayBounds(dateStr);
-  if (!bounds) return res.status(400).json({ error: "invalid_date" });
+  try {
+    await ensureData();
+    const dateStr = (req.query.date || "").toString().trim() || new Date().toISOString().slice(0, 10);
+    const bounds = getDayBounds(dateStr);
+    if (!bounds) return res.status(400).json({ error: "invalid_date" });
 
-  const summary = getSalesSummaryForRange(bounds.startTs, bounds.endTs);
-  const imports = db.data.reconciliation_imports || [];
-  const byDate = aggregateReconciliationByDate(imports);
-  const dayData = byDate[dateStr] || { cash: 0, card: 0 };
+    const summary = getSalesSummaryForRange(bounds.startTs, bounds.endTs);
+    const imports = db.data.reconciliation_imports || [];
+    const byDate = aggregateReconciliationByDate(imports);
+    const dayData = byDate[dateStr] || { cash: 0, card: 0 };
 
-  const sorted = (db.data.daily_cash_entries || []).filter((e) => e.date === dateStr);
-  sorted.sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
-  const latestCash = sorted[0] || null;
+    const sorted = (db.data.daily_cash_entries || []).filter((e) => e.date === dateStr);
+    sorted.sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
+    const latestCash = sorted[0] || null;
 
-  const utapImportsForDate = (db.data.reconciliation_imports || []).filter((i) => i.source === "utap" && i.date === dateStr);
-  const totalUtapDeduction = utapImportsForDate.reduce((s, i) => s + (i.deduction ?? 0), 0);
-  const bankSettings = db.data.reconciliation_bank_settings || {};
-  const defaultPct = bankSettings.default_percentage ?? 1.9;
-  const expectedDeduction = summary.totalCard * (defaultPct / 100);
-  const deductionDiff = totalUtapDeduction > 0 ? totalUtapDeduction - expectedDeduction : null;
+    const utapImportsForDate = (db.data.reconciliation_imports || []).filter((i) => i.source === "utap" && i.date === dateStr);
+    const totalUtapDeduction = utapImportsForDate.reduce((s, i) => s + (i.deduction ?? 0), 0);
+    const bankSettings = db.data.reconciliation_bank_settings || {};
+    const defaultPct = bankSettings.default_percentage ?? 1.9;
+    const expectedDeduction = summary.totalCard * (defaultPct / 100);
+    const deductionDiff = totalUtapDeduction > 0 ? totalUtapDeduction - expectedDeduction : null;
 
-  res.json({
+    // Recalculate difference from current system vs physical (stored diff can be stale)
+    const cashDiff = latestCash?.physical_cash != null ? latestCash.physical_cash - summary.totalCash : null;
+    res.json({
     date: dateStr,
     cash: {
       systemCash: summary.totalCash,
       physicalCash: latestCash?.physical_cash ?? null,
       bankDeposit: dayData.cash,
-      difference: latestCash ? latestCash.difference : null,
+      difference: cashDiff,
     },
     card: {
       systemCard: summary.totalCard,
@@ -1613,6 +1616,10 @@ app.get("/api/reconciliation/summary", authMiddleware, async (req, res) => {
       },
     },
   });
+  } catch (err) {
+    console.error("[reconciliation/summary] Error:", err?.message || err);
+    res.status(500).json({ error: "reconciliation_summary_error", message: err?.message || "Internal error" });
+  }
 });
 
 /** Card transaction detail for reconciliation: POS vs UTAP, match status. */

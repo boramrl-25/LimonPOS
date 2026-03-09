@@ -351,9 +351,18 @@ export default function DashboardPage() {
             </div>
             <div className="p-4 rounded-lg bg-slate-900/60 border border-slate-600">
               <p className="text-slate-400 text-sm mb-1">Difference</p>
-              <p className={`text-2xl font-bold ${dailySales?.dailyCashEntry != null ? (dailySales.dailyCashEntry.difference >= 0 ? "text-emerald-400" : "text-red-400") : "text-slate-500"}`}>
+              <p className={`text-2xl font-bold ${
+                dailySales?.dailyCashEntry != null
+                  ? (dailySales.dailyCashEntry.physical_cash - (dailySales.totalCash ?? 0)) >= 0
+                    ? "text-emerald-400"
+                    : "text-red-400"
+                  : "text-slate-500"
+              }`}>
                 {dailySales?.dailyCashEntry != null
-                  ? `${dailySales.dailyCashEntry.difference >= 0 ? "+" : ""}${fmt(dailySales.dailyCashEntry.difference)} AED (${dailySales.dailyCashEntry.difference >= 0 ? "Over" : "Short"})`
+                  ? (() => {
+                      const diff = dailySales.dailyCashEntry.physical_cash - (dailySales.totalCash ?? 0);
+                      return `${diff >= 0 ? "+" : ""}${fmt(diff)} AED (${diff >= 0 ? "Over" : "Short"})`;
+                    })()
                   : "—"}
               </p>
             </div>
