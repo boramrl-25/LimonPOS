@@ -355,7 +355,7 @@ export default function DashboardPage() {
                 <p className="text-slate-500 text-xs mt-1">By: {dailySales.dailyCashEntry.user_name}</p>
               )}
               {(dailySales?.dailyCashEntries?.length ?? 0) > 0 && (
-                <p className="text-sky-400 text-xs mt-1">Click to view all deposits ({dailySales.dailyCashEntries.length})</p>
+                <p className="text-sky-400 text-xs mt-1">Click to view all deposits ({dailySales?.dailyCashEntries?.length ?? 0})</p>
               )}
             </button>
             <div className="p-4 rounded-lg bg-slate-900/60 border border-slate-600">
