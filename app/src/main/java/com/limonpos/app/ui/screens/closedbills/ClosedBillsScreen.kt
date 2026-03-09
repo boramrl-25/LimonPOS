@@ -371,10 +371,6 @@ private fun BillDetailDialog(
                     Text("AED ${String.format("%.2f", order.subtotal)}", color = LimonText, fontSize = 14.sp)
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Tax (5%)", color = LimonTextSecondary, fontSize = 14.sp)
-                    Text("AED ${String.format("%.2f", order.taxAmount)}", color = LimonText, fontSize = 14.sp)
-                }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("Total", color = LimonText, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     Text("AED ${String.format("%.2f", order.total)}", color = LimonPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 }

@@ -91,7 +91,7 @@ fun ProductsScreen(
                             Text(product.name, fontWeight = FontWeight.Bold, color = LimonText, fontSize = 18.sp)
                             Text("Category: $categoryName", color = LimonTextSecondary, fontSize = 14.sp)
                             Text(CurrencyUtils.format(product.price), color = LimonPrimary, fontSize = 16.sp, fontWeight = FontWeight.Medium)
-                            Text("VAT: ${(product.taxRate * 100).toInt()}% | Till: ${if (product.showInTill) "On" else "Off"}", color = LimonTextSecondary, fontSize = 12.sp)
+                            Text("Till: ${if (product.showInTill) "On" else "Off"}", color = LimonTextSecondary, fontSize = 12.sp)
                         }
                     }
                 }

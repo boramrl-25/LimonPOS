@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { ArrowLeft, ChevronDown, ChevronUp, HelpCircle } from "lucide-react";
-import { getZohoConfig, updateZohoConfig, exchangeZohoCode } from "@/lib/api";
+import { ArrowLeft, ChevronDown, ChevronUp, HelpCircle, CheckCircle } from "lucide-react";
+import { getZohoConfig, updateZohoConfig, exchangeZohoCode, checkZohoConnection } from "@/lib/api";
 
 export default function ZohoSettingsPage() {
   const [config, setConfig] = useState({
@@ -22,6 +22,16 @@ export default function ZohoSettingsPage() {
   const [authCode, setAuthCode] = useState("");
   const [exchanging, setExchanging] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [checkResult, setCheckResult] = useState<{
+    ok?: boolean;
+    salesPushReady?: boolean;
+    hasToken?: boolean;
+    itemsCount?: number;
+    groupsCount?: number;
+    checks?: { enabled?: boolean; orgId?: boolean; customerId?: boolean; refreshToken?: boolean; clientId?: boolean; clientSecret?: boolean };
+    error?: string | null;
+  } | null>(null);
+  const [checking, setChecking] = useState(false);
 
   useEffect(() => {
     load();
@@ -181,12 +191,53 @@ export default function ZohoSettingsPage() {
         </div>
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3 mb-6">
         <button type="button" onClick={(e) => save(e)} disabled={saving} className="px-6 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white font-medium">
           {saving ? "Saving..." : "Save"}
         </button>
+        <button
+          type="button"
+          onClick={async () => {
+            setChecking(true);
+            setCheckResult(null);
+            try {
+              const r = await checkZohoConnection();
+              setCheckResult(r as typeof checkResult);
+            } catch (e) {
+              setCheckResult({ error: (e as Error).message });
+            } finally {
+              setChecking(false);
+            }
+          }}
+          disabled={checking}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-white font-medium"
+        >
+          <CheckCircle className="w-4 h-4" />
+          {checking ? "Kontrol ediliyor..." : "Zoho Entegrasyonu Kontrol Et"}
+        </button>
         {saved && <span className="text-emerald-400 text-sm">Saved successfully.</span>}
       </div>
+
+      {checkResult && (
+        <div className={`p-4 rounded-lg border mb-6 ${checkResult.salesPushReady ? "bg-emerald-900/20 border-emerald-700" : "bg-amber-900/20 border-amber-700"}`}>
+          {checkResult.salesPushReady ? (
+            <p className="text-emerald-300 font-medium">✓ Zoho entegrasyonu hazır. Satışlar Zoho Books&apos;a gönderilecek.</p>
+          ) : (
+            <p className="text-amber-300 font-medium">✗ Satışlar Zoho&apos;ya gitmeyecek. Eksik veya hatalı ayar.</p>
+          )}
+          {checkResult.error && <p className="text-amber-200 text-sm mt-2">{checkResult.error}</p>}
+          {checkResult.checks && (
+            <ul className="text-slate-300 text-sm mt-2 space-y-1">
+              {Object.entries(checkResult.checks).map(([k, v]) => (
+                <li key={k}>{v ? "✓" : "✗"} {k}: {v ? "OK" : "Eksik"}</li>
+              ))}
+            </ul>
+          )}
+          {checkResult.itemsCount != null && (
+            <p className="text-slate-400 text-sm mt-2">Zoho ürün: {checkResult.itemsCount}, kategori: {checkResult.groupsCount ?? 0}</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

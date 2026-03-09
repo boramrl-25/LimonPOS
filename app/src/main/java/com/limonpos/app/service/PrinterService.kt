@@ -207,7 +207,6 @@ class PrinterService @Inject constructor() {
         addText("--------------------------------\n")
 
         addText("Subtotal: AED ${String.format("%.2f", order.subtotal)}\n")
-        addText("Tax:      AED ${String.format("%.2f", order.taxAmount)}\n")
         addBytes(p.BOLD_ON)
         addText("TOTAL:    AED ${String.format("%.2f", order.total)}\n")
         addBytes(p.BOLD_OFF)

@@ -963,6 +963,7 @@ app.get("/api/settings", authMiddleware, async (req, res) => {
     auto_close_payment_method: s.auto_close_payment_method ?? "cash",
     grace_minutes: Math.min(60, Math.max(0, (s.grace_minutes ?? 0) | 0)),
     warning_enabled: s.warning_enabled !== false,
+    vat_percent: Math.min(100, Math.max(0, (s.vat_percent ?? 0) | 0)),
   });
 });
 
@@ -1013,7 +1014,11 @@ app.patch("/api/settings", authMiddleware, async (req, res) => {
   if (typeof req.body.auto_close_payment_method === "string") db.data.settings.auto_close_payment_method = req.body.auto_close_payment_method.slice(0, 50) || "cash";
   if (typeof req.body.grace_minutes === "number") db.data.settings.grace_minutes = Math.min(60, Math.max(0, Math.round(req.body.grace_minutes)));
   if (typeof req.body.warning_enabled === "boolean") db.data.settings.warning_enabled = req.body.warning_enabled;
-  const businessKeys = ["opening_time", "closing_time", "open_tables_warning_time", "auto_close_open_tables", "auto_close_payment_method", "grace_minutes", "warning_enabled", "currency_code"];
+  if (typeof req.body.vat_percent === "number") {
+    const v = Math.round(req.body.vat_percent);
+    db.data.settings.vat_percent = Math.min(100, Math.max(0, v));
+  }
+  const businessKeys = ["opening_time", "closing_time", "open_tables_warning_time", "auto_close_open_tables", "auto_close_payment_method", "grace_minutes", "warning_enabled", "currency_code", "vat_percent"];
   const changed = businessKeys.filter((k) => String(prevSettings[k] ?? "") !== String(db.data.settings[k] ?? ""));
   if (changed.length > 0) {
     db.data.business_operation_log = db.data.business_operation_log || [];
@@ -1045,6 +1050,7 @@ app.patch("/api/settings", authMiddleware, async (req, res) => {
     auto_close_payment_method: s.auto_close_payment_method ?? "cash",
     grace_minutes: Math.min(60, Math.max(0, (s.grace_minutes ?? 0) | 0)),
     warning_enabled: s.warning_enabled !== false,
+    vat_percent: Math.min(100, Math.max(0, (s.vat_percent ?? 0) | 0)),
   });
 });
 
@@ -1681,7 +1687,8 @@ function recalcOrderTotal(orderId) {
   const items = (db.data.order_items || []).filter((i) => i.order_id === orderId);
   let subtotal = 0;
   for (const i of items) subtotal += (i.quantity || 0) * (i.price || 0);
-  const taxAmount = subtotal * 0.05;
+  const vatPercent = Math.min(100, Math.max(0, (db.data.settings?.vat_percent ?? 0) | 0));
+  const taxAmount = subtotal * (vatPercent / 100);
   const oidx = db.data.orders.findIndex((o) => o.id === orderId);
   if (oidx < 0) return;
   const order = db.data.orders[oidx];
@@ -2266,27 +2273,70 @@ app.post("/api/zoho/sync", authMiddleware, async (req, res) => {
   }
 });
 
-// Zoho tanı: token ve ürün sayısı (sync yapmadan) – env veya db'den okur
+// Zoho tanı: token, satış push durumu, ürün sayısı – env veya db'den okur
 app.get("/api/zoho/check", authMiddleware, async (req, res) => {
   try {
     const { getZohoConfig, getZohoAccessToken, getZohoItems, getZohoItemGroups } = await import("./zoho.js");
     await db.read();
     const cfg = getZohoConfig(db);
-    const hasConfig = !!(cfg.organization_id && cfg.enabled === "true" && cfg.refresh_token && cfg.client_id && cfg.client_secret);
+    const status = {
+      ok: false,
+      salesPushReady: false,
+      hasToken: false,
+      itemsCount: 0,
+      groupsCount: 0,
+      checks: { enabled: false, orgId: false, customerId: false, refreshToken: false, clientId: false, clientSecret: false },
+      error: null,
+    };
+    status.checks.enabled = cfg.enabled === "true";
+    status.checks.orgId = !!cfg.organization_id;
+    status.checks.customerId = !!cfg.customer_id;
+    status.checks.refreshToken = !!cfg.refresh_token;
+    status.checks.clientId = !!cfg.client_id;
+    status.checks.clientSecret = !!cfg.client_secret;
+
+    const hasConfig = status.checks.orgId && status.checks.enabled && status.checks.refreshToken && status.checks.clientId && status.checks.clientSecret;
     if (!hasConfig) {
-      return res.json({ ok: false, error: "Zoho ayarları eksik", hasToken: false, itemsCount: 0, groupsCount: 0 });
+      const missing = [];
+      if (!status.checks.enabled) missing.push("Enabled");
+      if (!status.checks.orgId) missing.push("Organization ID");
+      if (!status.checks.customerId) missing.push("Customer ID");
+      if (!status.checks.refreshToken) missing.push("Refresh Token");
+      if (!status.checks.clientId) missing.push("Client ID");
+      if (!status.checks.clientSecret) missing.push("Client Secret");
+      status.error = "Zoho ayarları eksik: " + missing.join(", ");
+      return res.json(status);
     }
-    const token = await getZohoAccessToken(db);
+    if (!status.checks.customerId) {
+      status.error = "Customer ID (Walk-in müşteri) eksik – satışlar Zoho'ya gidemez";
+      return res.json(status);
+    }
+    let token;
+    try {
+      token = await getZohoAccessToken(db);
+    } catch (e) {
+      status.error = "Token alınamadı: " + (e?.message || "Refresh Token / Client kontrol edin");
+      return res.json(status);
+    }
     if (!token) {
-      return res.json({ ok: false, error: "Token alınamadı (Refresh Token / Client ID-Secret kontrol edin)", hasToken: false, itemsCount: 0, groupsCount: 0 });
+      status.error = "Token alınamadı (Refresh Token / Client ID-Secret kontrol edin)";
+      return res.json(status);
     }
-    const itemsRes = await getZohoItems(db);
-    const groupsRes = await getZohoItemGroups(db);
-    const itemsCount = itemsRes?.items?.length ?? 0;
-    const groupsCount = (groupsRes?.item_groups?.length ?? 0);
-    return res.json({ ok: true, hasToken: true, itemsCount, groupsCount, error: itemsRes ? null : "Ürün listesi alınamadı" });
+    status.hasToken = true;
+    status.salesPushReady = true;
+    try {
+      const itemsRes = await getZohoItems(db);
+      const groupsRes = await getZohoItemGroups(db);
+      status.itemsCount = itemsRes?.items?.length ?? 0;
+      status.groupsCount = groupsRes?.item_groups?.length ?? 0;
+      status.ok = true;
+    } catch (e) {
+      status.ok = true;
+      status.error = "Ürün listesi alınamadı (satış push çalışır): " + (e?.message || "");
+    }
+    return res.json(status);
   } catch (e) {
-    res.json({ ok: false, error: (e && e.message) || "Check failed", hasToken: false, itemsCount: 0, groupsCount: 0 });
+    res.json({ ok: false, salesPushReady: false, hasToken: false, itemsCount: 0, groupsCount: 0, checks: {}, error: (e && e.message) || "Check failed" });
   }
 });
 

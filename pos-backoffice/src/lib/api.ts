@@ -395,6 +395,7 @@ export type Settings = {
   auto_close_payment_method?: string;
   grace_minutes?: number;
   warning_enabled?: boolean;
+  vat_percent?: number;
 };
 
 export type BusinessDayStatus = {
@@ -872,7 +873,15 @@ export async function clearAndSyncProducts(): Promise<{
   return res.json();
 }
 
-export async function checkZohoConnection(): Promise<{ ok: boolean; hasToken: boolean; itemsCount: number; groupsCount: number; error?: string }> {
+export async function checkZohoConnection(): Promise<{
+  ok: boolean;
+  salesPushReady?: boolean;
+  hasToken: boolean;
+  itemsCount: number;
+  groupsCount: number;
+  checks?: { enabled?: boolean; orgId?: boolean; customerId?: boolean; refreshToken?: boolean; clientId?: boolean; clientSecret?: boolean };
+  error?: string | null;
+}> {
   const res = await fetchWithTimeout(`${API_URL}/zoho/check`, { headers: headers() });
   const data = await res.json();
   return data;

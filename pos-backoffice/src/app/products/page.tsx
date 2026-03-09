@@ -42,7 +42,7 @@ export default function ProductsPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Product | null | undefined>(undefined);
-  const [form, setForm] = useState({ name: "", name_arabic: "", name_turkish: "", sku: "", category_id: "", price: 0, tax_rate: 0, image_url: "", printers: [] as string[], modifier_groups: [] as string[], pos_enabled: true, overdue_undelivered_minutes: "" as string | number });
+  const [form, setForm] = useState({ name: "", name_arabic: "", name_turkish: "", sku: "", category_id: "", price: 0, image_url: "", printers: [] as string[], modifier_groups: [] as string[], pos_enabled: true, overdue_undelivered_minutes: "" as string | number });
   const [showZohoPicker, setShowZohoPicker] = useState(false);
   const [zohoItems, setZohoItems] = useState<ZohoItem[]>([]);
   const [zohoLoading, setZohoLoading] = useState(false);
@@ -152,7 +152,6 @@ export default function ProductsPage() {
         sku: p.sku || "",
         category_id: p.category_id || "",
         price: p.price,
-        tax_rate: (p.tax_rate ?? 0) * 100,
         image_url: p.image_url || "",
         printers: Array.isArray(p.printers) ? p.printers : [],
         modifier_groups: toModifierIds(p.modifier_groups),
@@ -161,7 +160,7 @@ export default function ProductsPage() {
       });
     } else {
       setEditing(null);
-      setForm({ name: "", name_arabic: "", name_turkish: "", sku: "", category_id: "", price: 0, tax_rate: 0, image_url: "", printers: [] as string[], modifier_groups: [] as string[], pos_enabled: true, overdue_undelivered_minutes: "" });
+      setForm({ name: "", name_arabic: "", name_turkish: "", sku: "", category_id: "", price: 0, image_url: "", printers: [] as string[], modifier_groups: [] as string[], pos_enabled: true, overdue_undelivered_minutes: "" });
     }
   }
 
@@ -199,7 +198,7 @@ export default function ProductsPage() {
         sku: form.sku?.trim() || "",
         category_id: form.category_id || undefined,
         price: Math.max(0, Number(form.price) || 0),
-        tax_rate: (Number(form.tax_rate) || 0) / 100,
+        tax_rate: 0,
         image_url: form.image_url?.trim() || "",
         printers: form.printers,
         modifier_groups: form.modifier_groups,
@@ -1198,15 +1197,6 @@ export default function ProductsPage() {
                   step="0.01"
                   value={form.price}
                   onChange={(e) => setForm((f) => ({ ...f, price: Math.max(0, parseFloat(e.target.value) || 0) }))}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white"
-                />
-              </div>
-              <div>
-                <label className="block text-sm text-slate-400 mb-1">VAT (%)</label>
-                <input
-                  type="number"
-                  value={form.tax_rate}
-                  onChange={(e) => setForm((f) => ({ ...f, tax_rate: parseFloat(e.target.value) || 0 }))}
                   className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white"
                 />
               </div>
