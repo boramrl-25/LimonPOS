@@ -537,6 +537,53 @@ export async function getClosedBillChanges(date?: string, dateFrom?: string, dat
   return res.json();
 }
 
+/** Cash deposits: day/end-of-day counted cash. Compare with expected cash (daily sales). */
+export async function getCashDeposits(date?: string, dateFrom?: string, dateTo?: string): Promise<{
+  deposits: Array<{ id: string; amount: number; date: string; note: string; user_name: string; created_at: number }>;
+  totalAmount: number;
+}> {
+  const params = new URLSearchParams();
+  if (dateFrom && dateTo) {
+    params.set("dateFrom", dateFrom);
+    params.set("dateTo", dateTo);
+  } else if (date) {
+    params.set("date", date);
+  }
+  const qs = params.toString();
+  const url = qs ? `${API_URL}/cash-deposits?${qs}` : `${API_URL}/cash-deposits`;
+  const res = await fetchWithTimeout(url, { headers: headers() });
+  if (!res.ok) throw new Error("Failed to fetch cash deposits");
+  return res.json();
+}
+
+export async function createCashDeposit(body: { amount: number; date: string; note?: string }): Promise<{
+  id: string;
+  amount: number;
+  date: string;
+  note: string;
+  user_name: string;
+  created_at: number;
+}> {
+  const res = await fetchWithTimeout(`${API_URL}/cash-deposits`, {
+    method: "POST",
+    headers: { ...headers(), "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(err?.error || "Failed to create cash deposit");
+  }
+  return res.json();
+}
+
+export async function deleteCashDeposit(id: string): Promise<void> {
+  const res = await fetchWithTimeout(`${API_URL}/cash-deposits/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    headers: headers(),
+  });
+  if (!res.ok) throw new Error("Failed to delete cash deposit");
+}
+
 export async function getCashDrawerOpens(date?: string, dateFrom?: string, dateTo?: string): Promise<{ count: number; opens: Array<{ id: string; user_id: string; user_name: string; opened_at: number }> }> {
   const params = new URLSearchParams();
   if (dateFrom && dateTo) {

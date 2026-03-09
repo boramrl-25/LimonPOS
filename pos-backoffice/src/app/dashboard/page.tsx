@@ -8,7 +8,7 @@ import {
   RefreshCw,
   ChevronRight,
 } from "lucide-react";
-import { getDashboardStats, getDailySales, getOpenOrders, getClosedBillChanges, getCashDrawerOpens, getDiscountsToday, getDiscountRequestsPending, getBusinessDayStatus, markWarningShown, getOpenTablesNotClosed } from "@/lib/api";
+import { getDashboardStats, getDailySales, getOpenOrders, getClosedBillChanges, getCashDrawerOpens, getDiscountsToday, getDiscountRequestsPending, getBusinessDayStatus, markWarningShown, getOpenTablesNotClosed, getCashDeposits } from "@/lib/api";
 import type { DiscountTodayRow, OpenTableNotClosed } from "@/lib/api";
 import { useUser } from "@/context/UserContext";
 
@@ -75,6 +75,8 @@ export default function DashboardPage() {
   const [openTablesNotClosedLoading, setOpenTablesNotClosedLoading] = useState(false);
   const [selectedTableOrderId, setSelectedTableOrderId] = useState<string | null>(null);
   const [currentBusinessDayKey, setCurrentBusinessDayKey] = useState<string | null>(null);
+  const [cashDeposits, setCashDeposits] = useState<{ deposits: Array<{ id: string; amount: number; date: string; note: string; user_name: string; created_at: number }>; totalAmount: number } | null>(null);
+  const [cashDepositModalOpen, setCashDepositModalOpen] = useState(false);
   const { user } = useUser();
   const canSeeWarning = user && (["admin", "manager", "supervisor"].includes(user.role) || (user.permissions || []).includes("web_settings"));
   const router = useRouter();
@@ -86,16 +88,18 @@ export default function DashboardPage() {
       const useRange = from && to;
       const singleDate = from || to;
       const dateForDiscounts = singleDate || toYYYYMMDD(new Date());
-      const [statsRes, dailyRes, closedChangesRes, cashDrawerRes, discountsRes] = await Promise.all([
+      const [statsRes, dailyRes, closedChangesRes, cashDrawerRes, discountsRes, cashDepositsRes] = await Promise.all([
         getDashboardStats(),
         useRange ? getDailySales(undefined, from, to) : getDailySales(singleDate),
         useRange ? getClosedBillChanges(undefined, from, to) : getClosedBillChanges(singleDate).catch(() => ({ count: 0, summary: { fullRefunds: 0, itemRefunds: 0, paymentMethodChanges: 0 }, changes: [] })),
         useRange ? getCashDrawerOpens(undefined, from, to) : getCashDrawerOpens(singleDate).catch(() => ({ count: 0, opens: [] })),
         getDiscountsToday(dateForDiscounts).catch(() => ({ count: 0, list: [], totalDiscountAmount: 0 })),
+        (useRange ? getCashDeposits(undefined, from, to) : getCashDeposits(singleDate)).catch(() => ({ deposits: [], totalAmount: 0 })),
       ]);
       setClosedBillChanges(closedChangesRes);
       setCashDrawerOpens(cashDrawerRes);
       setDiscountsToday(discountsRes);
+      setCashDeposits(cashDepositsRes);
       getDiscountRequestsPending().then((r) => setPendingDiscountRequestsCount(r.requests?.length ?? 0)).catch(() => setPendingDiscountRequestsCount(0));
       setStats({
         todaySales: statsRes.todaySales ?? 0,
@@ -114,6 +118,7 @@ export default function DashboardPage() {
       setDailySales(null);
       setCashDrawerOpens({ count: 0, opens: [] });
       setDiscountsToday({ count: 0, list: [], totalDiscountAmount: 0 });
+      setCashDeposits({ deposits: [], totalAmount: 0 });
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -297,6 +302,20 @@ export default function DashboardPage() {
                 <p className="text-xs opacity-90">No sale</p>
               </div>
             </button>
+            <button type="button" className={`${blockBaseClass} bg-indigo-900/80 border-indigo-600/50 text-indigo-100`} onClick={() => setCashDepositModalOpen(true)}>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold uppercase tracking-wide mb-0.5">Cash Deposit</p>
+                <p className="text-xs font-medium">{loading ? "..." : `${fmt(cashDeposits?.totalAmount ?? 0)} AED`}</p>
+                {dailySales && (() => {
+                  const expected = dailySales.totalCash ?? 0;
+                  const actual = cashDeposits?.totalAmount ?? 0;
+                  const diff = actual - expected;
+                  if (diff > 0) return <p className="text-xs opacity-90 text-emerald-300">Excess +{fmt(diff)}</p>;
+                  if (diff < 0) return <p className="text-xs opacity-90 text-red-400">Shortage {fmt(diff)}</p>;
+                  return <p className="text-xs opacity-90">Exact</p>;
+                })()}
+              </div>
+            </button>
             <button type="button" className={`${blockBaseClass} bg-violet-900/80 border-violet-600/50 text-violet-100`} onClick={() => setDiscountsModalOpen(true)}>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold uppercase tracking-wide mb-0.5">Today&apos;s Discounts</p>
@@ -470,6 +489,64 @@ export default function DashboardPage() {
                 <p><strong>Summary:</strong> {closedBillChanges.summary.fullRefunds} full bill refund(s), {closedBillChanges.summary.itemRefunds} item refund(s){closedBillChanges.summary.paymentMethodChanges ? `, ${closedBillChanges.summary.paymentMethodChanges} payment method change(s)` : ""}.</p>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Cash Deposit modal — beklenen cash vs sayılan nakit, eksik/fazla */}
+      {cashDepositModalOpen && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={() => setCashDepositModalOpen(false)}>
+          <div className="bg-slate-900 rounded-xl border border-slate-700 max-w-lg w-full max-h-[80vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="p-4 border-b border-slate-700 flex justify-between items-center">
+              <h3 className="text-lg font-semibold text-slate-200">Cash Deposit — Comparison</h3>
+              <button type="button" onClick={() => setCashDepositModalOpen(false)} className="text-slate-400 hover:text-white">Close</button>
+            </div>
+            <div className="overflow-y-auto flex-1 p-4 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 rounded-lg bg-slate-800/60 border border-slate-700">
+                  <p className="text-slate-400 text-sm">Expected Cash (Sales)</p>
+                  <p className="text-xl font-bold text-white">{fmt(dailySales?.totalCash ?? 0)} AED</p>
+                </div>
+                <div className="p-4 rounded-lg bg-slate-800/60 border border-slate-700">
+                  <p className="text-slate-400 text-sm">Counted Cash (Deposit)</p>
+                  <p className="text-xl font-bold text-sky-400">{fmt(cashDeposits?.totalAmount ?? 0)} AED</p>
+                </div>
+              </div>
+              <div className="p-4 rounded-lg border border-slate-700 bg-slate-800/40">
+                <p className="text-slate-400 text-sm">Difference (Counted − Expected)</p>
+                {(() => {
+                  const expected = dailySales?.totalCash ?? 0;
+                  const actual = cashDeposits?.totalAmount ?? 0;
+                  const diff = actual - expected;
+                  if (diff > 0) return <p className="text-xl font-bold text-emerald-400">+{fmt(diff)} AED (Excess)</p>;
+                  if (diff < 0) return <p className="text-xl font-bold text-red-400">{fmt(diff)} AED (Shortage)</p>;
+                  return <p className="text-xl font-bold text-slate-300">0.00 AED (Exact)</p>;
+                })()}
+              </div>
+              <div>
+                <p className="text-slate-400 text-sm font-medium mb-2">Entry details</p>
+                {cashDeposits && cashDeposits.deposits.length > 0 ? (
+                  <ul className="space-y-2">
+                    {cashDeposits.deposits.map((d) => (
+                      <li key={d.id} className="p-3 rounded-lg bg-slate-800 text-left flex justify-between items-center">
+                        <div>
+                          <p className="font-medium text-slate-200">{fmt(d.amount)} AED</p>
+                          <p className="text-slate-500 text-xs">{d.note || "—"} · {d.user_name} · {new Date(d.created_at).toLocaleString("tr-TR")}</p>
+                        </div>
+                        <span className="text-slate-500 text-sm">{d.date}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-slate-500 py-4">
+                    No cash entries for this date. Add them via{" "}
+                    <Link href="/settings/cash-deposit" onClick={() => setCashDepositModalOpen(false)} className="text-sky-400 hover:underline">
+                      Settings → Cash Deposit
+                    </Link>.
+                  </p>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       )}

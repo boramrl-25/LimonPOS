@@ -78,6 +78,7 @@ const defaultData = {
   custom_roles: [],
   discount_requests: [],
   table_reservations: [],
+  cash_deposits: [],
 };
 
 let db;
