@@ -111,6 +111,15 @@ function isWithinBusinessDay(nowUtc, openingTime, closingTime, offsetMinutes = 0
 }
 
 /**
+ * Get minutes since local midnight (0–1439). Uses same logic as isInAutoCloseWindow.
+ */
+function getMinutesSinceLocalMidnight(nowUtc, offsetMinutes = 0) {
+  const dayMs = 24 * 60 * 60 * 1000;
+  const localNow = nowUtc + getOffsetMs(offsetMinutes);
+  return Math.floor((((localNow % dayMs) + dayMs) % dayMs) / (60 * 1000));
+}
+
+/**
  * Check if we are at or past the warning time within the current business day.
  * Warning time is compared as "local time" - e.g. 01:00 means when local clock hits 01:00.
  * Only true when within business day AND local time >= warning time.
@@ -123,10 +132,7 @@ function isAfterWarningTime(nowUtc, warningTime, openingTime, closingTime, offse
   const warnMin = parseTimeToMinutes(warningTime);
   if (isNaN(warnMin)) return false;
 
-  const localNow = nowUtc + getOffsetMs(offsetMinutes);
-  const dayMs = 24 * 60 * 60 * 1000;
-  const minutesSinceMidnight = ((localNow % dayMs) + dayMs) % dayMs / (60 * 1000);
-
+  const minutesSinceMidnight = getMinutesSinceLocalMidnight(nowUtc, offsetMinutes);
   return minutesSinceMidnight >= warnMin;
 }
 
@@ -158,9 +164,7 @@ function isInAutoCloseWindow(nowUtc, closingTime, openingTime, graceMinutes, off
   const openMin = parseTimeToMinutes(openingTime);
   if (isNaN(closeMin) || isNaN(openMin)) return false;
 
-  const dayMs = 24 * 60 * 60 * 1000;
-  const localNow = nowUtc + getOffsetMs(offsetMinutes);
-  const minutesSinceMidnight = Math.floor((((localNow % dayMs) + dayMs) % dayMs) / (60 * 1000));
+  const minutesSinceMidnight = getMinutesSinceLocalMidnight(nowUtc, offsetMinutes);
 
   const grace = Math.min(60, Math.max(0, graceMinutes || 0));
   const threshold = closeMin + grace;
@@ -184,7 +188,7 @@ function getClosedBusinessDayKeyForAutoClose(nowUtc, openingTime, closingTime, o
   const dayMs = 24 * 60 * 60 * 1000;
   const localNow = nowUtc + getOffsetMs(offsetMinutes);
   const localDayStartMs = Math.floor(localNow / dayMs) * dayMs;
-  const minutesSinceMidnight = Math.floor((((localNow % dayMs) + dayMs) % dayMs) / (60 * 1000));
+  const minutesSinceMidnight = getMinutesSinceLocalMidnight(nowUtc, offsetMinutes);
 
   const isCrossMidnight = closeMin <= openMin;
   const isInGap = isCrossMidnight && minutesSinceMidnight >= closeMin && minutesSinceMidnight < openMin;

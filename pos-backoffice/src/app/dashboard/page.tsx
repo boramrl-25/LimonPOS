@@ -122,6 +122,10 @@ export default function DashboardPage() {
       setDailySales(dailyRes);
       setReconciliationData(reconRes);
       setLastRefresh(new Date());
+      getBusinessDayStatus().then((s) => {
+        if (s.currentBusinessDayKey) setCurrentBusinessDayKey(s.currentBusinessDayKey);
+        if (canSeeWarning && s.shouldShowWarning) setWarningBanner(true);
+      }).catch(() => {});
     } catch {
       setStats({ todaySales: 0, orderCount: 0, openTables: 0, openChecks: 0, lastEod: null, openTablesCount: 0, pendingVoidRequestsCount: 0, pendingClosedBillAccessRequestsCount: 0 });
       setDailySales(null);
@@ -132,7 +136,7 @@ export default function DashboardPage() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [selectedDateFrom, selectedDateTo]);
+  }, [selectedDateFrom, selectedDateTo, canSeeWarning]);
 
   const reconDate = selectedDateFrom || selectedDateTo || toYYYYMMDD(new Date());
   useEffect(() => {
