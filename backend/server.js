@@ -2463,13 +2463,7 @@ async function runAutoCloseIfDue() {
 }
 
 async function startServer() {
-  try {
-    await ensureData();
-    console.log("[startup] ensureData OK");
-  } catch (e) {
-    console.error("[startup] ensureData failed (server will still start):", e?.message || e);
-  }
-  setInterval(() => runAutoCloseIfDue().catch((e) => console.error("[auto-close]", e?.message)), 60 * 1000);
+  // Listen first – Railway health check needs quick response. ensureData in background.
   const server = app.listen(PORT, HOST, () => {
     console.log(`LimonPOS Backend running on http://${HOST}:${PORT}`);
     if (DATA_DIR) {
@@ -2480,6 +2474,9 @@ async function startServer() {
     if (HOST === "0.0.0.0") {
       console.log("Listening on all interfaces – Railway/dış erişim için hazır.");
     }
+    // ensureData in background – don't block startup
+    ensureData().then(() => console.log("[startup] ensureData OK")).catch((e) => console.error("[startup] ensureData failed:", e?.message || e));
+    setInterval(() => runAutoCloseIfDue().catch((e) => console.error("[auto-close]", e?.message)), 60 * 1000);
   });
   process.on("SIGTERM", () => {
     console.log("[SIGTERM] Graceful shutdown...");
