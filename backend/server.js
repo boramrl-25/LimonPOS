@@ -10,11 +10,30 @@ import {
   getBusinessDayKey,
   isAfterWarningTime,
   isInAutoCloseWindow,
-  getClosedBusinessDayKeyForAutoClose,
   getBusinessDayRangeForDate,
   getBusinessDayRangesForDateRange,
   parseTimeToMinutes,
 } from "./businessDay.js";
+
+/** Inlined: closed day key when in auto-close window (avoids export dependency). */
+function getClosedBusinessDayKeyForAutoClose(nowUtc, openingTime, closingTime, offsetMinutes = 0) {
+  const closeMin = parseTimeToMinutes(closingTime);
+  const openMin = parseTimeToMinutes(openingTime);
+  if (isNaN(closeMin) || isNaN(openMin)) return null;
+  const dayMs = 24 * 60 * 60 * 1000;
+  const offMs = (offsetMinutes || 0) * 60 * 1000;
+  const localNow = nowUtc + offMs;
+  const localDayStartMs = Math.floor(localNow / dayMs) * dayMs;
+  const minutesSinceMidnight = Math.floor((((localNow % dayMs) + dayMs) % dayMs) / (60 * 1000));
+  const isCrossMidnight = closeMin <= openMin;
+  const isInGap = isCrossMidnight && minutesSinceMidnight >= closeMin && minutesSinceMidnight < openMin;
+  const dayStartMs = isInGap ? localDayStartMs - dayMs : localDayStartMs;
+  const d = new Date(dayStartMs);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
 import { fetchReconciliationEmails, aggregateReconciliationByDate } from "./reconciliation.js";
 
 // Railway / production: yakalanmamış hatalar loglansın
