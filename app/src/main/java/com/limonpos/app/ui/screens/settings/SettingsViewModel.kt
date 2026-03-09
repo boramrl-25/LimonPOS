@@ -32,6 +32,9 @@ class SettingsViewModel @Inject constructor(
         .map { it in listOf("manager", "admin", "supervisor") }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    val canAccessKds: StateFlow<Boolean> = authRepository.canAccessKds()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
     val apiBaseUrl: StateFlow<String> = serverPreferences.baseUrl
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
 

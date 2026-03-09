@@ -80,19 +80,21 @@ fun HomeScreen(
                     Text("Closed Bills", color = LimonText, fontWeight = FontWeight.Medium, fontSize = 16.sp)
                 }
             }
-            OutlinedCard(
-                onClick = onNavigateToKds,
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.outlinedCardColors(containerColor = LimonSurface),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Row(
-                    modifier = Modifier.padding(20.dp),
-                    verticalAlignment = Alignment.CenterVertically
+            if (canAccessKds) {
+                OutlinedCard(
+                    onClick = onNavigateToKds,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.outlinedCardColors(containerColor = LimonSurface),
+                    shape = RoundedCornerShape(12.dp)
                 ) {
-                    Icon(Icons.Default.Restaurant, contentDescription = null, tint = LimonPrimary, modifier = Modifier.size(28.dp))
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Text("Kitchen Display (KDS)", color = LimonText, fontWeight = FontWeight.Medium, fontSize = 16.sp)
+                    Row(
+                        modifier = Modifier.padding(20.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Restaurant, contentDescription = null, tint = LimonPrimary, modifier = Modifier.size(28.dp))
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Text("Kitchen Display (KDS)", color = LimonText, fontWeight = FontWeight.Medium, fontSize = 16.sp)
+                    }
                 }
             }
             OutlinedCard(

@@ -279,13 +279,22 @@ fun NavGraph(
                 )
             }
             composable(Routes.KDS) {
-                KdsScreen(
+                var hasAccess by remember { mutableStateOf<Boolean?>(null) }
+                LaunchedEffect(Unit) {
+                    hasAccess = authRepository.hasKdsAccess()
+                }
+                LaunchedEffect(hasAccess) {
+                    if (hasAccess == false) navController.popBackStack()
+                }
+                if (hasAccess == true) {
+                    KdsScreen(
                     onBack = { navController.popBackStack() },
                     onNavigateToFloorPlan = { navController.navigate(Routes.FLOOR_PLAN) { popUpTo(Routes.FLOOR_PLAN) { inclusive = true }; launchSingleTop = true } },
                     onNavigateToVoidApprovals = { navController.navigate(Routes.VOID_APPROVALS) },
                     onNavigateToSettings = { navController.navigate(Routes.SETTINGS) },
                     onSync = onSync
                 )
+                }
             }
             composable(Routes.CLOSED_BILLS) {
                 ClosedBillsScreen(

@@ -53,6 +53,7 @@ fun SettingsScreen(
     val context = LocalContext.current
     val userRole by viewModel.userRole.collectAsState(null)
     val isManager by viewModel.isManager.collectAsState(false)
+    val canAccessKds by viewModel.canAccessKds.collectAsState(false)
     val isKdsOnly = userRole == "kds"
     val message by viewModel.message.collectAsState()
     val receiptItemSize by viewModel.receiptItemSize.collectAsState(ReceiptItemSize.NORMAL)
@@ -97,14 +98,16 @@ fun SettingsScreen(
                         expanded = menuExpanded,
                         onDismissRequest = { menuExpanded = false }
                     ) {
-                        DropdownMenuItem(
-                            text = { Text("Kitchen Display (KDS)", color = LimonText) },
-                            onClick = {
-                                menuExpanded = false
-                                onNavigateToKds()
-                            },
-                            leadingIcon = { Icon(Icons.Default.Restaurant, contentDescription = null, tint = LimonPrimary) }
-                        )
+                        if (canAccessKds) {
+                            DropdownMenuItem(
+                                text = { Text("Kitchen Display (KDS)", color = LimonText) },
+                                onClick = {
+                                    menuExpanded = false
+                                    onNavigateToKds()
+                                },
+                                leadingIcon = { Icon(Icons.Default.Restaurant, contentDescription = null, tint = LimonPrimary) }
+                            )
+                        }
                         DropdownMenuItem(
                             text = { Text("Sync", color = LimonText) },
                             onClick = {
