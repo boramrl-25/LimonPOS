@@ -11,7 +11,12 @@ async function fetchWithTimeout(url: string, opts: RequestInit = {}): Promise<Re
     return res;
   } catch (e) {
     if ((e as Error).name === "AbortError") {
-      throw new Error("Backend yanıt vermiyor. Backend çalışıyor mu? (port 3002)");
+      const isLocal = typeof API_URL === "string" && API_URL.includes("localhost");
+      throw new Error(
+        isLocal
+          ? "Backend yanıt vermiyor. Lokal backend çalışıyor mu? (cd backend && npm run dev, port 3002)"
+          : "Backend yanıt vermiyor (timeout). Railway deploy çalışıyor mu? api.the-limon.com kontrol edin."
+      );
     }
     throw e;
   } finally {
