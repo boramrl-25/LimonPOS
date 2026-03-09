@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   Settings,
   CreditCard,
+  Banknote,
   BookOpen,
   Users,
   Package,
@@ -27,6 +28,7 @@ import { useUser } from "@/context/UserContext";
 
 const navItems: { href: string; label: string; icon: typeof LayoutDashboard; permission: string }[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, permission: "web_dashboard" },
+  { href: "/dashboard/cash-card", label: "Cash & Card", icon: Banknote, permission: "web_dashboard" },
   { href: "/floorplan", label: "Floor Plan", icon: Map, permission: "web_floorplan" },
   { href: "/settings", label: "Settings", icon: Settings, permission: "web_settings" },
   { href: "/settings/payment", label: "Payment Methods", icon: CreditCard, permission: "web_settings" },

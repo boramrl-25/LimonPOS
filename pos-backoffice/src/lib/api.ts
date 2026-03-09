@@ -567,6 +567,16 @@ export async function getReconciliationWarnings() {
   return res.json();
 }
 
+export async function setReconciliationPhysicalCount(date: string, amount: number) {
+  const res = await fetchWithTimeout(`${API_URL}/reconciliation/physical-count`, {
+    method: "PUT",
+    headers: headers(),
+    body: JSON.stringify({ date, amount }),
+  });
+  if (!res.ok) throw new Error("Failed to set physical count");
+  return res.json();
+}
+
 export async function clearReconciliationWarnings() {
   const res = await fetchWithTimeout(`${API_URL}/reconciliation/warnings/clear`, { method: "POST", headers: headers() });
   if (!res.ok) throw new Error("Failed to clear warnings");

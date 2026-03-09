@@ -329,7 +329,7 @@ export default function ReconciliationSettingsPage() {
           </p>
         </section>
 
-        <Link href="/dashboard/reconciliation" className="inline-flex items-center gap-2 text-sky-400 hover:text-sky-300">
+        <Link href="/dashboard/cash-card" className="inline-flex items-center gap-2 text-sky-400 hover:text-sky-300">
           View Reconciliation Summary →
         </Link>
       </main>

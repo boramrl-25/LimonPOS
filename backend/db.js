@@ -94,6 +94,8 @@ const defaultData = {
     cash_account: "",
   },
   reconciliation_warnings: [],
+  /** Manual physical cash count (next day). Key: YYYY-MM-DD. Value: { amount, user_id, user_name, created_at } */
+  physical_cash_count_by_date: {},
 };
 
 let db;

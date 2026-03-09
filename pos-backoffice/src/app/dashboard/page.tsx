@@ -78,7 +78,6 @@ export default function DashboardPage() {
   const [openTablesNotClosedLoading, setOpenTablesNotClosedLoading] = useState(false);
   const [selectedTableOrderId, setSelectedTableOrderId] = useState<string | null>(null);
   const [currentBusinessDayKey, setCurrentBusinessDayKey] = useState<string | null>(null);
-  const [physicalCashModalOpen, setPhysicalCashModalOpen] = useState(false);
   const { user } = useUser();
   const canSeeWarning = user && (["admin", "manager", "supervisor"].includes(user.role) || (user.permissions || []).includes("web_settings"));
   const router = useRouter();
@@ -328,75 +327,15 @@ export default function DashboardPage() {
           )}
         </section>
 
-        {/* Cash & Card — System = from POS sales; Physical/Tap = manual count */}
-        <section className="rounded-xl bg-amber-950/40 border border-amber-700/50 p-5">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-semibold text-amber-200">Cash & Card</h2>
-            <Link href="/dashboard/reconciliation" className="text-sky-400 hover:text-sky-300 text-sm">Reconciliation →</Link>
+        {/* Cash & Card — link to full Cash Reconciliation & Card Reconciliation */}
+        <Link href="/dashboard/cash-card" className={`${blockBaseClass} bg-amber-950/80 border-amber-600/50 text-amber-100`}>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold uppercase tracking-wide mb-0.5">Cash & Card</p>
+            <p className="text-xs font-medium truncate">Cash Reconciliation · Card Reconciliation</p>
+            <p className="text-sky-400 text-xs mt-1">Click to open →</p>
           </div>
-          {/* Cash row: System Cash, Physical Cash (from app), Difference */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
-            <div className="p-4 rounded-lg bg-slate-900/60 border border-amber-700/30">
-              <p className="text-amber-200/80 text-sm mb-1">System Cash</p>
-              <p className="text-xs text-slate-500 mb-0.5">Cash from POS sales</p>
-              <p className="text-2xl font-bold text-amber-100">
-                {loading ? "..." : `${fmt(dailySales?.totalCash ?? 0)} AED`}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setPhysicalCashModalOpen(true)}
-              className="p-4 rounded-lg bg-slate-900/60 border border-slate-600 text-left hover:border-amber-500/50 transition-colors cursor-pointer"
-            >
-              <p className="text-slate-400 text-sm mb-1">Physical Cash (from app)</p>
-              <p className="text-xs text-slate-500 mb-0.5">Sum of deposits in working hours</p>
-              <p className="text-2xl font-bold text-white">
-                {(dailySales?.physicalCashTotal ?? 0) > 0 ? `${fmt(dailySales?.physicalCashTotal ?? 0)} AED` : "—"}
-              </p>
-              {(dailySales?.dailyCashEntries?.length ?? 0) > 0 && (
-                <p className="text-sky-400 text-xs mt-1">Click to view all deposits ({dailySales?.dailyCashEntries?.length ?? 0})</p>
-              )}
-            </button>
-            <div className="p-4 rounded-lg bg-slate-900/60 border border-slate-600">
-              <p className="text-slate-400 text-sm mb-1">Difference</p>
-              <p className="text-xs text-slate-500 mb-0.5">Total deposits − System</p>
-              <p className={`text-2xl font-bold ${
-                (dailySales?.physicalCashTotal ?? 0) > 0
-                  ? ((dailySales?.physicalCashTotal ?? 0) - (dailySales?.totalCash ?? 0)) >= 0
-                    ? "text-emerald-400"
-                    : "text-red-400"
-                  : "text-slate-500"
-              }`}>
-                {(dailySales?.physicalCashTotal ?? 0) > 0
-                  ? (() => {
-                      const diff = (dailySales?.physicalCashTotal ?? 0) - (dailySales?.totalCash ?? 0);
-                      return `${diff >= 0 ? "+" : ""}${fmt(diff)} AED (${diff >= 0 ? "Over" : "Short"})`;
-                    })()
-                  : "—"}
-              </p>
-            </div>
-          </div>
-          {/* Card row: System Card, Tap Card, Difference */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="p-4 rounded-lg bg-slate-900/60 border border-slate-600">
-              <p className="text-slate-400 text-sm mb-1">System Card</p>
-              <p className="text-xs text-slate-500 mb-0.5">Card from POS sales</p>
-              <p className="text-2xl font-bold text-white">
-                {loading ? "..." : `${fmt(dailySales?.totalCard ?? 0)} AED`}
-              </p>
-            </div>
-            <div className="p-4 rounded-lg bg-slate-900/60 border border-slate-600">
-              <p className="text-slate-400 text-sm mb-1">Tap Card</p>
-              <p className="text-xs text-slate-500 mb-0.5">From terminal / manual</p>
-              <p className="text-2xl font-bold text-slate-500">—</p>
-            </div>
-            <div className="p-4 rounded-lg bg-slate-900/60 border border-slate-600">
-              <p className="text-slate-400 text-sm mb-1">Difference</p>
-              <p className="text-xs text-slate-500 mb-0.5">Tap − System</p>
-              <p className="text-2xl font-bold text-slate-500">—</p>
-            </div>
-          </div>
-        </section>
+          <ChevronRight className="w-5 h-5 text-amber-400 flex-shrink-0" />
+        </Link>
 
         {/* Daily Sales — tap blocks to view tickets (Receipt #, Date, Who) */}
         <section>
@@ -503,42 +442,6 @@ export default function DashboardPage() {
           )}
         </section>
       </main>
-
-      {/* Physical Cash deposits modal */}
-      {physicalCashModalOpen && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={() => setPhysicalCashModalOpen(false)}>
-          <div className="bg-slate-900 rounded-xl border border-slate-700 max-w-lg w-full max-h-[80vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
-            <div className="p-4 border-b border-slate-700 flex justify-between items-center">
-              <h3 className="text-lg font-semibold text-amber-200">Physical Cash Deposits</h3>
-              <button type="button" onClick={() => setPhysicalCashModalOpen(false)} className="text-slate-400 hover:text-white">Close</button>
-            </div>
-            <div className="overflow-y-auto flex-1 p-4">
-              {(dailySales?.dailyCashEntries?.length ?? 0) > 0 ? (
-                <>
-                  <div className="p-4 rounded-lg bg-amber-900/30 border border-amber-600/50 mb-4">
-                    <p className="text-slate-400 text-sm">Total (sum of deposits in working hours)</p>
-                    <p className="text-2xl font-bold text-amber-200">{fmt(dailySales?.physicalCashTotal ?? 0)} AED</p>
-                  </div>
-                  <ul className="space-y-2">
-                  {dailySales?.dailyCashEntries?.map((e) => (
-                    <li key={e.id} className="flex justify-between items-center p-3 rounded-lg bg-slate-800/60 border border-slate-700">
-                      <div>
-                        <p className="font-medium text-white">{e.user_name || "—"}</p>
-                        <p className="text-slate-500 text-sm">{new Date(e.created_at).toLocaleString("tr-TR", { dateStyle: "short", timeStyle: "medium" })}</p>
-                      </div>
-                      <p className="text-xl font-bold text-amber-200">{fmt(e.physical_cash)} AED</p>
-                    </li>
-                  ))}
-                </ul>
-                </>
-              ) : (
-                <p className="text-slate-500 py-8 text-center">No cash deposits for this period. Use the app to add daily cash entry.</p>
-              )}
-              <p className="text-slate-500 text-xs mt-4">You can deposit cash multiple times per day from the app.</p>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Closed Bill Change modal */}
       {closedBillChangesModal && (

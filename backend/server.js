@@ -1609,6 +1609,24 @@ app.get("/api/reconciliation/summary", authMiddleware, async (req, res) => {
     const deductionDiff = totalUtapDeduction > 0 ? totalUtapDeduction - expectedDeduction : null;
 
     const cashDiff = physicalCashTotal > 0 ? physicalCashTotal - summary.totalCash : null;
+
+    // Manual physical count (next day) - for verification
+    const physicalCountStore = db.data.physical_cash_count_by_date || {};
+    const manualPhysicalCount = physicalCountStore[dateStr] || null;
+
+    // Bank cash deposits near this date (date±2): bank may process next day or aggregate several days
+    const addDaysStr = (s, n) => {
+      const d = new Date(s + "T12:00:00Z");
+      d.setUTCDate(d.getUTCDate() + n);
+      return d.toISOString().slice(0, 10);
+    };
+    const fromStr = addDaysStr(dateStr, -2);
+    const toStr = addDaysStr(dateStr, 2);
+    const bankCashNearby = (imports || [])
+      .filter((i) => i.source === "bank_email_cash" && i.date >= fromStr && i.date <= toStr)
+      .map((i) => ({ date: i.date, amount: i.amount ?? 0, description: i.description || "Cash deposit" }))
+      .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+
     res.json({
     date: dateStr,
     cash: {
@@ -1618,6 +1636,8 @@ app.get("/api/reconciliation/summary", authMiddleware, async (req, res) => {
       bankDeposit: dayData.cash,
       difference: cashDiff,
       dailyCashEntries,
+      bankCashDepositsNearby: bankCashNearby,
+      manualPhysicalCount: manualPhysicalCount ? { amount: manualPhysicalCount.amount, user_name: manualPhysicalCount.user_name, created_at: manualPhysicalCount.created_at } : null,
     },
     card: {
       systemCard: summary.totalCard,
@@ -1636,6 +1656,25 @@ app.get("/api/reconciliation/summary", authMiddleware, async (req, res) => {
     console.error("[reconciliation/summary] Error:", err?.message || err);
     res.status(500).json({ error: "reconciliation_summary_error", message: err?.message || "Internal error" });
   }
+});
+
+/** Set manual physical cash count (next day). */
+app.put("/api/reconciliation/physical-count", authMiddleware, async (req, res) => {
+  await ensureData();
+  const amount = parseFloat(req.body.amount);
+  if (isNaN(amount) || amount < 0) return res.status(400).json({ error: "invalid_amount", message: "amount must be a non-negative number" });
+  const dateStr = (req.body.date || "").toString().trim() || new Date().toISOString().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return res.status(400).json({ error: "invalid_date" });
+  const store = db.data.physical_cash_count_by_date || {};
+  store[dateStr] = {
+    amount,
+    user_id: req.user?.id || "",
+    user_name: req.user?.name || "—",
+    created_at: Date.now(),
+  };
+  db.data.physical_cash_count_by_date = store;
+  await db.write();
+  res.json({ ok: true, amount, date: dateStr });
 });
 
 /** Card transaction detail for reconciliation: POS vs UTAP, match status. */
