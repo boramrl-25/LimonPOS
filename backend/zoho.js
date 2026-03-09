@@ -167,7 +167,13 @@ export async function pushToZohoBooks(db, order, items, payments = [], products 
 
   const paymentOptions = payList
     .filter((p) => Number(p.amount) > 0)
-    .map((p) => ({ payment_mode: toZohoPaymentMode(p.method), amount: Number(p.amount) }));
+    .map((p) => {
+      const mode = toZohoPaymentMode(p.method);
+      const opt = { payment_mode: mode, amount: Number(p.amount) };
+      if (mode === "cash" && cash_account_id) opt.account_id = cash_account_id;
+      if (mode === "credit_card" && card_account_id) opt.account_id = card_account_id;
+      return opt;
+    });
 
   const primaryPayment = paymentOptions[0] || { payment_mode: "cash" };
   const payload = {
@@ -205,6 +211,8 @@ export async function pushToZohoBooks(db, order, items, payments = [], products 
       const fallback = { ...payload };
       delete fallback.payment_options;
       fallback.payment_mode = primaryPayment.payment_mode;
+      if (primaryPayment.payment_mode === "cash" && cash_account_id) fallback.account_id = cash_account_id;
+      if (primaryPayment.payment_mode === "credit_card" && card_account_id) fallback.account_id = card_account_id;
       try {
         await axios.post(
           `${booksBase}/salesreceipts?organization_id=${organization_id}`,
@@ -327,6 +335,46 @@ export async function getZohoItems(db) {
   } catch (err) {
     console.error("Zoho Books getItems error:", err.response?.data || err.message);
     throw new Error(parseZohoError(err));
+  }
+}
+
+/** Fetch contacts from Zoho Books. Returns { contacts: [{ contact_id, contact_name }] }. */
+export async function getZohoContacts(db) {
+  await db.read();
+  const cfg = getZohoConfig(db);
+  const { organization_id, enabled, dc } = cfg;
+  if (enabled !== "true" || !organization_id) return { contacts: [] };
+
+  const token = await getZohoAccessToken(db);
+  if (!token) return { contacts: [] };
+
+  const booksBase = getZohoUrls(dc).books;
+  const all = [];
+  let page = 1;
+  let hasMore = true;
+
+  try {
+    while (hasMore) {
+      const res = await axios.get(
+        `${booksBase}/contacts?organization_id=${organization_id}&page=${page}&per_page=200`,
+        { headers: zohoHeaders(token) }
+      );
+      const raw = res.data?.contacts ?? res.data?.contact ?? [];
+      const list = Array.isArray(raw) ? raw : [];
+      for (const c of list) {
+        const id = c.contact_id ?? c.contactId ?? c.id;
+        const name = c.contact_name ?? c.contactName ?? c.display_name ?? c.name ?? "";
+        if (id) all.push({ contact_id: String(id), contact_name: String(name || "").trim() || "(no name)" });
+      }
+      const ctx = res.data?.page_context || {};
+      hasMore = ctx.has_more_page === true || ctx.has_more === true;
+      if (hasMore) page++;
+      else break;
+    }
+    return { contacts: all };
+  } catch (err) {
+    console.error("Zoho Books getContacts error:", err.response?.data || err.message);
+    return { contacts: [] };
   }
 }
 

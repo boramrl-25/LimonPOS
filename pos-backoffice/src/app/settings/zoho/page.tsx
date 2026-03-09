@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { ArrowLeft, ChevronDown, ChevronUp, HelpCircle, CheckCircle } from "lucide-react";
-import { getZohoConfig, updateZohoConfig, exchangeZohoCode, checkZohoConnection } from "@/lib/api";
+import { getZohoConfig, updateZohoConfig, exchangeZohoCode, checkZohoConnection, getZohoContacts } from "@/lib/api";
 
 export default function ZohoSettingsPage() {
   const [config, setConfig] = useState({
@@ -34,6 +34,8 @@ export default function ZohoSettingsPage() {
     error?: string | null;
   } | null>(null);
   const [checking, setChecking] = useState(false);
+  const [contacts, setContacts] = useState<{ contact_id: string; contact_name: string }[]>([]);
+  const [loadingContacts, setLoadingContacts] = useState(false);
 
   useEffect(() => {
     load();
@@ -176,30 +178,63 @@ export default function ZohoSettingsPage() {
         </div>
         <div>
           <label className="block text-sm text-slate-400 mb-1">Organization ID</label>
-          <input type="text" value={config.organization_id} onChange={(e) => setConfig((c) => ({ ...c, organization_id: e.target.value }))} placeholder="Zoho Books Organization ID" className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-600 text-white" />
+          <input type="text" value={config.organization_id} onChange={(e) => setConfig((c) => ({ ...c, organization_id: e.target.value }))} placeholder="e.g. 20111054613" className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-600 text-white" />
         </div>
         <div>
           <label className="block text-sm text-slate-400 mb-1">Customer ID (Walk-in customer)</label>
-          <input
-            type="text"
-            inputMode="numeric"
-            autoComplete="off"
-            value={config.customer_id}
-            onChange={(e) => setConfig((c) => ({ ...c, customer_id: e.target.value }))}
-            placeholder="e.g. 864689000000385153"
-            className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-600 text-white"
-          />
-          <p className="text-xs text-slate-500 mt-1">Zoho Books → Contacts → the number after /contacts/ in the URL</p>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              inputMode="numeric"
+              autoComplete="off"
+              value={config.customer_id}
+              onChange={(e) => setConfig((c) => ({ ...c, customer_id: e.target.value }))}
+              placeholder="e.g. 864689000000385153"
+              className="flex-1 px-3 py-2 rounded-lg bg-slate-900 border border-slate-600 text-white"
+            />
+            <button
+              type="button"
+              onClick={async () => {
+                setLoadingContacts(true);
+                try {
+                  const r = await getZohoContacts();
+                  setContacts(r.contacts || []);
+                  if ((r.contacts || []).length === 0) alert("Zoho'dan kişi bulunamadı. Önce Token Al ile Refresh Token alın.");
+                } catch (e) {
+                  alert((e as Error).message);
+                } finally {
+                  setLoadingContacts(false);
+                }
+              }}
+              disabled={loadingContacts}
+              className="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-white text-sm whitespace-nowrap"
+            >
+              {loadingContacts ? "..." : "Müşterileri Getir"}
+            </button>
+          </div>
+          {contacts.length > 0 && (
+            <select
+              value={config.customer_id}
+              onChange={(e) => setConfig((c) => ({ ...c, customer_id: e.target.value }))}
+              className="w-full mt-2 px-3 py-2 rounded-lg bg-slate-900 border border-slate-600 text-white text-sm"
+            >
+              <option value="">Seçin (Walk-in Customer)</option>
+              {contacts.map((c) => (
+                <option key={c.contact_id} value={c.contact_id}>{c.contact_name} ({c.contact_id})</option>
+              ))}
+            </select>
+          )}
+          <p className="text-xs text-slate-500 mt-1">Zoho Books → Contacts → Walk-in Customer. Veya &quot;Müşterileri Getir&quot; ile seçin.</p>
         </div>
         <div>
           <label className="block text-sm text-slate-400 mb-1">Cash Account ID (opsiyonel – nakit ödemelerin yatırılacağı hesap)</label>
-          <input type="text" value={config.cash_account_id} onChange={(e) => setConfig((c) => ({ ...c, cash_account_id: e.target.value }))} placeholder="e.g. 864689000000385001" className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-600 text-white" />
-          <p className="text-xs text-slate-500 mt-1">Chart of Accounts → Kasa hesabı ID</p>
+          <input type="text" value={config.cash_account_id} onChange={(e) => setConfig((c) => ({ ...c, cash_account_id: e.target.value }))} placeholder="e.g. 864689000000493032 (Cash POS Sale)" className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-600 text-white" />
+          <p className="text-xs text-slate-500 mt-1">Chart of Accounts → Cash POS Sale (1010)</p>
         </div>
         <div>
           <label className="block text-sm text-slate-400 mb-1">Card/Bank Account ID (opsiyonel – kart ödemelerin yatırılacağı hesap)</label>
-          <input type="text" value={config.card_account_id} onChange={(e) => setConfig((c) => ({ ...c, card_account_id: e.target.value }))} placeholder="e.g. 864689000000385002" className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-600 text-white" />
-          <p className="text-xs text-slate-500 mt-1">Chart of Accounts veya Bank Accounts → Banka/Kredi Kartı hesabı ID</p>
+          <input type="text" value={config.card_account_id} onChange={(e) => setConfig((c) => ({ ...c, card_account_id: e.target.value }))} placeholder="e.g. 864689000000493048 (UTAP)" className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-600 text-white" />
+          <p className="text-xs text-slate-500 mt-1">Chart of Accounts → Credit Card Receivable – UTAP (1030)</p>
         </div>
       </div>
 

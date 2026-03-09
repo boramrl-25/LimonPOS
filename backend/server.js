@@ -4,7 +4,7 @@ import express from "express";
 import cors from "cors";
 import { v4 as uuid } from "uuid";
 import { db, getDataFileInfo } from "./db.js";
-import { pushToZohoBooks, getZohoItems, getZohoItemGroups, syncFromZoho } from "./zoho.js";
+import { pushToZohoBooks, getZohoItems, getZohoItemGroups, getZohoContacts, syncFromZoho } from "./zoho.js";
 import {
   parseTimeToMinutes,
   getBusinessDayRange,
@@ -2265,6 +2265,15 @@ app.get("/api/zoho/items", authMiddleware, async (req, res) => {
 app.get("/api/zoho/item-groups", authMiddleware, async (req, res) => {
   const result = await getZohoItemGroups(db);
   res.json(result);
+});
+
+app.get("/api/zoho/contacts", authMiddleware, async (req, res) => {
+  try {
+    const result = await getZohoContacts(db);
+    res.json(result);
+  } catch (e) {
+    res.status(400).json({ error: (e && e.message) || "Zoho kişi listesi alınamadı", contacts: [] });
+  }
 });
 
 // Zoho sync: sadece upsert (clearZohoProductsFirst kullanılmaz – ürün kaybı önlenir).

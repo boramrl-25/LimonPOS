@@ -878,6 +878,12 @@ export async function clearAndSyncProducts(): Promise<{
   return res.json();
 }
 
+export async function getZohoContacts(): Promise<{ contacts: { contact_id: string; contact_name: string }[] }> {
+  const res = await fetchWithTimeout(`${API_URL}/zoho/contacts`, { headers: headers() });
+  if (!res.ok) throw new Error("Zoho kişi listesi alınamadı");
+  return res.json();
+}
+
 export async function checkZohoConnection(): Promise<{
   ok: boolean;
   salesPushReady?: boolean;
