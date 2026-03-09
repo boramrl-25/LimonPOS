@@ -145,6 +145,59 @@ function getBusinessDayRangeForDate(dateStr, openingTime, closingTime, offsetMin
 }
 
 /**
+ * Check if we're in the auto-close window: past (closing + grace) and before opening.
+ * Used to auto-close open tables. Window: [closingTime + graceMinutes, openingTime).
+ * @param {number} nowUtc - UTC timestamp (ms)
+ * @param {string} closingTime - "HH:mm"
+ * @param {string} openingTime - "HH:mm"
+ * @param {number} graceMinutes - 0-60
+ * @param {number} offsetMinutes - timezone offset (e.g. 240 for UAE GMT+4)
+ */
+function isInAutoCloseWindow(nowUtc, closingTime, openingTime, graceMinutes, offsetMinutes = 0) {
+  const closeMin = parseTimeToMinutes(closingTime);
+  const openMin = parseTimeToMinutes(openingTime);
+  if (isNaN(closeMin) || isNaN(openMin)) return false;
+
+  const dayMs = 24 * 60 * 60 * 1000;
+  const localNow = nowUtc + getOffsetMs(offsetMinutes);
+  const minutesSinceMidnight = Math.floor((((localNow % dayMs) + dayMs) % dayMs) / (60 * 1000));
+
+  const grace = Math.min(60, Math.max(0, graceMinutes || 0));
+  const threshold = closeMin + grace;
+
+  if (closeMin <= openMin) {
+    return minutesSinceMidnight >= threshold && minutesSinceMidnight < openMin;
+  }
+  return minutesSinceMidnight >= threshold;
+}
+
+/**
+ * Get the business day key for the day we're closing when in auto-close window.
+ * Cross-midnight (e.g. 07:00–01:30): when we're in [01:30, 07:00), the closed day opened on the previous calendar day.
+ * Same-day (e.g. 09:00–17:00): the closed day opened today.
+ */
+function getClosedBusinessDayKeyForAutoClose(nowUtc, openingTime, closingTime, offsetMinutes = 0) {
+  const closeMin = parseTimeToMinutes(closingTime);
+  const openMin = parseTimeToMinutes(openingTime);
+  if (isNaN(closeMin) || isNaN(openMin)) return null;
+
+  const dayMs = 24 * 60 * 60 * 1000;
+  const localNow = nowUtc + getOffsetMs(offsetMinutes);
+  const localDayStartMs = Math.floor(localNow / dayMs) * dayMs;
+  const minutesSinceMidnight = Math.floor((((localNow % dayMs) + dayMs) % dayMs) / (60 * 1000));
+
+  const isCrossMidnight = closeMin <= openMin;
+  const isInGap = isCrossMidnight && minutesSinceMidnight >= closeMin && minutesSinceMidnight < openMin;
+  const dayStartMs = isInGap ? localDayStartMs - dayMs : localDayStartMs;
+
+  const d = new Date(dayStartMs);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/**
  * Get all business day ranges that overlap a calendar date range [dateFrom, dateTo].
  * Used for report date ranges.
  */
@@ -182,6 +235,8 @@ export {
   getBusinessDayKey,
   isWithinBusinessDay,
   isAfterWarningTime,
+  isInAutoCloseWindow,
+  getClosedBusinessDayKeyForAutoClose,
   getBusinessDayRangeForDate,
   getBusinessDayRangesForDateRange,
   getLocalMidnightFor,

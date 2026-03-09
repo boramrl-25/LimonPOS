@@ -166,7 +166,7 @@ export default function BusinessHoursSettingsPage() {
             <span className="text-slate-200">Auto-close open tables at close time</span>
           </label>
           <p className="text-slate-500 text-xs mt-2">
-            When closing time + grace passes, system will automatically close any open tables with CASH payment.
+            Between closing time and opening time (e.g. 01:30–07:00), open tables are auto-closed with the selected payment. Use grace=0 to run at exactly closing time.
           </p>
           {form.auto_close_open_tables && (
             <>
@@ -191,7 +191,7 @@ export default function BusinessHoursSettingsPage() {
                   onChange={(e) => setForm((f) => ({ ...f, grace_minutes: Math.min(60, Math.max(0, parseInt(e.target.value, 10) || 0)) }))}
                   className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white"
                 />
-                <p className="text-slate-500 text-xs mt-1">Minutes after closing before auto-close runs.</p>
+                <p className="text-slate-500 text-xs mt-1">Minutes after closing before auto-close runs. Set 0 to run at closing time exactly.</p>
               </div>
             </>
           )}
