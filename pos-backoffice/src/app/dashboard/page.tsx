@@ -325,12 +325,14 @@ export default function DashboardPage() {
           )}
         </section>
 
-        {/* Cash Dashboard — System cash, physical cash, difference; bottom: Total Card, Tap Card */}
+        {/* Cash & Card — System = from POS sales; Physical/Tap = manual count */}
         <section className="rounded-xl bg-amber-950/40 border border-amber-700/50 p-5">
-          <h2 className="text-lg font-semibold text-amber-200 mb-4">Cash</h2>
+          <h2 className="text-lg font-semibold text-amber-200 mb-4">Cash & Card</h2>
+          {/* Cash row: System Cash, Physical Cash (from app), Difference */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
             <div className="p-4 rounded-lg bg-slate-900/60 border border-amber-700/30">
               <p className="text-amber-200/80 text-sm mb-1">System Cash</p>
+              <p className="text-xs text-slate-500 mb-0.5">Cash from POS sales</p>
               <p className="text-2xl font-bold text-amber-100">
                 {loading ? "..." : `${fmt(dailySales?.totalCash ?? 0)} AED`}
               </p>
@@ -353,15 +355,23 @@ export default function DashboardPage() {
               </p>
             </div>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Card row: System Card, Tap Card, Difference */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="p-4 rounded-lg bg-slate-900/60 border border-slate-600">
-              <p className="text-slate-400 text-sm mb-1">Total Card</p>
+              <p className="text-slate-400 text-sm mb-1">System Card</p>
+              <p className="text-xs text-slate-500 mb-0.5">Card from POS sales</p>
               <p className="text-2xl font-bold text-white">
                 {loading ? "..." : `${fmt(dailySales?.totalCard ?? 0)} AED`}
               </p>
             </div>
             <div className="p-4 rounded-lg bg-slate-900/60 border border-slate-600">
               <p className="text-slate-400 text-sm mb-1">Tap Card</p>
+              <p className="text-xs text-slate-500 mb-0.5">From terminal / manual</p>
+              <p className="text-2xl font-bold text-slate-500">—</p>
+            </div>
+            <div className="p-4 rounded-lg bg-slate-900/60 border border-slate-600">
+              <p className="text-slate-400 text-sm mb-1">Difference</p>
+              <p className="text-xs text-slate-500 mb-0.5">Tap − System</p>
               <p className="text-2xl font-bold text-slate-500">—</p>
             </div>
           </div>

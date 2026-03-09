@@ -120,6 +120,40 @@ class PrinterService @Inject constructor() {
         else -> ESCPOSPrinter.NORMAL_SIZE
     }
 
+    fun buildDailyCashEntrySlip(
+        physicalCash: Double,
+        userName: String,
+        date: String,
+        fid: String
+    ): ByteArray {
+        val p = ESCPOSPrinter
+        val buffer = mutableListOf<Byte>()
+
+        fun addBytes(bytes: ByteArray) = buffer.addAll(bytes.toList())
+        fun addText(text: String) = buffer.addAll(text.toByteArray(Charsets.UTF_8).toList())
+
+        addBytes(p.INIT)
+        addBytes(p.ALIGN_CENTER)
+        addBytes(p.DOUBLE_SIZE)
+        addText("** DAILY CASH ENTRY **\n")
+        addBytes(p.NORMAL_SIZE)
+        addText("================================\n")
+        addBytes(p.ALIGN_LEFT)
+
+        addBytes(p.BOLD_ON)
+        addText("Cash: ${String.format("%.2f", physicalCash)}\n")
+        addText("By: $userName\n")
+        addBytes(p.BOLD_OFF)
+        addText("Date: $date\n")
+        addText("FID: $fid\n")
+        addText("--------------------------------\n")
+        addBytes(p.ALIGN_CENTER)
+        addText("\n\n\n")
+        addBytes(p.CUT)
+
+        return buffer.toByteArray()
+    }
+
     fun buildVoidSlip(
         order: OrderEntity,
         productName: String,

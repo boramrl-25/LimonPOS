@@ -4,10 +4,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.limonpos.app.data.remote.ApiService
 import com.limonpos.app.data.remote.dto.DailyCashEntryRequest
+import com.limonpos.app.data.repository.PrinterRepository
+import com.limonpos.app.service.PrinterService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -30,7 +33,9 @@ data class DailyCashEntrySaved(
 
 @HiltViewModel
 class DailyCashEntryViewModel @Inject constructor(
-    private val apiService: ApiService
+    private val apiService: ApiService,
+    private val printerRepository: PrinterRepository,
+    private val printerService: PrinterService
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DailyCashEntryUiState())
@@ -63,6 +68,9 @@ class DailyCashEntryViewModel @Inject constructor(
                 if (res.isSuccessful) {
                     val body = res.body()
                     val diff = body?.difference ?: 0.0
+                    val userName = body?.userName ?: "—"
+                    val date = body?.date ?: today
+                    val fid = body?.id ?: ""
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
                         savedEntry = DailyCashEntrySaved(
@@ -73,6 +81,13 @@ class DailyCashEntryViewModel @Inject constructor(
                         saveSuccess = true,
                         error = null
                     )
+                    // Print slip to cashier printer
+                    val cashierPrinters = printerRepository.getAllPrinters().first()
+                        .filter { (it.printerType == "cashier" || it.printerType.equals("receipt", true)) && it.ipAddress.isNotBlank() && it.enabled }
+                    val slip = printerService.buildDailyCashEntrySlip(physicalCash, userName, date, fid)
+                    for (printer in cashierPrinters) {
+                        printerService.sendToPrinter(printer.ipAddress, printer.port, slip)
+                    }
                 } else {
                     _uiState.value = _uiState.value.copy(isLoading = false, error = "Failed to save")
                 }
