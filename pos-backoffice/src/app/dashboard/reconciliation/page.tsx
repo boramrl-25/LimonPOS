@@ -168,7 +168,7 @@ export default function ReconciliationPage() {
                   <p className="text-slate-400 text-sm mb-1">Physical Cash (app)</p>
                   <p className="text-xl font-bold text-white">{data.cash.physicalCash != null ? `${fmt(data.cash.physicalCash)} AED` : "—"}</p>
                   {(data.cash.dailyCashEntries?.length ?? 0) > 0 && (
-                    <p className="text-sky-400 text-xs mt-1">Click to view deposits ({data.cash.dailyCashEntries.length})</p>
+                    <p className="text-sky-400 text-xs mt-1">Click to view deposits ({data.cash.dailyCashEntries?.length ?? 0})</p>
                   )}
                 </button>
                 <div className="p-4 rounded-lg bg-slate-900/60 border border-slate-600">
