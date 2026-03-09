@@ -771,11 +771,11 @@ export async function getZohoConfig() {
   return res.json();
 }
 
-export async function exchangeZohoCode(code: string, client_id: string, client_secret: string, redirect_uri?: string): Promise<{ refresh_token: string; success: boolean }> {
+export async function exchangeZohoCode(code: string, client_id: string, client_secret: string, redirect_uri?: string, dc?: string): Promise<{ refresh_token: string; success: boolean }> {
   const res = await fetchWithTimeout(`${API_URL}/zoho/exchange-code`, {
     method: "POST",
     headers: headers(),
-    body: JSON.stringify({ code, client_id, client_secret, redirect_uri: redirect_uri || "https://www.zoho.com/books" }),
+    body: JSON.stringify({ code, client_id, client_secret, redirect_uri: redirect_uri || "https://www.zoho.com/books", dc: dc || "" }),
   });
   if (!res.ok) {
     const text = await res.text();

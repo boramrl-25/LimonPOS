@@ -1,12 +1,16 @@
 import axios from "axios";
 
-// EU hesabı için: ZOHO_DC=eu (veya ZOHO_ACCOUNTS_URL + ZOHO_APIS_URL ayrı ayrı)
-const dc = (process.env.ZOHO_DC || "").toLowerCase();
-const ZOHO_ACCOUNTS = process.env.ZOHO_ACCOUNTS_URL || (dc === "eu" ? "https://accounts.zoho.eu" : "https://accounts.zoho.com");
-const ZOHO_BOOKS = process.env.ZOHO_APIS_URL || (dc === "eu" ? "https://www.zohoapis.eu/books/v3" : "https://www.zohoapis.com/books/v3");
-
+// EU hesabı için: Web'de Region=EU seçin veya ZOHO_DC=eu (Railway Variables)
 let cachedToken = null;
 let tokenExpiresAt = 0;
+
+function getZohoUrls(dc) {
+  const useEu = (dc || process.env.ZOHO_DC || "").toLowerCase() === "eu";
+  return {
+    accounts: process.env.ZOHO_ACCOUNTS_URL || (useEu ? "https://accounts.zoho.eu" : "https://accounts.zoho.com"),
+    books: process.env.ZOHO_APIS_URL || (useEu ? "https://www.zohoapis.eu/books/v3" : "https://www.zohoapis.com/books/v3"),
+  };
+}
 
 function parseZohoError(err) {
   const d = err.response?.data;
@@ -23,7 +27,7 @@ function parseZohoError(err) {
 /** Exchange authorization code for refresh token. Returns { refresh_token } or throws. */
 export async function exchangeCodeForRefreshToken(code, client_id, client_secret, redirect_uri, forceDc) {
   // Self Client: use API Console redirect; server-based apps use custom URI
-  const useEu = (forceDc || dc) === "eu";
+  const useEu = (forceDc || process.env.ZOHO_DC || "").toLowerCase() === "eu";
   const accountsUrl = useEu ? "https://accounts.zoho.eu" : "https://accounts.zoho.com";
   const uri = redirect_uri || (useEu ? "https://api-console.zoho.eu/oauth/redirect" : "https://api-console.zoho.com/oauth/redirect");
   const res = await axios.post(
@@ -45,7 +49,7 @@ export async function exchangeCodeForRefreshToken(code, client_id, client_secret
   return { refresh_token: rt };
 }
 
-/** Zoho ayarlarını env (Railway Variables) veya db'den alır. Env önceliklidir. */
+/** Zoho ayarlarını env (Railway Variables) veya db'den alır. Env önceliklidir. dc=eu ise EU hesabı. */
 export function getZohoConfig(db) {
   const dbCfg = db?.data?.zoho_config || {};
   const fromEnv = {
@@ -56,22 +60,30 @@ export function getZohoConfig(db) {
     customer_id: process.env.ZOHO_CUSTOMER_ID || dbCfg.customer_id,
     cash_account_id: process.env.ZOHO_CASH_ACCOUNT_ID || dbCfg.cash_account_id,
     card_account_id: process.env.ZOHO_CARD_ACCOUNT_ID || dbCfg.card_account_id,
+    dc: process.env.ZOHO_DC || dbCfg.dc || "",
     enabled: process.env.ZOHO_ENABLED || dbCfg.enabled || "true",
   };
   return fromEnv;
 }
 
+/** 401 alındığında token cache temizlenir, tekrar denemek için. */
+export function clearZohoTokenCache() {
+  cachedToken = null;
+  tokenExpiresAt = 0;
+}
+
 export async function getZohoAccessToken(db) {
   await db.read();
   const cfg = getZohoConfig(db);
-  const { refresh_token, client_id, client_secret } = cfg;
+  const { refresh_token, client_id, client_secret, dc } = cfg;
   if (!refresh_token || !client_id || !client_secret) return null;
 
   if (cachedToken && Date.now() < tokenExpiresAt - 60000) return cachedToken;
 
+  const { accounts } = getZohoUrls(dc);
   try {
     const res = await axios.post(
-      `${ZOHO_ACCOUNTS}/oauth/v2/token`,
+      `${accounts}/oauth/v2/token`,
       new URLSearchParams({
         refresh_token,
         client_id,
@@ -84,7 +96,8 @@ export async function getZohoAccessToken(db) {
     tokenExpiresAt = Date.now() + res.data.expires_in * 1000;
     return cachedToken;
   } catch (err) {
-    console.error("Zoho token error:", err.response?.data || err.message);
+    clearZohoTokenCache();
+    console.error("[Zoho] Token error:", JSON.stringify(err.response?.data || err.message));
     throw new Error(parseZohoError(err));
   }
 }
@@ -109,7 +122,8 @@ function toZohoPaymentMode(method) {
 export async function pushToZohoBooks(db, order, items, payments = [], products = []) {
   await db.read();
   const cfg = getZohoConfig(db);
-  const { organization_id, customer_id, enabled, cash_account_id, card_account_id } = cfg;
+  const { organization_id, customer_id, enabled, cash_account_id, card_account_id, dc } = cfg;
+  const { books: booksBase } = getZohoUrls(dc);
   if (enabled !== "true") {
     console.log("[Zoho] pushToZohoBooks: skipped - enabled is not true:", enabled);
     return false;
@@ -173,7 +187,7 @@ export async function pushToZohoBooks(db, order, items, payments = [], products 
 
   try {
     await axios.post(
-      `${ZOHO_BOOKS}/salesreceipts?organization_id=${organization_id}`,
+      `${booksBase}/salesreceipts?organization_id=${organization_id}`,
       payload,
       {
         headers: {
@@ -193,7 +207,7 @@ export async function pushToZohoBooks(db, order, items, payments = [], products 
       fallback.payment_mode = primaryPayment.payment_mode;
       try {
         await axios.post(
-          `${ZOHO_BOOKS}/salesreceipts?organization_id=${organization_id}`,
+          `${booksBase}/salesreceipts?organization_id=${organization_id}`,
           fallback,
           {
             headers: {
@@ -207,10 +221,12 @@ export async function pushToZohoBooks(db, order, items, payments = [], products 
         await db.write();
         return true;
       } catch (e2) {
-        console.error("Zoho Books fallback error:", e2.response?.data || e2.message);
+        console.error("[Zoho] Books fallback error:", JSON.stringify(e2.response?.data || e2.message));
       }
     }
-    console.error("Zoho Books error:", err.response?.data || err.message);
+    const errData = err.response?.data;
+    console.error("[Zoho] Books error:", err.response?.status, JSON.stringify(errData || err.message));
+    if (err.response?.status === 401) clearZohoTokenCache();
     return false;
   }
 }
@@ -221,13 +237,14 @@ const zohoHeaders = (token) => ({
 });
 
 /** Fetch Categories from Zoho Books (item groups = categories). Returns { item_groups: [{ group_id, name }] }. Tries /itemgroups then /item_groups. */
-async function fetchCategoriesFromEndpoint(token, organization_id, path) {
+async function fetchCategoriesFromEndpoint(token, organization_id, path, booksBase) {
+  const base = booksBase || getZohoUrls().books;
   const allGroups = [];
   let page = 1;
   let hasMore = true;
   while (hasMore) {
     const res = await axios.get(
-      `${ZOHO_BOOKS}${path}?organization_id=${organization_id}&page=${page}&per_page=200`,
+      `${base}${path}?organization_id=${organization_id}&page=${page}&per_page=200`,
       { headers: zohoHeaders(token), validateStatus: () => true }
     );
     if (res.status === 404 || res.status >= 500) return null;
@@ -272,12 +289,13 @@ export async function getZohoItemGroups(db) {
 export async function getZohoItems(db) {
   await db.read();
   const cfg = getZohoConfig(db);
-  const { organization_id, enabled } = cfg;
+  const { organization_id, enabled, dc } = cfg;
   if (enabled !== "true" || !organization_id) return null;
 
   const token = await getZohoAccessToken(db);
   if (!token) return null;
 
+  const booksBase = getZohoUrls(dc).books;
   const allRaw = [];
   let page = 1;
   let hasMore = true;
@@ -285,7 +303,7 @@ export async function getZohoItems(db) {
   try {
     while (hasMore) {
       const res = await axios.get(
-        `${ZOHO_BOOKS}/items?organization_id=${organization_id}&page=${page}&per_page=200`,
+        `${booksBase}/items?organization_id=${organization_id}&page=${page}&per_page=200`,
         { headers: zohoHeaders(token) }
       );
       if (res.data?.code !== undefined && res.data.code !== 0 && res.data.code !== 200) {

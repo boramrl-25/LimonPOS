@@ -15,6 +15,7 @@ export default function ZohoSettingsPage() {
     customer_id: "",
     cash_account_id: "",
     card_account_id: "",
+    dc: "",
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -49,6 +50,7 @@ export default function ZohoSettingsPage() {
         customer_id: c.customer_id || "",
         cash_account_id: c.cash_account_id || "",
         card_account_id: c.card_account_id || "",
+        dc: (c as { dc?: string }).dc || "",
       });
     } catch {
       window.location.href = "/login";
@@ -80,7 +82,7 @@ export default function ZohoSettingsPage() {
     }
     setExchanging(true);
     try {
-      const result = await exchangeZohoCode(authCode.trim(), config.client_id, config.client_secret);
+      const result = await exchangeZohoCode(authCode.trim(), config.client_id, config.client_secret, undefined, config.dc);
       if (result.refresh_token) {
         setConfig((c) => ({ ...c, refresh_token: result.refresh_token }));
         setAuthCode("");
@@ -161,6 +163,14 @@ export default function ZohoSettingsPage() {
         <div>
           <label className="block text-sm text-slate-400 mb-1">Refresh Token</label>
           <input type="password" value={config.refresh_token} onChange={(e) => setConfig((c) => ({ ...c, refresh_token: e.target.value }))} placeholder="••••••••" className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-600 text-white" />
+        </div>
+        <div>
+          <label className="block text-sm text-slate-400 mb-1">Region (Hesap bölgesi)</label>
+          <select value={config.dc} onChange={(e) => setConfig((c) => ({ ...c, dc: e.target.value }))} className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-600 text-white">
+            <option value="">Global (zoho.com)</option>
+            <option value="eu">EU (zoho.eu)</option>
+          </select>
+          <p className="text-xs text-slate-500 mt-1">Zoho EU hesabı kullanıyorsanız EU seçin</p>
         </div>
         <div>
           <label className="block text-sm text-slate-400 mb-1">Organization ID</label>
