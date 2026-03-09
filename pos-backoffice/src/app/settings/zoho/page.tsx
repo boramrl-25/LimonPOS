@@ -29,6 +29,7 @@ export default function ZohoSettingsPage() {
     hasToken?: boolean;
     itemsCount?: number;
     groupsCount?: number;
+    region?: string;
     checks?: { enabled?: boolean; orgId?: boolean; customerId?: boolean; refreshToken?: boolean; clientId?: boolean; clientSecret?: boolean };
     error?: string | null;
   } | null>(null);
@@ -232,11 +233,18 @@ export default function ZohoSettingsPage() {
       {checkResult && (
         <div className={`p-4 rounded-lg border mb-6 ${checkResult.salesPushReady ? "bg-emerald-900/20 border-emerald-700" : "bg-amber-900/20 border-amber-700"}`}>
           {checkResult.salesPushReady ? (
-            <p className="text-emerald-300 font-medium">✓ Zoho entegrasyonu hazır. Satışlar Zoho Books&apos;a gönderilecek.</p>
+            <>
+              <p className="text-emerald-300 font-medium">✓ Zoho entegrasyonu hazır. Satışlar Zoho Books&apos;a gönderilecek.</p>
+              {checkResult.region && <p className="text-slate-400 text-sm mt-1">Region: {checkResult.region}</p>}
+              <p className="text-slate-500 text-xs mt-2">Satış gitmezse: App Server URL = api.the-limon.com, app güncel APK ile kurulu olmalı.</p>
+            </>
           ) : (
-            <p className="text-amber-300 font-medium">✗ Satışlar Zoho&apos;ya gitmeyecek. Eksik veya hatalı ayar.</p>
+            <>
+              <p className="text-amber-300 font-medium">✗ Satışlar Zoho&apos;ya gitmeyecek. Eksik veya hatalı ayar.</p>
+              {checkResult.region && <p className="text-slate-400 text-sm mt-1">Region: {checkResult.region}</p>}
+            </>
           )}
-          {checkResult.error && <p className="text-amber-200 text-sm mt-2">{checkResult.error}</p>}
+          {checkResult.error && <p className="text-amber-200 text-sm mt-2 font-mono">{checkResult.error}</p>}
           {checkResult.checks && (
             <ul className="text-slate-300 text-sm mt-2 space-y-1">
               {Object.entries(checkResult.checks).map(([k, v]) => (

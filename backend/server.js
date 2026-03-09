@@ -2288,6 +2288,7 @@ app.get("/api/zoho/check", authMiddleware, async (req, res) => {
       hasToken: false,
       itemsCount: 0,
       groupsCount: 0,
+      region: (cfg.dc || "").toLowerCase() === "eu" ? "EU" : "Global",
       checks: { enabled: false, orgId: false, customerId: false, refreshToken: false, clientId: false, clientSecret: false },
       error: null,
     };
@@ -2318,7 +2319,13 @@ app.get("/api/zoho/check", authMiddleware, async (req, res) => {
     try {
       token = await getZohoAccessToken(db);
     } catch (e) {
-      status.error = "Token alınamadı: " + (e?.message || "Refresh Token / Client kontrol edin");
+      let errMsg = e?.message || "Refresh Token / Client kontrol edin";
+      if (status.region === "Global" && (errMsg.includes("invalid") || errMsg.includes("Invalid"))) {
+        errMsg += " (EU hesabı kullanıyorsanız Region=EU seçin)";
+      } else if (status.region === "EU" && (errMsg.includes("invalid") || errMsg.includes("Invalid"))) {
+        errMsg += " (Generate Code'u api-console.zoho.eu'dan alın, Token Al öncesi Region=EU kaydedin)";
+      }
+      status.error = "Token alınamadı: " + errMsg;
       return res.json(status);
     }
     if (!token) {
