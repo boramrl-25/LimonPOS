@@ -364,7 +364,7 @@ class ApiSyncRepository @Inject constructor(
     private suspend fun pushPendingPayments() {
         val pending = paymentDao.getPendingPayments()
         for (payment in pending) {
-            val apiOrderId = ensureOrderExistsOnApi(payment.orderId)
+            val apiOrderId = ensureOrderExistsOnApi(payment.orderId, includeAllItems = true)
             if (apiOrderId == null) continue
             val ok = pushPayment(
                 apiOrderId,
@@ -443,13 +443,14 @@ class ApiSyncRepository @Inject constructor(
         }
     }
 
-    /** Ensures order exists on API with items. Line-identity: one local line = one API line, client_line_id for idempotency. sendOrderToKitchen is NOT called here — only via explicit ensureOrderAndSendToKitchen. Pending items (sentAt==null) stay local-only; only sent items are pushed. */
-    private suspend fun ensureOrderExistsOnApi(localOrderId: String): String? {
+    /** Ensures order exists on API with items. Line-identity: one local line = one API line, client_line_id for idempotency. sendOrderToKitchen is NOT called here — only via explicit ensureOrderAndSendToKitchen.
+     * @param includeAllItems when true (e.g. for payment push), sync all items including those not yet sent to kitchen. Otherwise only sent items (sentAt!=null) are pushed. */
+    private suspend fun ensureOrderExistsOnApi(localOrderId: String, includeAllItems: Boolean = false): String? {
         if (!isOnline()) return null
         val order = orderDao.getOrderById(localOrderId) ?: return null
         val table = tableDao.getTableById(order.tableId) ?: return null
         val allLocalItems = orderItemDao.getOrderItems(localOrderId).first()
-        val localItems = allLocalItems.filter { it.sentAt != null }
+        val localItems = if (includeAllItems) allLocalItems else allLocalItems.filter { it.sentAt != null }
         val guestCount = table.guestCount.coerceAtLeast(1)
 
         return try {
@@ -1375,7 +1376,7 @@ class ApiSyncRepository @Inject constructor(
 
     suspend fun pushPayment(orderId: String, amount: Double, method: String, receivedAmount: Double, changeAmount: Double, userId: String): Boolean {
         if (!isOnline()) return false
-        if (ensureOrderExistsOnApi(orderId) == null) return false
+        if (ensureOrderExistsOnApi(orderId, includeAllItems = true) == null) return false
         return try {
             val req = CreatePaymentRequest(
                 orderId = orderId,

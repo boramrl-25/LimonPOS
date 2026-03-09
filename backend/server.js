@@ -1915,6 +1915,7 @@ app.post("/api/payments", authMiddleware, async (req, res) => {
   await ensureData();
   const userId = req.query.user_id || req.user?.id;
   const { order_id, payments } = req.body;
+  console.log("[Zoho] POST /api/payments received:", order_id, "payments:", payments?.length, "total:", payments?.reduce((s, p) => s + (p.amount || 0), 0));
   const now = Date.now();
   db.data.payments = db.data.payments || [];
   for (const p of payments) {
