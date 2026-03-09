@@ -51,6 +51,7 @@ export default function DashboardPage() {
     itemSales: Array<{ productId: string; productName: string; categoryId?: string; totalAmount: number; totalQuantity: number }>;
     voids: Array<{ id: string; order_id?: string; type: string; product_name: string; quantity: number; amount: number; user_name: string; created_at: number }>;
     refunds: Array<{ id: string; order_id?: string; type: string; product_name?: string; amount: number; user_name: string; source_table_number?: string; created_at: number }>;
+    dailyCashEntry?: { id: string; physical_cash: number; system_cash: number; difference: number; user_name: string; created_at: number } | null;
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -362,6 +363,37 @@ export default function DashboardPage() {
                   <p className="text-slate-400 text-sm">Refund Total</p>
                   <p className="text-xl font-bold text-red-400">{fmt(dailySales.totalRefundAmount)} AED</p>
                 </button>
+              </div>
+
+              {/* Cash Review — System Cash, physical cash entered at end of day, difference */}
+              <div className="rounded-xl bg-slate-800/60 border border-slate-700 p-5 space-y-4">
+                <h3 className="text-lg font-semibold text-sky-400">Cash Review</h3>
+                <p className="text-slate-400 text-sm">
+                  <strong className="text-slate-200">System Cash</strong> is the expected cash from transactions (cash payments received today). <strong className="text-slate-200">Physical Cash</strong> is the actual cash count entered at end of day in the app. <strong className="text-slate-200">Cash Difference</strong> = Physical Cash − System Cash: positive means <em>over</em> (drawer has more than expected), negative means <em>short</em> (drawer has less than expected).
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="p-4 rounded-lg bg-slate-900/60 border border-slate-700">
+                    <p className="text-slate-400 text-sm mb-1">System Cash</p>
+                    <p className="text-xl font-bold text-white">{fmt(dailySales.totalCash)} AED</p>
+                  </div>
+                  <div className="p-4 rounded-lg bg-slate-900/60 border border-slate-700">
+                    <p className="text-slate-400 text-sm mb-1">Physical Cash (end of day)</p>
+                    <p className="text-xl font-bold text-white">
+                      {dailySales.dailyCashEntry != null ? `${fmt(dailySales.dailyCashEntry.physical_cash)} AED` : "—"}
+                    </p>
+                    {dailySales.dailyCashEntry?.user_name && (
+                      <p className="text-slate-500 text-xs mt-1">By: {dailySales.dailyCashEntry.user_name}</p>
+                    )}
+                  </div>
+                  <div className="p-4 rounded-lg bg-slate-900/60 border border-slate-700">
+                    <p className="text-slate-400 text-sm mb-1">Cash Difference</p>
+                    <p className={`text-xl font-bold ${dailySales.dailyCashEntry != null ? (dailySales.dailyCashEntry.difference >= 0 ? "text-emerald-400" : "text-red-400") : "text-slate-500"}`}>
+                      {dailySales.dailyCashEntry != null
+                        ? `${dailySales.dailyCashEntry.difference >= 0 ? "+" : ""}${fmt(dailySales.dailyCashEntry.difference)} AED (${dailySales.dailyCashEntry.difference >= 0 ? "Over" : "Short"})`
+                        : "—"}
+                    </p>
+                  </div>
+                </div>
               </div>
 
               {dailySales.categorySales.length > 0 && (
