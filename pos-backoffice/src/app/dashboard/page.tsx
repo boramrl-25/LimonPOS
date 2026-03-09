@@ -101,6 +101,7 @@ export default function DashboardPage() {
         useRange ? getClosedBillChanges(undefined, from, to) : getClosedBillChanges(singleDate).catch(() => ({ count: 0, summary: { fullRefunds: 0, itemRefunds: 0, paymentMethodChanges: 0 }, changes: [] })),
         useRange ? getCashDrawerOpens(undefined, from, to) : getCashDrawerOpens(singleDate).catch(() => ({ count: 0, opens: [] })),
         getDiscountsToday(dateForDiscounts).catch(() => ({ count: 0, list: [], totalDiscountAmount: 0 })),
+        getReconciliationSummary(reconDate).catch(() => null),
       ]);
       setClosedBillChanges(closedChangesRes);
       setCashDrawerOpens(cashDrawerRes);
