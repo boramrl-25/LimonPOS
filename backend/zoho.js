@@ -201,7 +201,7 @@ function toZohoPaymentMode(method) {
 }
 
 /**
- * Push order to Zoho Books as Sales Receipt.
+ * Push order to Zoho Books as Invoice + Customer Payment.
  * @param {object} db - LowDB instance
  * @param {object} order - Order
  * @param {Array} items - Order items
@@ -264,67 +264,50 @@ export async function pushToZohoBooks(db, order, items, payments = [], products 
       return opt;
     });
 
-  const primaryPayment = paymentOptions[0] || { payment_mode: "cash" };
-  const payload = {
-    customer_id,
-    date,
-    reference_number: `LimonPOS-${order.id}`,
-    line_items: lineItems,
-  };
+  const headers = { Authorization: `Zoho-oauthtoken ${token}`, "Content-Type": "application/json" };
+  const invoicePayload = { customer_id, date, reference_number: `LimonPOS-${order.id}`, line_items: lineItems };
 
-  if (paymentOptions.length === 1) {
-    payload.payment_mode = primaryPayment.payment_mode;
-    if (primaryPayment.payment_mode === "cash" && cash_account_id) payload.account_id = cash_account_id;
-    if (primaryPayment.payment_mode === "credit_card" && card_account_id) payload.account_id = card_account_id;
-  } else {
-    payload.payment_options = paymentOptions;
-  }
-
-  console.log("[Zoho] pushToZohoBooks: dc=", dc, "booksBase=", booksBase, "org=", organization_id, "customer=", customer_id, "line_items=", lineItems.length);
+  console.log("[Zoho] pushToZohoBooks (Invoice): dc=", dc, "booksBase=", booksBase, "org=", organization_id, "customer=", customer_id, "line_items=", lineItems.length);
   try {
-    const res = await axios.post(
-      `${booksBase}/salesreceipts?organization_id=${organization_id}`,
-      payload,
-      {
-        headers: {
-          Authorization: `Zoho-oauthtoken ${token}`,
-          "Content-Type": "application/json",
-        },
-      }
+    const invRes = await axios.post(
+      `${booksBase}/invoices?organization_id=${organization_id}`,
+      invoicePayload,
+      { headers }
     );
-    console.log("[Zoho] Sales receipt created:", res.data?.salesreceipt?.salesreceipt_id || res.status);
+    const invoiceId = invRes.data?.invoice?.invoice_id;
+    if (!invoiceId) {
+      console.error("[Zoho] Invoice created but no invoice_id:", JSON.stringify(invRes.data || {}));
+      return false;
+    }
+    console.log("[Zoho] Invoice created:", invoiceId);
+
+    for (const opt of paymentOptions) {
+      const pm = opt.payment_mode;
+      const amt = Number(opt.amount || 0);
+      if (amt <= 0) continue;
+      const paymentPayload = {
+        customer_id,
+        payment_mode: pm,
+        amount: amt,
+        invoices: [{ invoice_id: invoiceId, amount_applied: amt }],
+      };
+      if (pm === "cash" && cash_account_id) paymentPayload.account_id = cash_account_id;
+      if (pm === "credit_card" && card_account_id) paymentPayload.account_id = card_account_id;
+      try {
+        await axios.post(`${booksBase}/customerpayments?organization_id=${organization_id}`, paymentPayload, { headers });
+        console.log("[Zoho] Payment recorded:", pm, amt);
+      } catch (payErr) {
+        console.error("[Zoho] Payment record error:", pm, amt, payErr.response?.data || payErr.message);
+      }
+    }
+
     const oidx = db.data.orders.findIndex((o) => o.id === order.id);
     if (oidx >= 0) db.data.orders[oidx].zoho_receipt_id = "sent";
     await db.write();
     return true;
   } catch (err) {
-    if (payload.payment_options && err.response?.status === 400) {
-      const fallback = { ...payload };
-      delete fallback.payment_options;
-      fallback.payment_mode = primaryPayment.payment_mode;
-      if (primaryPayment.payment_mode === "cash" && cash_account_id) fallback.account_id = cash_account_id;
-      if (primaryPayment.payment_mode === "credit_card" && card_account_id) fallback.account_id = card_account_id;
-      try {
-        await axios.post(
-          `${booksBase}/salesreceipts?organization_id=${organization_id}`,
-          fallback,
-          {
-            headers: {
-              Authorization: `Zoho-oauthtoken ${token}`,
-              "Content-Type": "application/json",
-            },
-          }
-        );
-        const oidx = db.data.orders.findIndex((o) => o.id === order.id);
-        if (oidx >= 0) db.data.orders[oidx].zoho_receipt_id = "sent";
-        await db.write();
-        return true;
-      } catch (e2) {
-        console.error("[Zoho] Books fallback error:", JSON.stringify(e2.response?.data || e2.message));
-      }
-    }
     const errData = err.response?.data;
-    console.error("[Zoho] Books error:", err.response?.status, JSON.stringify(errData || err.message), "payload_summary:", { customer_id, line_items_count: lineItems.length, date: payload.date });
+    console.error("[Zoho] Invoice error:", err.response?.status, JSON.stringify(errData || err.message));
     if (err.response?.status === 401) clearZohoTokenCache();
     return false;
   }
