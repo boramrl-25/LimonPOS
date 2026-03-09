@@ -1,9 +1,20 @@
 # Zoho Books OAuth Bilgilerini Alma – Adım Adım
 
+## ÖNEMLİ: Bölge Seçimi
+
+| Bölge | API Console | Region (Web ayarlarında) |
+|-------|-------------|--------------------------|
+| **EU (Avrupa)** | https://api-console.zoho.eu | **EU** seçin |
+| **Global (ABD)** | https://api-console.zoho.com | Boş bırakın |
+
+Hesabınız EU ise (books.zoho.eu, api-console.zoho.eu) → Web'de **Region = EU** seçin.
+
+---
+
 ## 1. Client ID ve Client Secret
 
 ### 1.1. Zoho API Console’a girin
-- Adres: **https://api-console.zoho.com/**
+- **EU hesabı:** https://api-console.zoho.eu/ | **Global hesabı:** https://api-console.zoho.com/
 - Zoho hesabınızla giriş yapın
 
 ### 1.2. Yeni uygulama oluşturun
@@ -28,7 +39,7 @@ Refresh token almak için önce **authorization code** almanız gerekir.
 
 ### Yöntem A: Self Client (Önerilen, test için)
 
-1. **https://api-console.zoho.com/** → Uygulamanızı açın
+1. **api-console.zoho.eu** (EU) veya **api-console.zoho.com** (Global) → Uygulamanızı açın
 2. **"Generate Code"** bölümüne gidin
 3. **Scope**: `ZohoBooks.fullaccess.all` veya `ZohoBooks.items.READ,ZohoBooks.salesreceipts.CREATE`
 4. **Time Duration**: 10 dakika seçin
@@ -47,18 +58,27 @@ Refresh token almak için önce **authorization code** almanız gerekir.
 
 ### Authorization code ile Refresh Token almak
 
-Terminal veya Postman ile:
+**EU hesabı için:**
+```bash
+curl -X POST "https://accounts.zoho.eu/oauth/v2/token" \
+  -d "code=YOUR_AUTHORIZATION_CODE" \
+  -d "client_id=YOUR_CLIENT_ID" \
+  -d "client_secret=YOUR_CLIENT_SECRET" \
+  -d "redirect_uri=https://api-console.zoho.eu/oauth/redirect" \
+  -d "grant_type=authorization_code"
+```
 
+**Global hesabı için:**
 ```bash
 curl -X POST "https://accounts.zoho.com/oauth/v2/token" \
   -d "code=YOUR_AUTHORIZATION_CODE" \
   -d "client_id=YOUR_CLIENT_ID" \
   -d "client_secret=YOUR_CLIENT_SECRET" \
-  -d "redirect_uri=YOUR_REDIRECT_URI" \
+  -d "redirect_uri=https://api-console.zoho.com/oauth/redirect" \
   -d "grant_type=authorization_code"
 ```
 
-**Not:** EU kullanıyorsanız `https://accounts.zoho.eu`, Hindistan için `https://accounts.zoho.in` kullanın.
+**Not:** Web'de "Token Al" butonu kullanırsanız, Region (EU/Global) seçiminize göre doğru URL otomatik kullanılır.
 
 Yanıtta `refresh_token` alanını kopyalayın – bu süresiz geçerlidir.
 
@@ -80,7 +100,7 @@ curl "https://www.zohoapis.com/books/v3/organizations" \
 
 ### 3.2. Zoho Books arayüzünden
 
-1. **https://books.zoho.com** adresine gidin
+1. **EU:** https://books.zoho.eu | **Global:** https://books.zoho.com adresine gidin
 2. URL’e bakın: `https://books.zoho.com/app/XXXXXX/...`
 3. `XXXXXX` kısmı organization ID’dir
 
@@ -96,8 +116,9 @@ curl "https://www.zohoapis.com/books/v3/organizations" \
 
 | Alan | Nereden |
 |------|---------|
-| **Client ID** | api-console.zoho.com → Uygulama detayları |
-| **Client Secret** | api-console.zoho.com → Uygulama detayları |
+| **Region** | EU hesabı → **EU** seçin. Global → boş |
+| **Client ID** | api-console.zoho.eu (EU) veya api-console.zoho.com (Global) |
+| **Client Secret** | Aynı sayfada |
 | **Refresh Token** | Authorization code ile token endpoint’ine POST |
 | **Organization ID** | Zoho Books Settings veya /organizations API |
 
@@ -110,4 +131,4 @@ curl "https://www.zohoapis.com/books/v3/organizations" \
 - **Hindistan**: `accounts.zoho.in`, `www.zohoapis.in`
 - **Avustralya**: `accounts.zoho.com.au`, `www.zohoapis.com.au`
 
-LimonPOS backend’deki `ZOHO_ACCOUNTS_URL` değişkeni hangi data center’ı kullanacağınızı belirler.
+LimonPOS backend’deki `Region (Web'de EU/Global)` değişkeni hangi data center’ı kullanacağınızı belirler.

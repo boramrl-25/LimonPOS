@@ -115,9 +115,10 @@ export default function ZohoSettingsPage() {
         <div className="mb-8 p-4 rounded-lg bg-slate-800/80 border border-slate-600 text-sm text-slate-300 space-y-4">
           <p className="font-medium text-white">Step by step:</p>
           <ol className="list-decimal list-inside space-y-2">
-            <li><strong>Client ID & Client Secret:</strong> <a href="https://api-console.zoho.com" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">api-console.zoho.com</a> → Add Client → Server-based Application → Create. Client ID and Secret will appear on screen.</li>
-            <li><strong>Refresh Token:</strong> On the same page use &quot;Generate Code&quot; to get a code with scope (e.g. ZohoBooks.fullaccess.all). Then POST <code className="text-sky-400 bg-slate-900 px-1 rounded">https://accounts.zoho.com/oauth/v2/token</code> with <code className="text-sky-400 bg-slate-900 px-1 rounded">code</code>, <code className="text-sky-400 bg-slate-900 px-1 rounded">client_id</code>, <code className="text-sky-400 bg-slate-900 px-1 rounded">client_secret</code>, <code className="text-sky-400 bg-slate-900 px-1 rounded">redirect_uri</code>, <code className="text-sky-400 bg-slate-900 px-1 rounded">grant_type=authorization_code</code>. Copy the <code className="text-sky-400 bg-slate-900 px-1 rounded">refresh_token</code> from the response.</li>
-            <li><strong>Organization ID:</strong> Zoho Books → Settings → Organization Profile, or the number in URL (<code className="text-sky-400 bg-slate-900 px-1 rounded">books.zoho.com/app/XXXXXX</code>).</li>
+            <li><strong>Region:</strong> EU hesabı (api-console.zoho.eu) kullanıyorsanız yukarıda <strong>Region = EU</strong> seçin.</li>
+            <li><strong>Client ID & Client Secret:</strong> <a href="https://api-console.zoho.eu" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">api-console.zoho.eu</a> (EU) veya <a href="https://api-console.zoho.com" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">api-console.zoho.com</a> (Global) → Add Client → Server-based Application → Create.</li>
+            <li><strong>Refresh Token:</strong> Aynı sayfada &quot;Generate Code&quot; ile scope ZohoBooks.fullaccess.all seçip kod alın. Kodu yukarıdaki alana yapıştırıp <strong>Token Al</strong> butonuna basın.</li>
+            <li><strong>Organization ID:</strong> Zoho Books → Settings → Organization Profile, veya URL&apos;deki sayı (books.zoho.eu/app/XXXXXX veya books.zoho.com/app/XXXXXX).</li>
           </ol>
           <p>Detailed guide: <code className="text-sky-400 bg-slate-900 px-1 rounded">pos-backoffice/ZOHO_OAUTH_KILAVUZU.md</code></p>
         </div>
