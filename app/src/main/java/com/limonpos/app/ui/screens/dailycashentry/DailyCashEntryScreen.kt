@@ -105,13 +105,6 @@ fun DailyCashEntryScreen(
                             fontSize = 16.sp,
                             color = LimonText
                         )
-                        Text(
-                            "Difference: %.2f (${if (entry.difference >= 0) "Over" else "Short"})"
-                                .format(kotlin.math.abs(entry.difference)),
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = if (entry.difference >= 0) LimonPrimary else LimonError
-                        )
                         entry.userName?.let { Text("By: $it", fontSize = 12.sp, color = LimonTextSecondary) }
                     }
                 }

@@ -325,20 +325,14 @@ export default function DashboardPage() {
           )}
         </section>
 
-        {/* Cash Dashboard — System cash, physical cash (from app), difference */}
+        {/* Cash Dashboard — System cash, physical cash, difference; bottom: Total Card, Tap Card */}
         <section className="rounded-xl bg-amber-950/40 border border-amber-700/50 p-5">
           <h2 className="text-lg font-semibold text-amber-200 mb-4">Cash</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
             <div className="p-4 rounded-lg bg-slate-900/60 border border-amber-700/30">
               <p className="text-amber-200/80 text-sm mb-1">System Cash</p>
               <p className="text-2xl font-bold text-amber-100">
                 {loading ? "..." : `${fmt(dailySales?.totalCash ?? 0)} AED`}
-              </p>
-            </div>
-            <div className="p-4 rounded-lg bg-slate-900/60 border border-slate-600">
-              <p className="text-slate-400 text-sm mb-1">Total Card</p>
-              <p className="text-2xl font-bold text-white">
-                {loading ? "..." : `${fmt(dailySales?.totalCard ?? 0)} AED`}
               </p>
             </div>
             <div className="p-4 rounded-lg bg-slate-900/60 border border-slate-600">
@@ -351,12 +345,24 @@ export default function DashboardPage() {
               )}
             </div>
             <div className="p-4 rounded-lg bg-slate-900/60 border border-slate-600">
-              <p className="text-slate-400 text-sm mb-1">Cash Difference</p>
+              <p className="text-slate-400 text-sm mb-1">Difference</p>
               <p className={`text-2xl font-bold ${dailySales?.dailyCashEntry != null ? (dailySales.dailyCashEntry.difference >= 0 ? "text-emerald-400" : "text-red-400") : "text-slate-500"}`}>
                 {dailySales?.dailyCashEntry != null
                   ? `${dailySales.dailyCashEntry.difference >= 0 ? "+" : ""}${fmt(dailySales.dailyCashEntry.difference)} AED (${dailySales.dailyCashEntry.difference >= 0 ? "Over" : "Short"})`
                   : "—"}
               </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="p-4 rounded-lg bg-slate-900/60 border border-slate-600">
+              <p className="text-slate-400 text-sm mb-1">Total Card</p>
+              <p className="text-2xl font-bold text-white">
+                {loading ? "..." : `${fmt(dailySales?.totalCard ?? 0)} AED`}
+              </p>
+            </div>
+            <div className="p-4 rounded-lg bg-slate-900/60 border border-slate-600">
+              <p className="text-slate-400 text-sm mb-1">Tap Card</p>
+              <p className="text-2xl font-bold text-slate-500">—</p>
             </div>
           </div>
         </section>
