@@ -53,6 +53,7 @@ export default function DashboardPage() {
     refunds: Array<{ id: string; order_id?: string; type: string; product_name?: string; amount: number; user_name: string; source_table_number?: string; created_at: number }>;
     dailyCashEntry?: { id: string; physical_cash: number; system_cash: number; difference: number; user_name: string; created_at: number } | null;
     dailyCashEntries?: Array<{ id: string; physical_cash: number; system_cash: number; difference: number; user_name: string; created_at: number }>;
+    physicalCashTotal?: number;
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -348,28 +349,27 @@ export default function DashboardPage() {
               className="p-4 rounded-lg bg-slate-900/60 border border-slate-600 text-left hover:border-amber-500/50 transition-colors cursor-pointer"
             >
               <p className="text-slate-400 text-sm mb-1">Physical Cash (from app)</p>
+              <p className="text-xs text-slate-500 mb-0.5">Sum of deposits in working hours</p>
               <p className="text-2xl font-bold text-white">
-                {dailySales?.dailyCashEntry != null ? `${fmt(dailySales.dailyCashEntry.physical_cash)} AED` : "—"}
+                {(dailySales?.physicalCashTotal ?? 0) > 0 ? `${fmt(dailySales?.physicalCashTotal ?? 0)} AED` : "—"}
               </p>
-              {dailySales?.dailyCashEntry?.user_name && (
-                <p className="text-slate-500 text-xs mt-1">By: {dailySales.dailyCashEntry.user_name}</p>
-              )}
               {(dailySales?.dailyCashEntries?.length ?? 0) > 0 && (
                 <p className="text-sky-400 text-xs mt-1">Click to view all deposits ({dailySales?.dailyCashEntries?.length ?? 0})</p>
               )}
             </button>
             <div className="p-4 rounded-lg bg-slate-900/60 border border-slate-600">
               <p className="text-slate-400 text-sm mb-1">Difference</p>
+              <p className="text-xs text-slate-500 mb-0.5">Total deposits − System</p>
               <p className={`text-2xl font-bold ${
-                dailySales?.dailyCashEntry != null
-                  ? (dailySales.dailyCashEntry.physical_cash - (dailySales.totalCash ?? 0)) >= 0
+                (dailySales?.physicalCashTotal ?? 0) > 0
+                  ? ((dailySales?.physicalCashTotal ?? 0) - (dailySales?.totalCash ?? 0)) >= 0
                     ? "text-emerald-400"
                     : "text-red-400"
                   : "text-slate-500"
               }`}>
-                {dailySales?.dailyCashEntry != null
+                {(dailySales?.physicalCashTotal ?? 0) > 0
                   ? (() => {
-                      const diff = dailySales.dailyCashEntry.physical_cash - (dailySales.totalCash ?? 0);
+                      const diff = (dailySales?.physicalCashTotal ?? 0) - (dailySales?.totalCash ?? 0);
                       return `${diff >= 0 ? "+" : ""}${fmt(diff)} AED (${diff >= 0 ? "Over" : "Short"})`;
                     })()
                   : "—"}
@@ -514,7 +514,12 @@ export default function DashboardPage() {
             </div>
             <div className="overflow-y-auto flex-1 p-4">
               {(dailySales?.dailyCashEntries?.length ?? 0) > 0 ? (
-                <ul className="space-y-2">
+                <>
+                  <div className="p-4 rounded-lg bg-amber-900/30 border border-amber-600/50 mb-4">
+                    <p className="text-slate-400 text-sm">Total (sum of deposits in working hours)</p>
+                    <p className="text-2xl font-bold text-amber-200">{fmt(dailySales?.physicalCashTotal ?? 0)} AED</p>
+                  </div>
+                  <ul className="space-y-2">
                   {dailySales?.dailyCashEntries?.map((e) => (
                     <li key={e.id} className="flex justify-between items-center p-3 rounded-lg bg-slate-800/60 border border-slate-700">
                       <div>
@@ -525,6 +530,7 @@ export default function DashboardPage() {
                     </li>
                   ))}
                 </ul>
+                </>
               ) : (
                 <p className="text-slate-500 py-8 text-center">No cash deposits for this period. Use the app to add daily cash entry.</p>
               )}

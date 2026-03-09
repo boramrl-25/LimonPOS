@@ -1420,6 +1420,7 @@ app.get("/api/dashboard/daily-sales", authMiddleware, async (req, res) => {
     openTablesCount,
     dailyCashEntry: getDailyCashEntryForBounds(dayStartTs, dayEndTs),
     dailyCashEntries: getDailyCashEntriesForBounds(dayStartTs, dayEndTs),
+    physicalCashTotal: getPhysicalCashTotalForBounds(dayStartTs, dayEndTs),
   });
 });
 
@@ -1430,6 +1431,11 @@ function getDailyCashEntriesForBounds(dayStartTs, dayEndTs) {
   });
   entries.sort((a, b) => (b.created_at ?? 0) - (a.created_at ?? 0));
   return entries;
+}
+
+function getPhysicalCashTotalForBounds(dayStartTs, dayEndTs) {
+  const entries = getDailyCashEntriesForBounds(dayStartTs, dayEndTs);
+  return entries.reduce((sum, e) => sum + (e.physical_cash ?? 0), 0);
 }
 
 function getDailyCashEntryForBounds(dayStartTs, dayEndTs) {
@@ -1592,9 +1598,8 @@ app.get("/api/reconciliation/summary", authMiddleware, async (req, res) => {
     const byDate = aggregateReconciliationByDate(imports);
     const dayData = byDate[dateStr] || { cash: 0, card: 0 };
 
-    const sorted = (db.data.daily_cash_entries || []).filter((e) => e.date === dateStr);
-    sorted.sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
-    const latestCash = sorted[0] || null;
+    const dailyCashEntries = getDailyCashEntriesForBounds(bounds.startTs, bounds.endTs);
+    const physicalCashTotal = getPhysicalCashTotalForBounds(bounds.startTs, bounds.endTs);
 
     const utapImportsForDate = (db.data.reconciliation_imports || []).filter((i) => i.source === "utap" && i.date === dateStr);
     const totalUtapDeduction = utapImportsForDate.reduce((s, i) => s + (i.deduction ?? 0), 0);
@@ -1603,16 +1608,16 @@ app.get("/api/reconciliation/summary", authMiddleware, async (req, res) => {
     const expectedDeduction = summary.totalCard * (defaultPct / 100);
     const deductionDiff = totalUtapDeduction > 0 ? totalUtapDeduction - expectedDeduction : null;
 
-    // Recalculate difference from current system vs physical (stored diff can be stale)
-    const cashDiff = latestCash?.physical_cash != null ? latestCash.physical_cash - summary.totalCash : null;
+    const cashDiff = physicalCashTotal > 0 ? physicalCashTotal - summary.totalCash : null;
     res.json({
     date: dateStr,
     cash: {
       systemCash: summary.totalCash,
-      physicalCash: latestCash?.physical_cash ?? null,
+      physicalCash: physicalCashTotal > 0 ? physicalCashTotal : null,
+      physicalCashTotal,
       bankDeposit: dayData.cash,
       difference: cashDiff,
-      dailyCashEntries: sorted,
+      dailyCashEntries,
     },
     card: {
       systemCard: summary.totalCard,

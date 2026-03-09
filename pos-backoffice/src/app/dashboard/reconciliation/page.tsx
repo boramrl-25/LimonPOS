@@ -166,6 +166,7 @@ export default function ReconciliationPage() {
                   className="p-4 rounded-lg bg-slate-900/60 border border-slate-600 text-left hover:border-amber-500/50 transition-colors cursor-pointer"
                 >
                   <p className="text-slate-400 text-sm mb-1">Physical Cash (app)</p>
+                  <p className="text-xs text-slate-500 mb-0.5">Sum of deposits in working hours</p>
                   <p className="text-xl font-bold text-white">{data.cash.physicalCash != null ? `${fmt(data.cash.physicalCash)} AED` : "—"}</p>
                   {(data.cash.dailyCashEntries?.length ?? 0) > 0 && (
                     <p className="text-sky-400 text-xs mt-1">Click to view deposits ({data.cash.dailyCashEntries?.length ?? 0})</p>
@@ -177,6 +178,7 @@ export default function ReconciliationPage() {
                 </div>
                 <div className="p-4 rounded-lg bg-slate-900/60 border border-slate-600">
                   <p className="text-slate-400 text-sm mb-1">Difference</p>
+                  <p className="text-xs text-slate-500 mb-0.5">Total deposits − System</p>
                   <p className={`text-xl font-bold ${data.cash.difference != null ? (data.cash.difference >= 0 ? "text-emerald-400" : "text-red-400") : "text-slate-500"}`}>
                     {data.cash.difference != null ? `${data.cash.difference >= 0 ? "+" : ""}${fmt(data.cash.difference)} AED` : "—"}
                   </p>
@@ -246,7 +248,12 @@ export default function ReconciliationPage() {
             </div>
             <div className="overflow-y-auto flex-1 p-4">
               {(data.cash.dailyCashEntries?.length ?? 0) > 0 ? (
-                <ul className="space-y-2">
+                <>
+                  <div className="p-4 rounded-lg bg-amber-900/30 border border-amber-600/50 mb-4">
+                    <p className="text-slate-400 text-sm">Total (sum of deposits in working hours)</p>
+                    <p className="text-2xl font-bold text-amber-200">{fmt(data.cash.physicalCash ?? 0)} AED</p>
+                  </div>
+                  <ul className="space-y-2">
                   {data.cash.dailyCashEntries?.map((e) => (
                     <li key={e.id} className="flex justify-between items-center p-3 rounded-lg bg-slate-800/60 border border-slate-700">
                       <div>
@@ -257,6 +264,7 @@ export default function ReconciliationPage() {
                     </li>
                   ))}
                 </ul>
+                </>
               ) : (
                 <p className="text-slate-500 py-8 text-center">No cash deposits for this date. Use the app to add daily cash entry.</p>
               )}
