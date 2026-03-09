@@ -1917,8 +1917,9 @@ app.post("/api/payments", authMiddleware, async (req, res) => {
   const order = db.data.orders.find((o) => o.id === order_id);
   const items = (db.data.order_items || []).filter((i) => i.order_id === order_id);
   if (order && Math.abs(totalPaid - (order.total || 0)) < 0.01 && items.length > 0 && !order.zoho_receipt_id) {
-    const primaryMethod = payments[0]?.method || "cash";
-    await pushToZohoBooks(db, order, items, primaryMethod);
+    const orderPayments = (db.data.payments || []).filter((p) => p.order_id === order_id);
+    const products = db.data.products || [];
+    await pushToZohoBooks(db, order, items, orderPayments.map((p) => ({ amount: p.amount, method: p.method })), products);
   }
   if (order && Math.abs(totalPaid - (order.total || 0)) < 0.01) {
     const oidx = db.data.orders.findIndex((o) => o.id === order_id);
@@ -2099,6 +2100,66 @@ app.get("/api/dashboard/cash-drawer-opens", authMiddleware, async (req, res) => 
   res.json({ count: list.length, opens: list });
 });
 
+// Cash deposits: gün içi/sonu sayılan nakit. ?date=YYYY-MM-DD veya ?dateFrom=&dateTo=
+app.get("/api/cash-deposits", authMiddleware, async (req, res) => {
+  await ensureData();
+  db.data.cash_deposits = db.data.cash_deposits || [];
+  const dateStr = (req.query.date || "").toString().trim();
+  const dateFromStr = (req.query.dateFrom || "").toString().trim();
+  const dateToStr = (req.query.dateTo || "").toString().trim();
+  let list = db.data.cash_deposits;
+  if (dateFromStr && dateToStr) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateFromStr) || !/^\d{4}-\d{2}-\d{2}$/.test(dateToStr)) {
+      return res.status(400).json({ error: "Invalid date format (use YYYY-MM-DD)" });
+    }
+    list = list.filter((d) => {
+      const d2 = (d.date || "").toString();
+      return d2 >= dateFromStr && d2 <= dateToStr;
+    });
+  } else if (dateStr) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      return res.status(400).json({ error: "Invalid date format (use YYYY-MM-DD)" });
+    }
+    list = list.filter((d) => (d.date || "").toString() === dateStr);
+  }
+  list = list.sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
+  const totalAmount = list.reduce((s, d) => s + (Number(d.amount) || 0), 0);
+  res.json({ deposits: list, totalAmount });
+});
+
+app.post("/api/cash-deposits", authMiddleware, async (req, res) => {
+  await ensureData();
+  db.data.cash_deposits = db.data.cash_deposits || [];
+  const body = req.body;
+  const amount = Number(body.amount);
+  const dateStr = (body.date || "").toString().trim();
+  if (isNaN(amount) || amount < 0) return res.status(400).json({ error: "amount must be a non-negative number" });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return res.status(400).json({ error: "date must be YYYY-MM-DD" });
+  const id = `cd_${uuid().slice(0, 8)}`;
+  const dep = {
+    id,
+    amount,
+    date: dateStr,
+    note: (body.note || "").toString().trim(),
+    user_id: req.user?.id || null,
+    user_name: req.user?.name || "—",
+    created_at: Date.now(),
+  };
+  db.data.cash_deposits.push(dep);
+  await db.write();
+  res.json(dep);
+});
+
+app.delete("/api/cash-deposits/:id", authMiddleware, async (req, res) => {
+  await ensureData();
+  db.data.cash_deposits = db.data.cash_deposits || [];
+  const idx = db.data.cash_deposits.findIndex((d) => d.id === req.params.id);
+  if (idx < 0) return res.status(404).json({ error: "Not found" });
+  db.data.cash_deposits.splice(idx, 1);
+  await db.write();
+  res.status(204).send();
+});
+
 // Clear sales (test data) by date range: deletes orders with created_at in [dateFrom start, dateTo end], related data, and all void_logs in that date range.
 app.post("/api/settings/clear-sales-by-date-range", authMiddleware, async (req, res) => {
   await ensureData();
@@ -2138,6 +2199,24 @@ app.post("/api/settings/clear-sales-by-date-range", authMiddleware, async (req, 
   });
   const deletedVoids = voidLogsBefore - (db.data.void_logs || []).length;
 
+  // Remove discount_requests: for deleted orders OR requested_at in date range
+  const discountBefore = (db.data.discount_requests || []).length;
+  db.data.discount_requests = (db.data.discount_requests || []).filter((r) => {
+    if (orderIdsInRange.has(r.order_id)) return false;
+    const ts = r.requested_at ?? r.approved_at ?? 0;
+    if (ts >= startTs && ts <= endTs) return false;
+    return true;
+  });
+  const deletedDiscounts = discountBefore - (db.data.discount_requests || []).length;
+
+  // Remove cash_drawer_opens in date range
+  const cashDrawerBefore = (db.data.cash_drawer_opens || []).length;
+  db.data.cash_drawer_opens = (db.data.cash_drawer_opens || []).filter((e) => {
+    const ts = e.opened_at ?? 0;
+    return ts < startTs || ts > endTs;
+  });
+  const deletedCashDrawer = cashDrawerBefore - (db.data.cash_drawer_opens || []).length;
+
   const tables = db.data.tables || [];
   for (let i = 0; i < tables.length; i++) {
     if (tables[i].current_order_id && orderIdsInRange.has(tables[i].current_order_id)) {
@@ -2156,8 +2235,10 @@ app.post("/api/settings/clear-sales-by-date-range", authMiddleware, async (req, 
   const msg = [
     orderIdsInRange.size > 0 && `Deleted ${orderIdsInRange.size} order(s) and related data`,
     deletedVoids > 0 && `Deleted ${deletedVoids} void log(s) in date range`,
-  ].filter(Boolean).join(". ") || "No orders or voids in date range";
-  res.json({ deletedOrders: orderIdsInRange.size, deletedVoids, message: msg });
+    deletedDiscounts > 0 && `Deleted ${deletedDiscounts} discount request(s)`,
+    deletedCashDrawer > 0 && `Deleted ${deletedCashDrawer} cash drawer open(s)`,
+  ].filter(Boolean).join(". ") || "No orders, voids, discounts or cash drawer entries in date range";
+  res.json({ deletedOrders: orderIdsInRange.size, deletedVoids, deletedDiscounts, deletedCashDrawer, message: msg });
 });
 
 // Zoho config

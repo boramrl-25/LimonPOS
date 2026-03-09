@@ -54,6 +54,8 @@ export function getZohoConfig(db) {
     client_secret: process.env.ZOHO_CLIENT_SECRET || dbCfg.client_secret,
     organization_id: process.env.ZOHO_ORGANIZATION_ID || dbCfg.organization_id,
     customer_id: process.env.ZOHO_CUSTOMER_ID || dbCfg.customer_id,
+    cash_account_id: process.env.ZOHO_CASH_ACCOUNT_ID || dbCfg.cash_account_id,
+    card_account_id: process.env.ZOHO_CARD_ACCOUNT_ID || dbCfg.card_account_id,
     enabled: process.env.ZOHO_ENABLED || dbCfg.enabled || "true",
   };
   return fromEnv;
@@ -87,36 +89,78 @@ export async function getZohoAccessToken(db) {
   }
 }
 
-export async function pushToZohoBooks(db, order, items, paymentMethod = "cash") {
+/** Map POS payment method to Zoho payment_mode */
+function toZohoPaymentMode(method) {
+  const m = String(method || "").toLowerCase();
+  if (m.includes("card") || m === "kredi" || m === "kart" || m === "credit") return "credit_card";
+  if (m.includes("bank") || m === "havale" || m === "transfer") return "bank_transfer";
+  if (m.includes("check") || m === "cek") return "check";
+  return "cash";
+}
+
+/**
+ * Push order to Zoho Books as Sales Receipt.
+ * @param {object} db - LowDB instance
+ * @param {object} order - Order
+ * @param {Array} items - Order items
+ * @param {Array} payments - [{ amount, method }] - split payment desteği
+ * @param {Array} products - Products (zoho_item_id için stok güncellemesi)
+ */
+export async function pushToZohoBooks(db, order, items, payments = [], products = []) {
   await db.read();
   const cfg = getZohoConfig(db);
-  const { organization_id, customer_id, enabled } = cfg;
+  const { organization_id, customer_id, enabled, cash_account_id, card_account_id } = cfg;
   if (enabled !== "true" || !organization_id || !customer_id) return false;
 
   const token = await getZohoAccessToken(db);
   if (!token) return false;
 
-  const zohoMode = paymentMethod === "card" ? "credit_card" : "cash";
   const paidAt = order.paid_at || order.created_at;
   const date = new Date(paidAt).toISOString().split("T")[0];
+  const productsById = new Map((products || []).map((p) => [p.id, p]));
 
-  const lineItems = items.map((i) => ({
-    name: i.product_name,
-    description: i.notes || "",
-    quantity: i.quantity,
-    rate: i.price,
-  }));
+  const lineItems = items.map((i) => {
+    const product = i.product_id ? productsById.get(i.product_id) : null;
+    const zohoItemId = product?.zoho_item_id;
+    const base = {
+      quantity: Number(i.quantity) || 1,
+      rate: Number(i.price) || 0,
+      description: (i.notes || "").trim() || "",
+    };
+    if (zohoItemId) {
+      return { item_id: String(zohoItemId), ...base };
+    }
+    return { name: i.product_name || "Item", ...base };
+  });
+
+  const payList = Array.isArray(payments) && payments.length > 0
+    ? payments
+    : [{ amount: order.total || 0, method: "cash" }];
+
+  const paymentOptions = payList
+    .filter((p) => Number(p.amount) > 0)
+    .map((p) => ({ payment_mode: toZohoPaymentMode(p.method), amount: Number(p.amount) }));
+
+  const primaryPayment = paymentOptions[0] || { payment_mode: "cash" };
+  const payload = {
+    customer_id,
+    date,
+    reference_number: `LimonPOS-${order.id}`,
+    line_items: lineItems,
+  };
+
+  if (paymentOptions.length === 1) {
+    payload.payment_mode = primaryPayment.payment_mode;
+    if (primaryPayment.payment_mode === "cash" && cash_account_id) payload.account_id = cash_account_id;
+    if (primaryPayment.payment_mode === "credit_card" && card_account_id) payload.account_id = card_account_id;
+  } else {
+    payload.payment_options = paymentOptions;
+  }
 
   try {
     await axios.post(
       `${ZOHO_BOOKS}/salesreceipts?organization_id=${organization_id}`,
-      {
-        customer_id,
-        date,
-        payment_mode: zohoMode,
-        reference_number: `LimonPOS-${order.id}`,
-        line_items: lineItems,
-      },
+      payload,
       {
         headers: {
           Authorization: `Zoho-oauthtoken ${token}`,
@@ -129,6 +173,29 @@ export async function pushToZohoBooks(db, order, items, paymentMethod = "cash") 
     await db.write();
     return true;
   } catch (err) {
+    if (payload.payment_options && err.response?.status === 400) {
+      const fallback = { ...payload };
+      delete fallback.payment_options;
+      fallback.payment_mode = primaryPayment.payment_mode;
+      try {
+        await axios.post(
+          `${ZOHO_BOOKS}/salesreceipts?organization_id=${organization_id}`,
+          fallback,
+          {
+            headers: {
+              Authorization: `Zoho-oauthtoken ${token}`,
+              "Content-Type": "application/json",
+            },
+          }
+        );
+        const oidx = db.data.orders.findIndex((o) => o.id === order.id);
+        if (oidx >= 0) db.data.orders[oidx].zoho_receipt_id = "sent";
+        await db.write();
+        return true;
+      } catch (e2) {
+        console.error("Zoho Books fallback error:", e2.response?.data || e2.message);
+      }
+    }
     console.error("Zoho Books error:", err.response?.data || err.message);
     return false;
   }

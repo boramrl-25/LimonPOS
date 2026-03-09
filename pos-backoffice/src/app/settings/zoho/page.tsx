@@ -13,6 +13,8 @@ export default function ZohoSettingsPage() {
     refresh_token: "",
     organization_id: "",
     customer_id: "",
+    cash_account_id: "",
+    card_account_id: "",
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -35,6 +37,8 @@ export default function ZohoSettingsPage() {
         refresh_token: c.refresh_token || "",
         organization_id: c.organization_id || "",
         customer_id: c.customer_id || "",
+        cash_account_id: c.cash_account_id || "",
+        card_account_id: c.card_account_id || "",
       });
     } catch {
       window.location.href = "/login";
@@ -85,7 +89,7 @@ export default function ZohoSettingsPage() {
       </Link>
 
       <h1 className="text-2xl font-bold text-sky-400 mb-2">Zoho Books Integration</h1>
-      <p className="text-slate-400 mb-4">Sales are sent to Zoho Books as Sales Receipt when payment is completed. Product import also uses Zoho Books items (including price).</p>
+      <p className="text-slate-400 mb-4">Satışlar ödeme alındığında Zoho Books&apos;a Sales Receipt olarak gönderilir. Nakit/kart/split ödemeler doğru hesaplara aktarılır. Zoho&apos;dan senkron edilen ürünler stoktan düşer.</p>
 
       <button
         onClick={() => setShowHelp((h) => !h)}
@@ -164,6 +168,16 @@ export default function ZohoSettingsPage() {
             className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-600 text-white"
           />
           <p className="text-xs text-slate-500 mt-1">Zoho Books → Contacts → the number after /contacts/ in the URL</p>
+        </div>
+        <div>
+          <label className="block text-sm text-slate-400 mb-1">Cash Account ID (opsiyonel – nakit ödemelerin yatırılacağı hesap)</label>
+          <input type="text" value={config.cash_account_id} onChange={(e) => setConfig((c) => ({ ...c, cash_account_id: e.target.value }))} placeholder="e.g. 864689000000385001" className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-600 text-white" />
+          <p className="text-xs text-slate-500 mt-1">Chart of Accounts → Kasa hesabı ID</p>
+        </div>
+        <div>
+          <label className="block text-sm text-slate-400 mb-1">Card/Bank Account ID (opsiyonel – kart ödemelerin yatırılacağı hesap)</label>
+          <input type="text" value={config.card_account_id} onChange={(e) => setConfig((c) => ({ ...c, card_account_id: e.target.value }))} placeholder="e.g. 864689000000385002" className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-600 text-white" />
+          <p className="text-xs text-slate-500 mt-1">Chart of Accounts veya Bank Accounts → Banka/Kredi Kartı hesabı ID</p>
         </div>
       </div>
 
