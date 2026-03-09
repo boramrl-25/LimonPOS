@@ -408,10 +408,11 @@ class PaymentViewModel @Inject constructor(
                     val itemSize = printerPreferences.getReceiptItemSize()
                     val receiptSettings = receiptPreferences.getReceiptSettings()
                     val receipt = printerService.buildReceipt(ow.order, ow.items, itemSize, receiptSettings)
+                    val hasCashPayment = splits.any { it.method.equals("cash", true) }
                     for (printer in cashierPrinters) {
                         val printResult = printerService.sendToPrinter(printer.ipAddress, printer.port, receipt)
                         if (printResult.isFailure) receiptFailedPrinters.add(printer.name)
-                        else {
+                        else if (hasCashPayment) {
                             val drawerResult = printerService.openCashDrawer(printer.ipAddress, printer.port)
                             if (drawerResult.isFailure) drawerFailedPrinters.add(printer.name)
                         }

@@ -19,6 +19,8 @@ val LimonError = Color(0xFFEF4444)
 val LimonSuccess = Color(0xFF22C55E)
 val LimonInfo = Color(0xFF3B82F6)
 val LimonFree = Color(0xFF71717A)
+/** Used for tables belonging to other waiters (when view_all_orders) – distinct from own tables. */
+val LimonOtherTable = Color(0xFFD97706)
 
 private val DarkColorScheme = darkColorScheme(
     primary = LimonPrimary,

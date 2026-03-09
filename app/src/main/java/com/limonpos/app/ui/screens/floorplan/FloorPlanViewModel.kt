@@ -61,7 +61,11 @@ data class FloorPlanUiState(
     val isLocked: Boolean = false,
     val showLockDialog: Boolean = false,
     val lockError: String? = null,
-    val closeTableError: String? = null
+    val closeTableError: String? = null,
+    val showOtherTablePinDialog: Boolean = false,
+    val pendingOtherTableId: String? = null,
+    val otherTablePinError: String? = null,
+    val navigateToTableId: String? = null
 )
 
 @HiltViewModel
@@ -90,6 +94,9 @@ class FloorPlanViewModel @Inject constructor(
 
     val currentUserId: StateFlow<String?> = authRepository.getCurrentUserId()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val viewAllOrders: StateFlow<Boolean> = authRepository.hasViewAllOrdersFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     val pendingVoidRequestCount: StateFlow<Int> = voidRequestRepository.getPendingRequests()
         .map { it.size }
@@ -208,8 +215,62 @@ class FloorPlanViewModel @Inject constructor(
         when (table.status) {
             "free" -> _uiState.update { it.copy(showOpenTableDialog = table) }
             "reserved" -> _uiState.update { it.copy(showReservationInfoDialog = table) }
+            "occupied", "bill" -> {
+                viewModelScope.launch {
+                    val uid = authRepository.getCurrentUserIdSync()
+                    val viewAll = authRepository.hasViewAllOrders()
+                    val isOwnTable = uid != null && table.waiterId == uid
+                    if (viewAll && !isOwnTable) {
+                        _uiState.update {
+                            it.copy(
+                                showOtherTablePinDialog = true,
+                                pendingOtherTableId = table.id,
+                                otherTablePinError = null
+                            )
+                        }
+                    } else {
+                        onNavigateToOrder(table.id)
+                    }
+                }
+            }
             else -> onNavigateToOrder(table.id)
         }
+    }
+
+    fun verifyOtherTableAccess(pin: String) {
+        viewModelScope.launch {
+            val tableId = _uiState.value.pendingOtherTableId ?: return@launch
+            authRepository.verifyPin(pin)
+                .onSuccess {
+                    _uiState.update {
+                        it.copy(
+                            showOtherTablePinDialog = false,
+                            pendingOtherTableId = null,
+                            otherTablePinError = null,
+                            navigateToTableId = tableId
+                        )
+                    }
+                }
+                .onFailure { ex ->
+                    _uiState.update { s ->
+                        s.copy(otherTablePinError = ex.message ?: "Invalid PIN")
+                    }
+                }
+        }
+    }
+
+    fun dismissOtherTablePinDialog() {
+        _uiState.update {
+            it.copy(
+                showOtherTablePinDialog = false,
+                pendingOtherTableId = null,
+                otherTablePinError = null
+            )
+        }
+    }
+
+    fun clearNavigateToTableId() {
+        _uiState.update { it.copy(navigateToTableId = null) }
     }
 
     fun dismissOpenTableDialog() {

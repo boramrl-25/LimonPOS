@@ -1419,8 +1419,18 @@ app.get("/api/dashboard/daily-sales", authMiddleware, async (req, res) => {
     lastEod: lastEod ? { ran_at: lastEod.ran_at, user_name: lastEod.user_name, tables_closed_count: lastEod.tables_closed?.length ?? 0 } : null,
     openTablesCount,
     dailyCashEntry: getDailyCashEntryForBounds(dayStartTs, dayEndTs),
+    dailyCashEntries: getDailyCashEntriesForBounds(dayStartTs, dayEndTs),
   });
 });
+
+function getDailyCashEntriesForBounds(dayStartTs, dayEndTs) {
+  const entries = (db.data.daily_cash_entries || []).filter((e) => {
+    const t = e.date_ts ?? e.created_at ?? 0;
+    return t >= dayStartTs && t < dayEndTs;
+  });
+  entries.sort((a, b) => (b.created_at ?? 0) - (a.created_at ?? 0));
+  return entries;
+}
 
 function getDailyCashEntryForBounds(dayStartTs, dayEndTs) {
   const entries = (db.data.daily_cash_entries || []).filter((e) => {
@@ -1602,6 +1612,7 @@ app.get("/api/reconciliation/summary", authMiddleware, async (req, res) => {
       physicalCash: latestCash?.physical_cash ?? null,
       bankDeposit: dayData.cash,
       difference: cashDiff,
+      dailyCashEntries: sorted,
     },
     card: {
       systemCard: summary.totalCard,

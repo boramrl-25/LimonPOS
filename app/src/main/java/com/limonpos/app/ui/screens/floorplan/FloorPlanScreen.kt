@@ -214,6 +214,7 @@ fun FloorPlanScreen(
 
     val sections by viewModel.floorPlanSections.collectAsState(initial = emptyMap())
     val currentUserId by viewModel.currentUserId.collectAsState(initial = null)
+    val viewAllOrders by viewModel.viewAllOrders.collectAsState(initial = false)
     var tablesRaw = uiState.tablesByFloor[uiState.selectedFloor].orEmpty()
     val section = uiState.selectedSection
     if (section != "Main" && sections.isNotEmpty()) {
@@ -222,7 +223,7 @@ fun FloorPlanScreen(
             tablesRaw = tablesRaw.filter { t -> t.number.toIntOrNull()?.let { nums.contains(it) } == true }
         }
     }
-    if (currentUserId != null) {
+    if (currentUserId != null && !viewAllOrders) {
         tablesRaw = tablesRaw.filter { t ->
             t.status == "free" || t.waiterId == currentUserId
         }
@@ -472,11 +473,14 @@ fun FloorPlanScreen(
                     val now = System.currentTimeMillis()
                     val isOccupiedWithUpcoming = (table.status == "occupied" || table.status == "bill") &&
                         ReservationStatusHelper.isReservationUpcoming(table, now, 30)
+                    val isOtherUsersTable = viewAllOrders && currentUserId != null &&
+                        table.waiterId != null && table.waiterId != currentUserId
                     TableCard(
                         table = table,
                         isOccupiedWithUpcomingReservation = isOccupiedWithUpcoming,
+                        isOtherUsersTable = isOtherUsersTable,
                         onClick = { viewModel.onTableClick(table, onNavigateToOrder) },
-                        onCloseTable = if (table.status == "occupied" || table.status == "bill") {
+                        onCloseTable = if ((table.status == "occupied" || table.status == "bill") && !isOtherUsersTable) {
                             { tableToClose = table }
                         } else null
                     )
@@ -549,6 +553,21 @@ fun FloorPlanScreen(
             onDismiss = { viewModel.dismissCashDrawerDialog() },
             onVerify = { pin -> viewModel.verifyCashDrawer(pin) }
         )
+    }
+
+    if (uiState.showOtherTablePinDialog) {
+        OtherTablePinDialog(
+            error = uiState.otherTablePinError,
+            onDismiss = { viewModel.dismissOtherTablePinDialog() },
+            onVerify = { pin -> viewModel.verifyOtherTableAccess(pin) }
+        )
+    }
+
+    LaunchedEffect(uiState.navigateToTableId) {
+        uiState.navigateToTableId?.let { tableId ->
+            onNavigateToOrder(tableId)
+            viewModel.clearNavigateToTableId()
+        }
     }
 
     tableToClose?.let { table ->
@@ -932,6 +951,37 @@ private fun LockFloorDialog(
 }
 
 @Composable
+private fun OtherTablePinDialog(
+    error: String?,
+    onDismiss: () -> Unit,
+    onVerify: (String) -> Unit
+) {
+    var pin by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Enter PIN to Access Other Waiter's Table", color = LimonText) },
+        text = {
+            Column {
+                Text("Enter your PIN to work on this table.", color = LimonTextSecondary, fontSize = 14.sp)
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = pin,
+                    onValueChange = { if (it.length <= 4 && it.all { c -> c.isDigit() }) pin = it },
+                    label = { Text("PIN") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                error?.let { Text(it, color = LimonError, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp)) }
+            }
+        },
+        confirmButton = { Button(onClick = { onVerify(pin) }) { Text("Verify") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = LimonTextSecondary) } },
+        containerColor = LimonSurface
+    )
+}
+
+@Composable
 private fun CashDrawerDialog(
     error: String?,
     onDismiss: () -> Unit,
@@ -1030,37 +1080,38 @@ private fun TransferTableDialog(
 private fun TableCard(
     table: TableEntity,
     isOccupiedWithUpcomingReservation: Boolean = false,
+    isOtherUsersTable: Boolean = false,
     onClick: () -> Unit,
     onCloseTable: (() -> Unit)? = null
 ) {
     val isOccupied = table.status == "occupied"
     val isBill = table.status == "bill"
     val isReserved = table.status == "reserved"
+    val borderColor = when {
+        isOccupiedWithUpcomingReservation -> LimonError
+        isOtherUsersTable -> LimonOtherTable
+        isOccupied -> LimonPrimary
+        isBill -> LimonSuccess
+        isReserved -> LimonInfo
+        else -> null
+    }
+    val bgColor = when {
+        isOccupiedWithUpcomingReservation -> LimonError.copy(alpha = 0.15f)
+        isOtherUsersTable -> LimonOtherTable.copy(alpha = 0.25f)
+        isOccupied -> LimonSurface
+        isBill -> LimonSurface.copy(alpha = 0.9f)
+        isReserved -> LimonInfo.copy(alpha = 0.25f)
+        else -> LimonSurface
+    }
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(0.9f)
             .clickable(onClick = onClick)
-            .then(
-                when {
-                    isOccupiedWithUpcomingReservation -> Modifier.border(2.dp, LimonError, RoundedCornerShape(12.dp))
-                    isOccupied -> Modifier.border(2.dp, LimonPrimary, RoundedCornerShape(12.dp))
-                    isBill -> Modifier.border(2.dp, LimonSuccess, RoundedCornerShape(12.dp))
-                    isReserved -> Modifier.border(2.dp, LimonInfo, RoundedCornerShape(12.dp))
-                    else -> Modifier
-                }
-            ),
+            .then(borderColor?.let { Modifier.border(2.dp, it, RoundedCornerShape(12.dp)) } ?: Modifier),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = when {
-                isOccupiedWithUpcomingReservation -> LimonError.copy(alpha = 0.15f)
-                isOccupied -> LimonSurface
-                isBill -> LimonSurface.copy(alpha = 0.9f)
-                isReserved -> LimonInfo.copy(alpha = 0.25f)
-                else -> LimonSurface
-            }
-        )
+        colors = CardDefaults.cardColors(containerColor = bgColor)
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             if (onCloseTable != null) {
@@ -1093,9 +1144,17 @@ private fun TableCard(
                 )
                 table.waiterName?.takeIf { it.isNotBlank() }?.let { name ->
                     Text(
-                        text = name,
-                        color = LimonTextSecondary,
+                        text = if (isOtherUsersTable) "($name)" else name,
+                        color = if (isOtherUsersTable) LimonOtherTable else LimonTextSecondary,
                         fontSize = 11.sp,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
+                if (isOtherUsersTable && (isOccupied || isBill)) {
+                    Text(
+                        text = "Tap + PIN to access",
+                        color = LimonOtherTable,
+                        fontSize = 9.sp,
                         modifier = Modifier.padding(top = 2.dp)
                     )
                 }

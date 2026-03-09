@@ -52,6 +52,7 @@ export default function DashboardPage() {
     voids: Array<{ id: string; order_id?: string; type: string; product_name: string; quantity: number; amount: number; user_name: string; created_at: number }>;
     refunds: Array<{ id: string; order_id?: string; type: string; product_name?: string; amount: number; user_name: string; source_table_number?: string; created_at: number }>;
     dailyCashEntry?: { id: string; physical_cash: number; system_cash: number; difference: number; user_name: string; created_at: number } | null;
+    dailyCashEntries?: Array<{ id: string; physical_cash: number; system_cash: number; difference: number; user_name: string; created_at: number }>;
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -76,6 +77,7 @@ export default function DashboardPage() {
   const [openTablesNotClosedLoading, setOpenTablesNotClosedLoading] = useState(false);
   const [selectedTableOrderId, setSelectedTableOrderId] = useState<string | null>(null);
   const [currentBusinessDayKey, setCurrentBusinessDayKey] = useState<string | null>(null);
+  const [physicalCashModalOpen, setPhysicalCashModalOpen] = useState(false);
   const { user } = useUser();
   const canSeeWarning = user && (["admin", "manager", "supervisor"].includes(user.role) || (user.permissions || []).includes("web_settings"));
   const router = useRouter();
@@ -340,7 +342,11 @@ export default function DashboardPage() {
                 {loading ? "..." : `${fmt(dailySales?.totalCash ?? 0)} AED`}
               </p>
             </div>
-            <div className="p-4 rounded-lg bg-slate-900/60 border border-slate-600">
+            <button
+              type="button"
+              onClick={() => setPhysicalCashModalOpen(true)}
+              className="p-4 rounded-lg bg-slate-900/60 border border-slate-600 text-left hover:border-amber-500/50 transition-colors cursor-pointer"
+            >
               <p className="text-slate-400 text-sm mb-1">Physical Cash (from app)</p>
               <p className="text-2xl font-bold text-white">
                 {dailySales?.dailyCashEntry != null ? `${fmt(dailySales.dailyCashEntry.physical_cash)} AED` : "—"}
@@ -348,7 +354,10 @@ export default function DashboardPage() {
               {dailySales?.dailyCashEntry?.user_name && (
                 <p className="text-slate-500 text-xs mt-1">By: {dailySales.dailyCashEntry.user_name}</p>
               )}
-            </div>
+              {(dailySales?.dailyCashEntries?.length ?? 0) > 0 && (
+                <p className="text-sky-400 text-xs mt-1">Click to view all deposits ({dailySales.dailyCashEntries.length})</p>
+              )}
+            </button>
             <div className="p-4 rounded-lg bg-slate-900/60 border border-slate-600">
               <p className="text-slate-400 text-sm mb-1">Difference</p>
               <p className={`text-2xl font-bold ${
@@ -494,6 +503,36 @@ export default function DashboardPage() {
           )}
         </section>
       </main>
+
+      {/* Physical Cash deposits modal */}
+      {physicalCashModalOpen && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={() => setPhysicalCashModalOpen(false)}>
+          <div className="bg-slate-900 rounded-xl border border-slate-700 max-w-lg w-full max-h-[80vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="p-4 border-b border-slate-700 flex justify-between items-center">
+              <h3 className="text-lg font-semibold text-amber-200">Physical Cash Deposits</h3>
+              <button type="button" onClick={() => setPhysicalCashModalOpen(false)} className="text-slate-400 hover:text-white">Close</button>
+            </div>
+            <div className="overflow-y-auto flex-1 p-4">
+              {(dailySales?.dailyCashEntries?.length ?? 0) > 0 ? (
+                <ul className="space-y-2">
+                  {dailySales?.dailyCashEntries?.map((e) => (
+                    <li key={e.id} className="flex justify-between items-center p-3 rounded-lg bg-slate-800/60 border border-slate-700">
+                      <div>
+                        <p className="font-medium text-white">{e.user_name || "—"}</p>
+                        <p className="text-slate-500 text-sm">{new Date(e.created_at).toLocaleString("tr-TR", { dateStyle: "short", timeStyle: "medium" })}</p>
+                      </div>
+                      <p className="text-xl font-bold text-amber-200">{fmt(e.physical_cash)} AED</p>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-slate-500 py-8 text-center">No cash deposits for this period. Use the app to add daily cash entry.</p>
+              )}
+              <p className="text-slate-500 text-xs mt-4">You can deposit cash multiple times per day from the app.</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Closed Bill Change modal */}
       {closedBillChangesModal && (

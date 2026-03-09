@@ -163,4 +163,17 @@ class AuthRepository @Inject constructor(
         val user = getCurrentUser() ?: return false
         return user.toUserPermissions().closedBillAccess
     }
+
+    /** True if current user can view all orders/tables (not just their own). */
+    suspend fun hasViewAllOrders(): Boolean {
+        val user = getCurrentUser() ?: return false
+        return user.toUserPermissions().viewAllOrders
+    }
+
+    fun hasViewAllOrdersFlow(): Flow<Boolean> = sessionManager.currentUserId
+        .flatMapLatest { userId ->
+            if (userId == null) flowOf<UserEntity?>(null)
+            else userDao.getUserByIdFlow(userId)
+        }
+        .map { user -> user?.toUserPermissions()?.viewAllOrders ?: false }
 }
