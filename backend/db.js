@@ -8,15 +8,16 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Kalıcı veri: Production'da mutlaka DATA_DIR kalıcı bir dizin olmalı (örn. Railway volume /data).
 // DATA_DIR yoksa __dirname kullanılır; sunucu/ephemeral disk silinirse tüm veri gider.
-const DATA_DIR = process.env.DATA_DIR || __dirname;
+let DATA_DIR = process.env.DATA_DIR || __dirname;
 if (!process.env.DATA_DIR) {
   console.warn("[db] DATA_DIR tanımlı değil – veriler proje dizininde; Railway/redeploy'da SİLİNİR. Volume + DATA_DIR=/data ekleyin.");
-}
-if (!fs.existsSync(DATA_DIR)) {
+} else if (!fs.existsSync(DATA_DIR)) {
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
+    console.log("[db] DATA_DIR oluşturuldu:", DATA_DIR);
   } catch (e) {
-    console.error("[db] DATA_DIR oluşturulamadı:", e.message);
+    console.error("[db] DATA_DIR oluşturulamadı:", e.message, "- yedek konuma geçiliyor");
+    DATA_DIR = __dirname;
   }
 }
 const DATA_FILE = join(DATA_DIR, "data.json");

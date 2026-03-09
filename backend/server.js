@@ -1,4 +1,5 @@
 import "dotenv/config";
+console.log("[startup] Node", process.version, "PORT=" + (process.env.PORT || "3002"), "DATA_DIR=" + (process.env.DATA_DIR || "(not set)"));
 import express from "express";
 import cors from "cors";
 import { v4 as uuid } from "uuid";
@@ -13,15 +14,15 @@ import {
   getBusinessDayRangesForDateRange,
 } from "./businessDay.js";
 
-// Railway / production: yakalanmamış hatalar loglansın, process çökmesin veya net exit ile yeniden başlasın
+// Railway / production: yakalanmamış hatalar loglansın
 process.on("uncaughtException", (err) => {
   console.error("[CRASH] uncaughtException:", err?.message || err);
   if (err?.stack) console.error(err.stack);
-  process.exit(1);
+  setTimeout(() => process.exit(1), 1000); // log flush icin kisa bekle
 });
 process.on("unhandledRejection", (reason, promise) => {
   console.error("[CRASH] unhandledRejection:", reason);
-  process.exit(1);
+  setTimeout(() => process.exit(1), 1000);
 });
 
 const app = express();
@@ -2492,5 +2493,6 @@ async function startServer() {
 
 startServer().catch((e) => {
   console.error("[startup] startServer failed:", e?.message || e);
-  process.exit(1);
+  if (e?.stack) console.error(e.stack);
+  setTimeout(() => process.exit(1), 2000);
 });
