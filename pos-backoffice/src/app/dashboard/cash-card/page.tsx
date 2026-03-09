@@ -332,7 +332,7 @@ export default function CashCardPage() {
               </div>
               <div className="p-3 rounded-lg bg-slate-800/60 border border-slate-700">
                 <p className="text-slate-400 text-sm">Physical Cash (uygulamadaki depozit toplamı)</p>
-                <p className="text-xl font-bold text-white">{fmt(data.cash.physicalCashTotal ?? 0)} AED</p>
+                <p className="text-xl font-bold text-white">{fmt(data.cash.physicalCash ?? 0)} AED</p>
                 <p className="text-xs text-slate-500 mt-1">Çalışma saatleri içinde yapılan {data.cash.dailyCashEntries?.length ?? 0} depozit</p>
               </div>
               {(data.cash.dailyCashEntries?.length ?? 0) > 0 && (
@@ -351,7 +351,7 @@ export default function CashCardPage() {
               <div className="p-3 rounded-lg bg-amber-900/30 border border-amber-600/50">
                 <p className="text-amber-200 text-sm font-medium">Fark hesabı</p>
                 <p className="text-slate-300 text-sm mt-1">
-                  Physical Cash − System Cash = {fmt(data.cash.physicalCashTotal ?? 0)} − {fmt(data.cash.systemCash)} = {data.cash.difference != null ? `${data.cash.difference >= 0 ? "+" : ""}${fmt(data.cash.difference)} AED` : "—"}
+                  Physical Cash − System Cash = {fmt(data.cash.physicalCash ?? 0)} − {fmt(data.cash.systemCash)} = {data.cash.difference != null ? `${data.cash.difference >= 0 ? "+" : ""}${fmt(data.cash.difference)} AED` : "—"}
                 </p>
                 <p className={`text-lg font-bold mt-2 ${data.cash.difference != null ? (data.cash.difference >= 0 ? "text-emerald-400" : "text-red-400") : "text-slate-500"}`}>
                   {data.cash.difference != null ? `${data.cash.difference >= 0 ? "+" : ""}${fmt(data.cash.difference)} AED` : "—"}
