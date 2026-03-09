@@ -1020,42 +1020,65 @@ private fun TransferTableDialog(
 ) {
     val occupied by occupiedTables.collectAsState(emptyList())
     val free by freeTables.collectAsState(emptyList())
-    val initSrc by initialSource.collectAsState(null)
-    var selectedSource by remember(initSrc) { mutableStateOf<TableEntity?>(initSrc) }
+    val fixedSource by initialSource.collectAsState(null)
+    var selectedSource by remember(fixedSource) { mutableStateOf<TableEntity?>(fixedSource) }
     var selectedTarget by remember { mutableStateOf<TableEntity?>(null) }
-    LaunchedEffect(initSrc) { if (initSrc != null) selectedSource = initSrc }
+    LaunchedEffect(fixedSource) { selectedSource = fixedSource }
+    val sourceTable = fixedSource ?: selectedSource
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Transfer Table", fontWeight = FontWeight.Bold) },
         text = {
             Column {
-                Text("1. Source table (occupied):", fontWeight = FontWeight.Medium, color = LimonText)
-                LazyColumn(modifier = Modifier.heightIn(max = 150.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    items(occupied, key = { it.id }) { t ->
+                Text("From:", fontWeight = FontWeight.Medium, color = LimonText)
+                if (fixedSource != null) {
+                    fixedSource?.let { t ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { selectedSource = t },
+                                .padding(vertical = 8.dp)
+                                .background(LimonSurface.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                                .padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            RadioButton(selected = selectedSource?.id == t.id, onClick = { selectedSource = t })
-                            Text("Table ${t.number} - ${t.waiterName ?: "-"}", color = LimonText)
+                            Text("Table ${t.number}", fontWeight = FontWeight.Bold, color = LimonPrimary)
+                            t.waiterName?.takeIf { it.isNotBlank() }?.let { name ->
+                                Text(" · $name", color = LimonTextSecondary, modifier = Modifier.padding(start = 4.dp))
+                            }
+                        }
+                    }
+                } else {
+                    LazyColumn(modifier = Modifier.heightIn(max = 120.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        items(occupied, key = { it.id }) { t ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { selectedSource = t },
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(selected = selectedSource?.id == t.id, onClick = { selectedSource = t })
+                                Text("Table ${t.number} - ${t.waiterName ?: "-"}", color = LimonText)
+                            }
                         }
                     }
                 }
                 Spacer(Modifier.height(16.dp))
-                Text("2. Target table (free):", fontWeight = FontWeight.Medium, color = LimonText)
-                LazyColumn(modifier = Modifier.heightIn(max = 150.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    items(free, key = { it.id }) { t ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { selectedTarget = t },
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(selected = selectedTarget?.id == t.id, onClick = { selectedTarget = t })
-                            Text("Table ${t.number}", color = LimonText)
+                Text("To (select target table):", fontWeight = FontWeight.Medium, color = LimonText)
+                if (free.isEmpty()) {
+                    Text("No free tables available", color = LimonError, fontSize = 14.sp, modifier = Modifier.padding(vertical = 8.dp))
+                } else {
+                    LazyColumn(modifier = Modifier.heightIn(max = 150.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        items(free, key = { it.id }) { t ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { selectedTarget = t },
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(selected = selectedTarget?.id == t.id, onClick = { selectedTarget = t })
+                                Text("Table ${t.number}", color = LimonText)
+                            }
                         }
                     }
                 }
@@ -1064,11 +1087,11 @@ private fun TransferTableDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val src = selectedSource
+                    val src = sourceTable
                     val tgt = selectedTarget
                     if (src != null && tgt != null) onTransfer(src.id, tgt.id)
                 },
-                enabled = selectedSource != null && selectedTarget != null
+                enabled = sourceTable != null && selectedTarget != null
             ) { Text("Transfer") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = LimonTextSecondary) } },
