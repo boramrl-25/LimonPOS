@@ -2,7 +2,9 @@
   "name": "limonpos-backend",
   "version": "1.0.0",
   "type": "module",
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
@@ -14,7 +16,9 @@
     "cors": "^2.8.5",
     "dotenv": "^17.3.1",
     "express": "^4.21.0",
+    "imapflow": "^1.2.13",
     "lowdb": "^7.0.1",
+    "mailparser": "^3.9.4",
     "node-fetch": "^3.3.2",
     "proper-lockfile": "^4.1.2",
     "uuid": "^10.0.0",

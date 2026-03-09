@@ -80,6 +80,20 @@ const defaultData = {
   custom_roles: [],
   discount_requests: [],
   table_reservations: [],
+  reconciliation_imports: [],
+  reconciliation_inbox_config: null,
+  reconciliation_bank_settings: {
+    default_percentage: 1.9,
+    card_types: [
+      { name: "CREDIT PREMIUM", percentage: 2 },
+      { name: "INTERNATIONAL CARDS", percentage: 1.5 },
+    ],
+  },
+  reconciliation_bank_accounts: {
+    card_account: "",
+    cash_account: "",
+  },
+  reconciliation_warnings: [],
 };
 
 let db;

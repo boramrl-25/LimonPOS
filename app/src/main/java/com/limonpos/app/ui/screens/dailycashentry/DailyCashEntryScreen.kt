@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.limonpos.app.ui.theme.LimonPrimary
@@ -26,6 +27,29 @@ fun DailyCashEntryScreen(
     onBack: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val printWarning by viewModel.printWarning.collectAsState(null)
+
+    printWarning?.let { message ->
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissPrintWarning() },
+            title = { Text("Print failed", color = LimonText) },
+            text = { Text(message, color = LimonTextSecondary) },
+            confirmButton = {
+                Button(
+                    onClick = { viewModel.retryPrint() },
+                    colors = ButtonDefaults.buttonColors(containerColor = LimonPrimary)
+                ) {
+                    Text("Retry", color = Color.Black)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.dismissPrintWarning() }) {
+                    Text("Dismiss", color = LimonTextSecondary)
+                }
+            },
+            containerColor = LimonSurface
+        )
+    }
 
     Scaffold(
         topBar = {

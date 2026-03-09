@@ -481,6 +481,85 @@ export async function getBusinessDayStatus(): Promise<BusinessDayStatus> {
   return res.json();
 }
 
+/** Reconciliation: Cash & Card from UTAP/Bank emails (auto-forward) */
+export async function getReconciliationInboxConfig(): Promise<{ configured: boolean; host: string | null; user: string | null }> {
+  const res = await fetchWithTimeout(`${API_URL}/reconciliation/inbox-config`, { headers: headers() });
+  if (!res.ok) throw new Error("Failed to fetch reconciliation inbox config");
+  return res.json();
+}
+
+export async function updateReconciliationInboxConfig(config: { host: string; port?: number; user: string; password: string; secure?: boolean }) {
+  const res = await fetchWithTimeout(`${API_URL}/reconciliation/inbox-config`, {
+    method: "PUT",
+    headers: headers(),
+    body: JSON.stringify(config),
+  });
+  if (!res.ok) throw new Error("Failed to update reconciliation inbox config");
+  return res.json();
+}
+
+export async function fetchReconciliationNow(): Promise<{ ok: boolean; imported?: number; error?: string }> {
+  const res = await fetchWithTimeout(`${API_URL}/reconciliation/fetch-now`, { method: "POST", headers: headers() });
+  if (!res.ok) throw new Error("Failed to fetch reconciliation");
+  return res.json();
+}
+
+export async function getReconciliationSummary(date: string) {
+  const res = await fetchWithTimeout(`${API_URL}/reconciliation/summary?date=${encodeURIComponent(date)}`, { headers: headers() });
+  if (!res.ok) throw new Error("Failed to fetch reconciliation summary");
+  return res.json();
+}
+
+export async function getReconciliationCardDetail(date: string) {
+  const res = await fetchWithTimeout(`${API_URL}/reconciliation/card-detail?date=${encodeURIComponent(date)}`, { headers: headers() });
+  if (!res.ok) throw new Error("Failed to fetch card detail");
+  return res.json();
+}
+
+export async function getReconciliationBankSettings() {
+  const res = await fetchWithTimeout(`${API_URL}/reconciliation/bank-settings`, { headers: headers() });
+  if (!res.ok) throw new Error("Failed to fetch bank settings");
+  return res.json();
+}
+
+export async function updateReconciliationBankSettings(settings: { default_percentage: number; card_types: Array<{ name: string; percentage: number }> }) {
+  const res = await fetchWithTimeout(`${API_URL}/reconciliation/bank-settings`, {
+    method: "PUT",
+    headers: headers(),
+    body: JSON.stringify(settings),
+  });
+  if (!res.ok) throw new Error("Failed to update bank settings");
+  return res.json();
+}
+
+export async function getReconciliationBankAccounts() {
+  const res = await fetchWithTimeout(`${API_URL}/reconciliation/bank-accounts`, { headers: headers() });
+  if (!res.ok) throw new Error("Failed to fetch bank accounts");
+  return res.json();
+}
+
+export async function updateReconciliationBankAccounts(accounts: { card_account: string; cash_account: string }) {
+  const res = await fetchWithTimeout(`${API_URL}/reconciliation/bank-accounts`, {
+    method: "PUT",
+    headers: headers(),
+    body: JSON.stringify(accounts),
+  });
+  if (!res.ok) throw new Error("Failed to update bank accounts");
+  return res.json();
+}
+
+export async function getReconciliationWarnings() {
+  const res = await fetchWithTimeout(`${API_URL}/reconciliation/warnings`, { headers: headers() });
+  if (!res.ok) throw new Error("Failed to fetch warnings");
+  return res.json();
+}
+
+export async function clearReconciliationWarnings() {
+  const res = await fetchWithTimeout(`${API_URL}/reconciliation/warnings/clear`, { method: "POST", headers: headers() });
+  if (!res.ok) throw new Error("Failed to clear warnings");
+  return res.json();
+}
+
 export async function markWarningShown(): Promise<void> {
   const res = await fetchWithTimeout(`${API_URL}/dashboard/warning-shown`, {
     method: "POST",

@@ -13,6 +13,7 @@ import {
   getBusinessDayRangeForDate,
   getBusinessDayRangesForDateRange,
 } from "./businessDay.js";
+import { fetchReconciliationEmails, aggregateReconciliationByDate } from "./reconciliation.js";
 
 // Railway / production: yakalanmamış hatalar loglansın
 process.on("uncaughtException", (err) => {
@@ -1475,6 +1476,236 @@ app.get("/api/daily-cash-entry", authMiddleware, async (req, res) => {
   });
 });
 
+// Reconciliation: Cash & Card from UTAP/Bank emails (auto-forward)
+app.get("/api/reconciliation/inbox-config", authMiddleware, async (req, res) => {
+  await ensureData();
+  const c = db.data.reconciliation_inbox_config;
+  res.json({
+    configured: !!(c && c.host && c.user),
+    host: c?.host ? "***" : null,
+    user: c?.user ? c.user.replace(/(.{2}).*(@.*)/, "$1***$2") : null,
+  });
+});
+
+app.put("/api/reconciliation/inbox-config", authMiddleware, async (req, res) => {
+  await ensureData();
+  const perms = JSON.parse(req.user?.permissions || "[]");
+  if (!perms.includes("web_settings") && !["admin", "manager"].includes(req.user?.role)) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  const { host, port, user, password, secure } = req.body || {};
+  db.data.reconciliation_inbox_config = {
+    host: host?.trim() || null,
+    port: port || 993,
+    user: user?.trim() || null,
+    password: password?.trim() || null,
+    secure: secure !== false,
+  };
+  await db.write();
+  res.json({ ok: true });
+});
+
+app.post("/api/reconciliation/fetch-now", authMiddleware, async (req, res) => {
+  await ensureData();
+  const result = await fetchReconciliationEmails();
+  res.json(result);
+});
+
+app.get("/api/reconciliation/bank-settings", authMiddleware, async (req, res) => {
+  await ensureData();
+  const s = db.data.reconciliation_bank_settings;
+  if (!s) {
+    db.data.reconciliation_bank_settings = { default_percentage: 1.9, card_types: [{ name: "CREDIT PREMIUM", percentage: 2 }, { name: "INTERNATIONAL CARDS", percentage: 1.5 }] };
+    await db.write();
+  }
+  res.json(db.data.reconciliation_bank_settings);
+});
+
+app.put("/api/reconciliation/bank-settings", authMiddleware, async (req, res) => {
+  await ensureData();
+  const perms = JSON.parse(req.user?.permissions || "[]");
+  if (!perms.includes("web_settings") && !["admin", "manager"].includes(req.user?.role)) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  const { default_percentage, card_types } = req.body || {};
+  db.data.reconciliation_bank_settings = {
+    default_percentage: typeof default_percentage === "number" ? default_percentage : (parseFloat(default_percentage) || 1.9),
+    card_types: Array.isArray(card_types) ? card_types.map((c) => ({ name: String(c.name || "").trim() || "Card", percentage: parseFloat(c.percentage) || 0 })).filter((c) => c.name) : (db.data.reconciliation_bank_settings?.card_types || []),
+  };
+  await db.write();
+  res.json(db.data.reconciliation_bank_settings);
+});
+
+app.get("/api/reconciliation/bank-accounts", authMiddleware, async (req, res) => {
+  await ensureData();
+  const a = db.data.reconciliation_bank_accounts || { card_account: "", cash_account: "" };
+  res.json(a);
+});
+
+app.put("/api/reconciliation/bank-accounts", authMiddleware, async (req, res) => {
+  await ensureData();
+  const perms = JSON.parse(req.user?.permissions || "[]");
+  if (!perms.includes("web_settings") && !["admin", "manager"].includes(req.user?.role)) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  const { card_account, cash_account } = req.body || {};
+  db.data.reconciliation_bank_accounts = {
+    card_account: String(card_account || "").trim(),
+    cash_account: String(cash_account || "").trim(),
+  };
+  await db.write();
+  res.json(db.data.reconciliation_bank_accounts);
+});
+
+app.get("/api/reconciliation/warnings", authMiddleware, async (req, res) => {
+  await ensureData();
+  const warnings = (db.data.reconciliation_warnings || []).slice(-50).reverse();
+  res.json({ warnings });
+});
+
+app.post("/api/reconciliation/warnings/clear", authMiddleware, async (req, res) => {
+  await ensureData();
+  db.data.reconciliation_warnings = [];
+  await db.write();
+  res.json({ ok: true });
+});
+
+app.get("/api/reconciliation/summary", authMiddleware, async (req, res) => {
+  await ensureData();
+  const dateStr = (req.query.date || "").toString().trim() || new Date().toISOString().slice(0, 10);
+  const bounds = getDayBounds(dateStr);
+  if (!bounds) return res.status(400).json({ error: "invalid_date" });
+
+  const summary = getSalesSummaryForRange(bounds.startTs, bounds.endTs);
+  const imports = db.data.reconciliation_imports || [];
+  const byDate = aggregateReconciliationByDate(imports);
+  const dayData = byDate[dateStr] || { cash: 0, card: 0 };
+
+  const sorted = (db.data.daily_cash_entries || []).filter((e) => e.date === dateStr);
+  sorted.sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
+  const latestCash = sorted[0] || null;
+
+  const utapImportsForDate = (db.data.reconciliation_imports || []).filter((i) => i.source === "utap" && i.date === dateStr);
+  const totalUtapDeduction = utapImportsForDate.reduce((s, i) => s + (i.deduction ?? 0), 0);
+  const bankSettings = db.data.reconciliation_bank_settings || {};
+  const defaultPct = bankSettings.default_percentage ?? 1.9;
+  const expectedDeduction = summary.totalCard * (defaultPct / 100);
+  const deductionDiff = totalUtapDeduction > 0 ? totalUtapDeduction - expectedDeduction : null;
+
+  res.json({
+    date: dateStr,
+    cash: {
+      systemCash: summary.totalCash,
+      physicalCash: latestCash?.physical_cash ?? null,
+      bankDeposit: dayData.cash,
+      difference: latestCash ? latestCash.difference : null,
+    },
+    card: {
+      systemCard: summary.totalCard,
+      utapTotal: dayData.card,
+      bankDeposit: dayData.card,
+      difference: dayData.card > 0 ? dayData.card - summary.totalCard : null,
+      deduction: {
+        bankPercentage: defaultPct,
+        expectedFromPOS: expectedDeduction,
+        actualFromCSV: totalUtapDeduction,
+        difference: deductionDiff,
+      },
+    },
+  });
+});
+
+/** Card transaction detail for reconciliation: POS vs UTAP, match status. */
+app.get("/api/reconciliation/card-detail", authMiddleware, async (req, res) => {
+  await ensureData();
+  const dateStr = (req.query.date || "").toString().trim() || new Date().toISOString().slice(0, 10);
+  const bounds = getDayBounds(dateStr);
+  if (!bounds) return res.status(400).json({ error: "invalid_date" });
+
+  const summary = getSalesSummaryForRange(bounds.startTs, bounds.endTs);
+  const paymentMethods = db.data.payment_methods || [];
+  const orders = (db.data.orders || []).reduce((acc, o) => {
+    acc[o.id] = o;
+    return acc;
+  }, {});
+
+  const posTransactions = [];
+  for (const p of db.data.payments || []) {
+    if (!summary.paidOrderIds.has(p.order_id)) continue;
+    const code = resolvePaymentMethodCode(p.method, paymentMethods);
+    if (code !== "card") continue;
+    const order = orders[p.order_id];
+    posTransactions.push({
+      id: p.id,
+      amount: p.amount || 0,
+      order_id: p.order_id,
+      table_number: order?.table_number || "—",
+      receipt_no: order ? `#${String(order.table_number || order.id).slice(-8)}` : "—",
+      created_at: p.created_at,
+    });
+  }
+  posTransactions.sort((a, b) => a.created_at - b.created_at);
+
+  const utapImports = (db.data.reconciliation_imports || []).filter((i) => (i.source === "utap" || i.source === "bank_email_card") && i.date === dateStr);
+  const utapTransactions = utapImports.map((i) => ({
+    id: i.id,
+    amount: i.amount,
+    deduction: i.deduction ?? null,
+    net_amount: i.net_amount ?? null,
+    description: i.description || "",
+    created_at: i.created_at,
+  })).sort((a, b) => a.created_at - b.created_at);
+
+  const bankSettings = db.data.reconciliation_bank_settings || {};
+  const defaultPct = bankSettings.default_percentage ?? 1.9;
+  const totalUtapGross = utapTransactions.reduce((s, u) => s + u.amount, 0);
+  const totalUtapDeduction = utapTransactions.reduce((s, u) => s + (u.deduction ?? 0), 0);
+  const expectedDeduction = summary.totalCard * (defaultPct / 100);
+  const deductionDifference = totalUtapDeduction > 0 ? totalUtapDeduction - expectedDeduction : null;
+
+  const TOLERANCE = 0.01;
+  const posUsed = new Set();
+  const utapUsed = new Set();
+  const matched = [];
+  for (const pos of posTransactions) {
+    const idx = utapTransactions.findIndex(
+      (u, i) => !utapUsed.has(i) && Math.abs(u.amount - pos.amount) < TOLERANCE
+    );
+    if (idx >= 0) {
+      utapUsed.add(idx);
+      posUsed.add(pos.id);
+      matched.push({ pos, utap: utapTransactions[idx], status: "ok" });
+    }
+  }
+
+  const posUnmatched = posTransactions.filter((p) => !posUsed.has(p.id));
+  const utapUnmatched = utapTransactions.filter((_, i) => !utapUsed.has(i));
+
+  res.json({
+    date: dateStr,
+    systemCard: summary.totalCard,
+    utapTotal: totalUtapGross,
+    difference: summary.totalCard - totalUtapGross,
+    deduction: {
+      bankPercentage: defaultPct,
+      expectedFromPOS: expectedDeduction,
+      actualFromCSV: totalUtapDeduction,
+      difference: deductionDifference,
+    },
+    posTransactions: posTransactions.map((p) => ({
+      ...p,
+      status: posUsed.has(p.id) ? "matched" : "unmatched",
+    })),
+    utapTransactions: utapTransactions.map((u, i) => ({
+      ...u,
+      status: utapUsed.has(i) ? "matched" : "unmatched",
+    })),
+    matchedCount: matched.length,
+    posUnmatchedCount: posUnmatched.length,
+    utapUnmatchedCount: utapUnmatched.length,
+  });
+});
+
 // Table reservations: expire 10 min after end time
 const RESERVATION_GRACE_MS = 10 * 60 * 1000;
 
@@ -2578,6 +2809,7 @@ async function startServer() {
     // ensureData in background – don't block startup
     ensureData().then(() => console.log("[startup] ensureData OK")).catch((e) => console.error("[startup] ensureData failed:", e?.message || e));
     setInterval(() => runAutoCloseIfDue().catch((e) => console.error("[auto-close]", e?.message)), 60 * 1000);
+    setInterval(() => fetchReconciliationEmails().catch((e) => console.error("[reconciliation]", e?.message)), 5 * 60 * 1000);
   });
   process.on("SIGTERM", () => {
     console.log("[SIGTERM] Graceful shutdown...");

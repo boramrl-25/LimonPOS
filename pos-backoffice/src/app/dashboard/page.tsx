@@ -327,7 +327,10 @@ export default function DashboardPage() {
 
         {/* Cash & Card — System = from POS sales; Physical/Tap = manual count */}
         <section className="rounded-xl bg-amber-950/40 border border-amber-700/50 p-5">
-          <h2 className="text-lg font-semibold text-amber-200 mb-4">Cash & Card</h2>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-lg font-semibold text-amber-200">Cash & Card</h2>
+            <Link href="/dashboard/reconciliation" className="text-sky-400 hover:text-sky-300 text-sm">Reconciliation →</Link>
+          </div>
           {/* Cash row: System Cash, Physical Cash (from app), Difference */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
             <div className="p-4 rounded-lg bg-slate-900/60 border border-amber-700/30">

@@ -17,6 +17,14 @@ import java.util.Date
 import java.util.Locale
 import javax.inject.Inject
 
+/** Data needed to retry print after save. */
+private data class DailyCashPrintData(
+    val physicalCash: Double,
+    val userName: String,
+    val date: String,
+    val fid: String
+)
+
 data class DailyCashEntryUiState(
     val physicalCashInput: String = "",
     val savedEntry: DailyCashEntrySaved? = null,
@@ -40,6 +48,11 @@ class DailyCashEntryViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(DailyCashEntryUiState())
     val uiState: StateFlow<DailyCashEntryUiState> = _uiState.asStateFlow()
+
+    private val _printWarning = MutableStateFlow<String?>(null)
+    val printWarning: StateFlow<String?> = _printWarning.asStateFlow()
+
+    private var lastPrintData: DailyCashPrintData? = null
 
     fun setPhysicalCashInput(value: String) {
         _uiState.value = _uiState.value.copy(
@@ -81,13 +94,8 @@ class DailyCashEntryViewModel @Inject constructor(
                         saveSuccess = true,
                         error = null
                     )
-                    // Print slip to cashier printer
-                    val cashierPrinters = printerRepository.getAllPrinters().first()
-                        .filter { (it.printerType == "cashier" || it.printerType.equals("receipt", true)) && it.ipAddress.isNotBlank() && it.enabled }
-                    val slip = printerService.buildDailyCashEntrySlip(physicalCash, userName, date, fid)
-                    for (printer in cashierPrinters) {
-                        printerService.sendToPrinter(printer.ipAddress, printer.port, slip)
-                    }
+                    lastPrintData = DailyCashPrintData(physicalCash, userName, date, fid)
+                    tryPrintSlip()
                 } else {
                     _uiState.value = _uiState.value.copy(isLoading = false, error = "Failed to save")
                 }
@@ -98,5 +106,35 @@ class DailyCashEntryViewModel @Inject constructor(
                 )
             }
         }
+    }
+
+    private suspend fun tryPrintSlip() {
+        val data = lastPrintData ?: return
+        val cashierPrinters = printerRepository.getAllPrinters().first()
+            .filter { (it.printerType == "cashier" || it.printerType.equals("receipt", true)) && it.ipAddress.isNotBlank() && it.enabled }
+        if (cashierPrinters.isEmpty()) {
+            _printWarning.value = "No cashier printer configured. Please add a printer in Settings."
+            return
+        }
+        val slip = printerService.buildDailyCashEntrySlip(data.physicalCash, data.userName, data.date, data.fid)
+        val failed = mutableListOf<String>()
+        for (printer in cashierPrinters) {
+            val result = printerService.sendToPrinter(printer.ipAddress, printer.port, slip)
+            if (result.isFailure) failed.add(printer.name)
+        }
+        if (failed.isNotEmpty()) {
+            _printWarning.value = "Receipt print failed: ${failed.joinToString(", ")}. Check printer connection."
+        }
+    }
+
+    fun retryPrint() {
+        viewModelScope.launch {
+            _printWarning.value = null
+            tryPrintSlip()
+        }
+    }
+
+    fun dismissPrintWarning() {
+        _printWarning.value = null
     }
 }
