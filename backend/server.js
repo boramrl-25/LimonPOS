@@ -2100,66 +2100,6 @@ app.get("/api/dashboard/cash-drawer-opens", authMiddleware, async (req, res) => 
   res.json({ count: list.length, opens: list });
 });
 
-// Cash deposits: gün içi/sonu sayılan nakit. ?date=YYYY-MM-DD veya ?dateFrom=&dateTo=
-app.get("/api/cash-deposits", authMiddleware, async (req, res) => {
-  await ensureData();
-  db.data.cash_deposits = db.data.cash_deposits || [];
-  const dateStr = (req.query.date || "").toString().trim();
-  const dateFromStr = (req.query.dateFrom || "").toString().trim();
-  const dateToStr = (req.query.dateTo || "").toString().trim();
-  let list = db.data.cash_deposits;
-  if (dateFromStr && dateToStr) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateFromStr) || !/^\d{4}-\d{2}-\d{2}$/.test(dateToStr)) {
-      return res.status(400).json({ error: "Invalid date format (use YYYY-MM-DD)" });
-    }
-    list = list.filter((d) => {
-      const d2 = (d.date || "").toString();
-      return d2 >= dateFromStr && d2 <= dateToStr;
-    });
-  } else if (dateStr) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-      return res.status(400).json({ error: "Invalid date format (use YYYY-MM-DD)" });
-    }
-    list = list.filter((d) => (d.date || "").toString() === dateStr);
-  }
-  list = list.sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
-  const totalAmount = list.reduce((s, d) => s + (Number(d.amount) || 0), 0);
-  res.json({ deposits: list, totalAmount });
-});
-
-app.post("/api/cash-deposits", authMiddleware, async (req, res) => {
-  await ensureData();
-  db.data.cash_deposits = db.data.cash_deposits || [];
-  const body = req.body;
-  const amount = Number(body.amount);
-  const dateStr = (body.date || "").toString().trim();
-  if (isNaN(amount) || amount < 0) return res.status(400).json({ error: "amount must be a non-negative number" });
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return res.status(400).json({ error: "date must be YYYY-MM-DD" });
-  const id = `cd_${uuid().slice(0, 8)}`;
-  const dep = {
-    id,
-    amount,
-    date: dateStr,
-    note: (body.note || "").toString().trim(),
-    user_id: req.user?.id || null,
-    user_name: req.user?.name || "—",
-    created_at: Date.now(),
-  };
-  db.data.cash_deposits.push(dep);
-  await db.write();
-  res.json(dep);
-});
-
-app.delete("/api/cash-deposits/:id", authMiddleware, async (req, res) => {
-  await ensureData();
-  db.data.cash_deposits = db.data.cash_deposits || [];
-  const idx = db.data.cash_deposits.findIndex((d) => d.id === req.params.id);
-  if (idx < 0) return res.status(404).json({ error: "Not found" });
-  db.data.cash_deposits.splice(idx, 1);
-  await db.write();
-  res.status(204).send();
-});
-
 // Clear sales (test data) by date range: deletes orders with created_at in [dateFrom start, dateTo end], related data, and all void_logs in that date range.
 app.post("/api/settings/clear-sales-by-date-range", authMiddleware, async (req, res) => {
   await ensureData();
