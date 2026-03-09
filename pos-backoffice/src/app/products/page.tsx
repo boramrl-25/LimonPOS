@@ -454,7 +454,7 @@ export default function ProductsPage() {
         SKU: p.sku ?? "",
         Category: p.category ?? "",
         Price: p.price ?? 0,
-        VATPercent: (p.tax_rate ?? 0) * 100,
+        VATPercent: 0,
         Till: Boolean(p.pos_enabled) ? "On" : "Off",
         Active: Boolean(p.active !== false) ? "Yes" : "No",
         Printers: printerNames.join(", "),
@@ -475,7 +475,6 @@ export default function ProductsPage() {
     const nameTurkish = String(row.NameTurkish ?? row.name_turkish ?? "").trim();
     const sku = String(row.SKU ?? row.sku ?? "").trim();
     const priceRaw = row.Price ?? row.price ?? 0;
-    const taxRaw = row.VATPercent ?? row.tax_rate ?? 0;
     const categoryName = String(row.Category ?? row.category ?? "").trim();
     const tillRaw = String(row.Till ?? row.pos_enabled ?? "").toLowerCase();
     const activeRaw = String(row.Active ?? row.active ?? "").toLowerCase();
@@ -485,7 +484,6 @@ export default function ProductsPage() {
     const imageUrl = String(row.ImageURL ?? row.image_url ?? "").trim();
 
     const price = Math.max(0, Number(priceRaw) || 0);
-    const tax_rate = (Number(taxRaw) || 0) / 100;
     const pos_enabled = tillRaw === "on" || tillRaw === "1" || tillRaw === "true" || tillRaw === "yes";
     const active = activeRaw === "" || activeRaw === "yes" || activeRaw === "1" || activeRaw === "on" || activeRaw === "true";
     const overdue_undelivered_minutes =
@@ -514,7 +512,7 @@ export default function ProductsPage() {
       name_turkish: nameTurkish || undefined,
       sku,
       price,
-      tax_rate,
+      tax_rate: 0,
       category_id: (category_id ?? existing?.category_id) ?? undefined,
       image_url: imageUrl || (existing?.image_url ?? ""),
       printers: printerIds.length > 0 ? printerIds : (existing?.printers ?? []),
@@ -693,7 +691,7 @@ export default function ProductsPage() {
           sku: product.sku ?? "",
           category_id: product.category_id ?? undefined,
           price: product.price ?? 0,
-          tax_rate: product.tax_rate ?? 0,
+          tax_rate: 0,
           image_url: product.image_url ?? "",
           printers: printerIds.length > 0 ? printerIds : product.printers ?? [],
           modifier_groups: modifierIds.length > 0 ? modifierIds : product.modifier_groups ?? [],
