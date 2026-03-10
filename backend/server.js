@@ -140,6 +140,7 @@ app.get("/api/export", authMiddleware, async (req, res) => {
     source_table_id: v.source_table_id, source_table_number: v.source_table_number,
     user_id: v.user_id, user_name: v.user_name, details: v.details, created_at: toMs(v.created_at),
   });
+  const s = settings || {};
   const data = {
     users: users.map((u) => ({ id: u.id, name: u.name, pin: u.pin, role: u.role, active: u.active, permissions: u.permissions, cash_drawer_permission: u.cash_drawer_permission })),
     categories: categories.map((c) => ({ ...c })),
@@ -154,8 +155,21 @@ app.get("/api/export", authMiddleware, async (req, res) => {
     void_logs: voidLogs.map(mapVoidLog),
     discount_requests: (discountReqs || []).map((d) => (d.payload && typeof d.payload === "object" ? d.payload : {})),
     devices: Array.isArray(devices) ? devices : [],
-    settings: settings ? { floor_plan_sections: floorSections, ...settings } : {},
+    settings: s,
     floor_plan_sections: floorSections || {},
+    setup_complete: s.setup_complete !== false,
+    reconciliation_bank_settings: s.reconciliation_bank_settings ?? null,
+    reconciliation_bank_accounts: s.reconciliation_bank_accounts ?? null,
+    physical_cash_count_by_date: s.physical_cash_count_by_date ?? null,
+    migrations: s.migrations ?? null,
+    business_operation_log: s.business_operation_log ?? null,
+    eod_logs: s.eod_logs ?? null,
+    cash_drawer_opens: s.cash_drawer_opens ?? null,
+    daily_cash_entries: s.daily_cash_entries ?? null,
+    custom_roles: s.custom_roles ?? null,
+    reconciliation_imports: s.reconciliation_imports ?? null,
+    reconciliation_inbox_config: s.reconciliation_inbox_config ?? null,
+    reconciliation_warnings: s.reconciliation_warnings ?? null,
     zoho_config: zohoConfig || {},
   };
   res.setHeader("Content-Type", "application/json");
