@@ -77,7 +77,7 @@ echo "Veritabanının hazır olması bekleniyor (20 sn)..."
 sleep 20
 
 echo "Prisma db push..."
-docker exec limonpos-backend npx prisma db push
+docker exec limonpos-backend npx prisma db push --schema=prisma/schema.prisma
 
 # data.json varsa migrate et
 if [ -f backend/data.json ]; then
