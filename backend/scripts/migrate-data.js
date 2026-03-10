@@ -10,7 +10,7 @@ import { v4 as uuid } from "uuid";
 import { PrismaClient } from "@prisma/client";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATA_FILE = path.join(__dirname, "../data.json");
+const DATA_FILE = process.env.DATA_FILE || path.join(__dirname, "../data.json");
 
 function ts(ms) {
   if (ms == null || ms === "") return null;
