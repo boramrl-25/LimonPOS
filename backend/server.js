@@ -95,6 +95,74 @@ app.get("/api/health", (req, res) => {
   res.json({ ok: true, message: "LimonPOS API", ts: Date.now() });
 });
 
+/** Export tüm veriyi data.json formatında döner. Sadece admin/manager. */
+app.get("/api/export", authMiddleware, async (req, res) => {
+  if (req.user.role !== "admin" && req.user.role !== "manager") {
+    return res.status(403).json({ error: "Forbidden", message: "Sadece admin veya manager export yapabilir." });
+  }
+  await ensurePrismaReady();
+  const toMs = (d) => (d instanceof Date ? d.getTime() : d);
+  const [users, categories, printers, paymentMethods, modifierGroups, products, tables, orders, orderItems, payments, voidLogs, discountReqs, devices, settings, zohoConfig, floorSections] = await Promise.all([
+    store.getAllUsers(),
+    store.getAllCategories(),
+    store.getPrinters(),
+    store.getAllPaymentMethods(),
+    store.getModifierGroups(),
+    store.getAllProducts(),
+    store.getTables(),
+    store.getOrders(),
+    store.getAllOrderItems(),
+    store.getPayments(),
+    store.getVoidLogs(),
+    store.getDiscountRequests(),
+    store.getDevices(),
+    store.getSettings(),
+    store.getZohoConfig(),
+    store.getFloorPlanSections(),
+  ]);
+  const mapOrder = (o) => ({
+    id: o.id, table_id: o.table_id, table_number: o.table_number, waiter_id: o.waiter_id, waiter_name: o.waiter_name,
+    status: o.status, subtotal: o.subtotal, tax_amount: o.tax_amount, discount_percent: o.discount_percent, discount_amount: o.discount_amount,
+    total: o.total, created_at: toMs(o.created_at), paid_at: toMs(o.paid_at), zoho_receipt_id: o.zoho_receipt_id,
+  });
+  const mapOrderItem = (oi) => ({
+    id: oi.id, order_id: oi.order_id, product_id: oi.product_id, product_name: oi.product_name,
+    quantity: oi.quantity, price: oi.price, notes: oi.notes, status: oi.status,
+    sent_at: toMs(oi.sent_at), delivered_at: toMs(oi.delivered_at), client_line_id: oi.client_line_id,
+  });
+  const mapPayment = (p) => ({
+    id: p.id, order_id: p.order_id, amount: p.amount, method: p.method,
+    received_amount: p.received_amount, change_amount: p.change_amount, user_id: p.user_id, created_at: toMs(p.created_at),
+  });
+  const mapVoidLog = (v) => ({
+    id: v.id, type: v.type, order_id: v.order_id, order_item_id: v.order_item_id,
+    product_name: v.product_name, quantity: v.quantity, price: v.price, amount: v.amount,
+    source_table_id: v.source_table_id, source_table_number: v.source_table_number,
+    user_id: v.user_id, user_name: v.user_name, details: v.details, created_at: toMs(v.created_at),
+  });
+  const data = {
+    users: users.map((u) => ({ id: u.id, name: u.name, pin: u.pin, role: u.role, active: u.active, permissions: u.permissions, cash_drawer_permission: u.cash_drawer_permission })),
+    categories: categories.map((c) => ({ ...c })),
+    printers: printers.map((p) => ({ ...p })),
+    payment_methods: paymentMethods.map((pm) => ({ ...pm })),
+    modifier_groups: modifierGroups.map((mg) => ({ ...mg })),
+    products: products.map((p) => ({ ...p })),
+    tables: tables.map((t) => ({ ...t })),
+    orders: orders.map(mapOrder),
+    order_items: orderItems.map(mapOrderItem),
+    payments: payments.map(mapPayment),
+    void_logs: voidLogs.map(mapVoidLog),
+    discount_requests: (discountReqs || []).map((d) => (d.payload && typeof d.payload === "object" ? d.payload : {})),
+    devices: Array.isArray(devices) ? devices : [],
+    settings: settings ? { floor_plan_sections: floorSections, ...settings } : {},
+    floor_plan_sections: floorSections || {},
+    zoho_config: zohoConfig || {},
+  };
+  res.setHeader("Content-Type", "application/json");
+  res.setHeader("Content-Disposition", "attachment; filename=data.json");
+  res.send(JSON.stringify(data, null, 2));
+});
+
 app.post("/api/auth/login", async (req, res) => {
   await ensurePrismaReady();
   const pin = String((req.body || {}).pin || "").trim();
