@@ -1649,11 +1649,65 @@ app.post("/api/tables", authMiddleware, async (req, res) => {
   const body = req.body;
   const num = typeof body.number === "number" ? body.number : parseInt(body.number, 10) || 1;
   const t = await store.createTable({
-    id, number: num, name: body.name || `Table ${num}`, capacity: body.capacity ?? 4, floor: body.floor || "main",
+    id, number: num, name: body.name || `Table ${num}`, capacity: body.capacity ?? 4, floor: body.floor || "Main",
     status: body.status || "free", current_order_id: null, guest_count: 0, waiter_id: null, waiter_name: null, opened_at: null,
-    x: body.x ?? 0, y: body.y ?? 0, width: body.width ?? 120, height: body.height ?? 100, shape: body.shape || "square",
+    x: body.x ?? 80, y: body.y ?? 50, width: body.width ?? 80, height: body.height ?? 80, shape: body.shape || "square",
   });
   res.json(t);
+});
+
+// Bulk import tables from CSV/Excel (JSON array). Columns: Number, Name, Section, Capacity, X, Y, Width, Height
+app.post("/api/tables/import", authMiddleware, async (req, res) => {
+  await ensurePrismaReady();
+  const rows = Array.isArray(req.body) ? req.body : Array.isArray(req.body?.rows) ? req.body.rows : [];
+  const sections = { A: [], B: [], C: [], D: [], E: [] };
+  const existingTables = await store.getTables();
+  const byNumber = new Map(existingTables.map((t) => [typeof t.number === "number" ? t.number : parseInt(t.number, 10) || 0, t]));
+  let created = 0;
+  let updated = 0;
+  for (const row of rows) {
+    const num = typeof row.Number === "number" ? row.Number : parseInt(row.Number ?? row.number, 10);
+    if (isNaN(num) || num < 1) continue;
+    const name = String(row.Name ?? row.name ?? `Table ${num}`).trim() || `Table ${num}`;
+    const section = String(row.Section ?? row.section ?? "").trim().toUpperCase();
+    const capacity = parseInt(row.Capacity ?? row.capacity, 10) || 4;
+    const x = parseInt(row.X ?? row.x, 10) || 80;
+    const y = parseInt(row.Y ?? row.y, 10) || 50;
+    const width = parseInt(row.Width ?? row.width, 10) || 80;
+    const height = parseInt(row.Height ?? row.height, 10) || 80;
+    const existing = byNumber.get(num);
+    const payload = { number: num, name, capacity, floor: "Main", x, y, width, height };
+    if (existing) {
+      await store.updateTable(existing.id, payload);
+      updated++;
+    } else {
+      await store.createTable({
+        id: `t_${uuid().slice(0, 8)}`,
+        ...payload,
+        status: "free",
+        current_order_id: null,
+        guest_count: 0,
+        waiter_id: null,
+        waiter_name: null,
+        opened_at: null,
+        shape: "square",
+      });
+      created++;
+    }
+    if (section && ["A", "B", "C", "D", "E"].includes(section)) {
+      const arr = sections[section];
+      if (!arr.includes(num)) arr.push(num);
+    }
+  }
+  const settings = await store.getSettings();
+  const currentSections = (settings?.floor_plan_sections && typeof settings.floor_plan_sections === "object")
+    ? { ...settings.floor_plan_sections } : { A: [], B: [], C: [], D: [], E: [] };
+  for (const k of ["A", "B", "C", "D", "E"]) {
+    const merged = [...new Set([...(currentSections[k] || []), ...(sections[k] || [])])].sort((a, b) => a - b);
+    currentSections[k] = merged;
+  }
+  await store.updateSettings({ floor_plan_sections: currentSections });
+  res.json({ ok: true, created, updated, sections: currentSections });
 });
 
 app.post("/api/tables/:id/open", authMiddleware, async (req, res) => {
@@ -1715,6 +1769,28 @@ app.put("/api/tables/:id", authMiddleware, async (req, res) => {
   try {
     const t = await store.updateTable(req.params.id, updates);
     res.json({ ...t, number: typeof t.number === "string" ? parseInt(t.number, 10) || 0 : (t.number ?? 0), current_order_id: t.current_order_id || null, waiter_id: t.waiter_id || null, waiter_name: t.waiter_name || null });
+  } catch (e) {
+    if (e.code === "P2025") return res.status(404).json({ error: "Not found" });
+    throw e;
+  }
+});
+
+// Delete table (even when opened – cancels reservations, cascade deletes orders)
+app.delete("/api/tables/:id", authMiddleware, async (req, res) => {
+  await ensurePrismaReady();
+  const { id } = req.params;
+  const tables = await store.getTables();
+  const tbl = tables.find((t) => t.id === id);
+  if (!tbl) return res.status(404).json({ error: "Table not found" });
+  const list = await store.getTableReservations();
+  for (const r of list) {
+    if (r.table_id === id && r.status === "active") {
+      await store.updateTableReservation(r.id, { ...r, status: "cancelled" });
+    }
+  }
+  try {
+    await store.deleteTable(id);
+    res.json({ ok: true });
   } catch (e) {
     if (e.code === "P2025") return res.status(404).json({ error: "Not found" });
     throw e;
@@ -1789,8 +1865,30 @@ app.put("/api/floor-plan-sections", authMiddleware, async (req, res) => {
   if (typeof body !== "object") return res.status(400).json({ error: "Body must be object" });
   const sections = { A: [], B: [], C: [], D: [], E: [] };
   for (const k of ["A", "B", "C", "D", "E"]) {
-    const arr = Array.isArray(body[k]) ? body[k].map((n) => (typeof n === "number" && n >= 1 && n <= 43 ? n : parseInt(n, 10))).filter((n) => !isNaN(n) && n >= 1 && n <= 43) : [];
+    const arr = Array.isArray(body[k]) ? body[k].map((n) => (typeof n === "number" && n >= 1 ? n : parseInt(n, 10))).filter((n) => !isNaN(n) && n >= 1) : [];
     sections[k] = [...new Set(arr)].sort((a, b) => a - b);
+  }
+  await store.updateSettings({ floor_plan_sections: sections });
+  res.json(sections);
+});
+
+// Import floor plan section filters (JSON array). Rows: { Section: "A", TableNumbers: "1,2,3,4,5" } or { Section: "A", Tables: "1,2,3" }
+app.post("/api/floor-plan-sections/import", authMiddleware, async (req, res) => {
+  await ensurePrismaReady();
+  const rows = Array.isArray(req.body) ? req.body : Array.isArray(req.body?.rows) ? req.body.rows : [];
+  const sections = { A: [], B: [], C: [], D: [], E: [] };
+  for (const row of rows) {
+    const section = String(row.Section ?? row.section ?? "").trim().toUpperCase();
+    if (!["A", "B", "C", "D", "E"].includes(section)) continue;
+    const numsStr = String(row.TableNumbers ?? row.tableNumbers ?? row.Tables ?? row.tables ?? "").trim();
+    const nums = numsStr.split(/[,;\s]+/).map((s) => parseInt(s.trim(), 10)).filter((n) => !isNaN(n) && n >= 1);
+    const arr = sections[section];
+    for (const n of nums) {
+      if (!arr.includes(n)) arr.push(n);
+    }
+  }
+  for (const k of ["A", "B", "C", "D", "E"]) {
+    sections[k].sort((a, b) => a - b);
   }
   await store.updateSettings({ floor_plan_sections: sections });
   res.json(sections);

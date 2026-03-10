@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { ArrowLeft, Search, RefreshCw, Settings2, X, Calendar } from "lucide-react";
-import { getTables, getFloorPlanSections, updateFloorPlanSections, getOrder, getOverdueTableIds, reserveTable, cancelTableReservation, type FloorPlanSections, type Order, type TableReservation } from "@/lib/api";
+import * as XLSX from "xlsx";
+import { ArrowLeft, Search, RefreshCw, Settings2, X, Calendar, Upload, Download, Trash2, Plus } from "lucide-react";
+import { getTables, getFloorPlanSections, updateFloorPlanSections, getOrder, getOverdueTableIds, reserveTable, cancelTableReservation, deleteTable, importTables, createTable, importFloorPlanSections, type FloorPlanSections, type Order, type TableReservation } from "@/lib/api";
 import {
   FLOOR_LEGEND,
   DELAYED_ITEMS_TITLE,
@@ -46,6 +47,17 @@ export default function FloorPlanPage() {
   const [tableIdsWithOverdue, setTableIdsWithOverdue] = useState<string[]>([]);
   const [overdueMinutes, setOverdueMinutes] = useState(10);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [deleteMode, setDeleteMode] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<Table | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [addTableOpen, setAddTableOpen] = useState(false);
+  const [addTableNum, setAddTableNum] = useState("");
+  const [addTableName, setAddTableName] = useState("");
+  const [addTableSection, setAddTableSection] = useState("A");
+  const [addTableCapacity, setAddTableCapacity] = useState("4");
+  const [addingTable, setAddingTable] = useState(false);
+  const [importingFilters, setImportingFilters] = useState(false);
   const overdueCooldownMs = 2 * 60 * 1000; // 2 min same table
   const lastOverdueWarningAt = useRef<Record<string, number>>({});
   const prevOverdueTableIds = useRef<string[]>([]);
@@ -122,6 +134,140 @@ export default function FloorPlanPage() {
     })
     .sort((a, b) => parseInt(String(a.number), 10) - parseInt(String(b.number), 10));
 
+  function downloadSectionFiltersTemplate() {
+    const rows = [
+      { Section: "A", TableNumbers: "1,2,3,4,5,6,7,8,9" },
+      { Section: "B", TableNumbers: "10,11,12,13,14,15,16,17,18" },
+      { Section: "C", TableNumbers: "19,20,21,22,23,24,25,26,27" },
+      { Section: "D", TableNumbers: "28,29,30,31,32,33,34,35,36" },
+      { Section: "E", TableNumbers: "37,38,39,40,41,42,43" },
+    ];
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "SectionFilters");
+    XLSX.writeFile(wb, "bolum_filtre_sablonu.xlsx");
+  }
+
+  async function handleSectionFiltersImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportingFilters(true);
+    try {
+      let wb: XLSX.WorkBook;
+      if (file.name.toLowerCase().endsWith(".csv")) {
+        const text = await file.text();
+        wb = XLSX.read(text, { type: "string", raw: true });
+      } else {
+        const data = await file.arrayBuffer();
+        wb = XLSX.read(data, { type: "array" });
+      }
+      const sheetName = wb.SheetNames[0];
+      const sheet = wb.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet);
+      await importFloorPlanSections(rows);
+      await load();
+      setToastMessage("Bölüm filtreleri içe aktarıldı.");
+    } catch (err) {
+      alert((err as Error).message);
+    } finally {
+      setImportingFilters(false);
+      e.target.value = "";
+    }
+  }
+
+  function downloadTablesTemplate() {
+    const rows = [
+      { Number: 1, Name: "Table 1", Section: "A", Capacity: 4, X: 80, Y: 50, Width: 80, Height: 80 },
+      { Number: 2, Name: "Table 2", Section: "A", Capacity: 4, X: 170, Y: 50, Width: 80, Height: 80 },
+      { Number: 10, Name: "Table 10", Section: "B", Capacity: 6, X: 80, Y: 150, Width: 80, Height: 80 },
+    ];
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Tables");
+    XLSX.writeFile(wb, "masa_floor_plan_sablonu.xlsx");
+  }
+
+  async function handleTablesImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    try {
+      let wb: XLSX.WorkBook;
+      if (file.name.toLowerCase().endsWith(".csv")) {
+        const text = await file.text();
+        wb = XLSX.read(text, { type: "string", raw: true });
+      } else {
+        const data = await file.arrayBuffer();
+        wb = XLSX.read(data, { type: "array" });
+      }
+      const sheetName = wb.SheetNames[0];
+      const sheet = wb.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet);
+      const result = await importTables(rows);
+      await load();
+      setToastMessage(`İçe aktarma tamamlandı: ${result.created} oluşturuldu, ${result.updated} güncellendi.`);
+    } catch (err) {
+      alert((err as Error).message);
+    } finally {
+      setImporting(false);
+      e.target.value = "";
+    }
+  }
+
+  async function submitAddTable() {
+    const num = parseInt(addTableNum, 10);
+    if (isNaN(num) || num < 1) {
+      alert("Geçerli bir masa numarası girin (1 veya üzeri)");
+      return;
+    }
+    setAddingTable(true);
+    try {
+      await createTable({
+        number: num,
+        name: addTableName.trim() || `Masa ${num}`,
+        floor: "Main",
+        capacity: parseInt(addTableCapacity, 10) || 4,
+      });
+      const newSections = { ...sections };
+      const arr = newSections[addTableSection as keyof FloorPlanSections] || [];
+      if (!arr.includes(num)) {
+        newSections[addTableSection as keyof FloorPlanSections] = [...arr, num].sort((a, b) => a - b);
+        setSections(newSections);
+        await updateFloorPlanSections(newSections);
+      }
+      setAddTableOpen(false);
+      setAddTableNum("");
+      setAddTableName("");
+      setAddTableCapacity("4");
+      await load();
+      setToastMessage(`Masa ${num} eklendi.`);
+    } catch (err) {
+      alert((err as Error).message);
+    } finally {
+      setAddingTable(false);
+    }
+  }
+
+  function requestDeleteTable(t: Table) {
+    setDeleteConfirm(t);
+  }
+
+  async function confirmDeleteTable() {
+    if (!deleteConfirm) return;
+    setDeleting(true);
+    try {
+      await deleteTable(deleteConfirm.id);
+      setDeleteConfirm(null);
+      setDeleteMode(false);
+      await load();
+      setToastMessage(`Masa ${deleteConfirm.number} silindi.`);
+    } catch (err) {
+      alert((err as Error).message);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   function addToSection(key: string) {
     const n = parseInt(addNum, 10);
     if (isNaN(n) || n < 1 || n > 43) return;
@@ -176,6 +322,10 @@ export default function FloorPlanPage() {
   }
 
   function onTableClick(t: Table) {
+    if (deleteMode) {
+      requestDeleteTable(t);
+      return;
+    }
     if (t.status === "free") {
       setReserveTableModal(t);
       setReserveError(null);
@@ -244,7 +394,47 @@ export default function FloorPlanPage() {
       </div>
       <p className="text-slate-400 text-sm mb-4">
         Tables sync to the app. Sections A–E act as filters. Edit section table numbers below.
+        {deleteMode && <span className="block mt-2 text-amber-400">Masa silmek için silmek istediğiniz masaya tıklayın.</span>}
       </p>
+
+      {/* Masa Ekleme - Toplu Import */}
+      <div className="mb-6 p-4 rounded-xl bg-slate-800/80 border border-slate-600">
+        <h3 className="text-lg font-semibold text-white mb-3">Masa Ekleme</h3>
+        <div className="flex flex-wrap gap-3">
+          <button
+            onClick={() => setAddTableOpen(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium"
+          >
+            <Plus className="w-4 h-4" />
+            Masa Ekle
+          </button>
+          <button onClick={downloadTablesTemplate} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium">
+            <Download className="w-4 h-4" />
+            Template İndir
+          </button>
+          <label className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium cursor-pointer">
+            <Upload className="w-4 h-4" />
+            <span>{importing ? "İçe aktarılıyor..." : "Toplu İçe Aktar (CSV/Excel)"}</span>
+            <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleTablesImport} disabled={importing} />
+          </label>
+        </div>
+        <p className="text-slate-400 text-xs mt-2">Template indir → Excel/CSV doldur → Toplu İçe Aktar ile yükle</p>
+        <div className="mt-4 pt-4 border-t border-slate-600">
+          <h4 className="text-sm font-medium text-slate-300 mb-2">Bölüm Filtreleri (A, B, C, D, E)</h4>
+          <div className="flex flex-wrap gap-3">
+            <button onClick={downloadSectionFiltersTemplate} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm">
+              <Download className="w-4 h-4" />
+              Filtre Template İndir
+            </button>
+            <label className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm cursor-pointer">
+              <Upload className="w-4 h-4" />
+              <span>{importingFilters ? "..." : "Filtre İçe Aktar (CSV/Excel)"}</span>
+              <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleSectionFiltersImport} disabled={importingFilters} />
+            </label>
+          </div>
+          <p className="text-slate-500 text-xs mt-1">Section, TableNumbers kolonları. Örn: A | 1,2,3,4,5</p>
+        </div>
+      </div>
 
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <div className="relative flex-1 min-w-[200px] max-w-xs">
@@ -278,6 +468,13 @@ export default function FloorPlanPage() {
         >
           <Settings2 className="w-4 h-4" />
           Manage Sections
+        </button>
+        <button
+          onClick={() => { setDeleteMode(!deleteMode); setDeleteConfirm(null); }}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg ${deleteMode ? "bg-red-600 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`}
+        >
+          <Trash2 className="w-4 h-4" />
+          {deleteMode ? "İptal" : "Masa Sil"}
         </button>
         <button onClick={() => load()} disabled={loading} className="p-2 rounded-lg bg-slate-800 text-slate-400 hover:bg-slate-700">
           <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
@@ -497,6 +694,82 @@ export default function FloorPlanPage() {
           onClose={() => { setReservationInfoModal(null); setReserveError(null); }}
           onCancelReservation={onCancelReservation}
         />
+      )}
+
+      {deleteConfirm && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={() => setDeleteConfirm(null)}>
+          <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-lg font-bold text-white mb-2">Masa Sil</h2>
+            <p className="text-slate-300 text-sm mb-4">
+              Masa <strong>{deleteConfirm.number}</strong> silinecek. Açık sipariş varsa o da silinecek. Emin misiniz?
+            </p>
+            <div className="flex gap-2">
+              <button onClick={() => setDeleteConfirm(null)} className="flex-1 px-4 py-2 rounded-lg bg-slate-700 text-slate-200">Hayır</button>
+              <button onClick={confirmDeleteTable} disabled={deleting} className="flex-1 px-4 py-2 rounded-lg bg-red-600 text-white font-medium">
+                {deleting ? "..." : "Evet, Sil"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {addTableOpen && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={() => !addingTable && setAddTableOpen(false)}>
+          <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-lg font-bold text-white mb-4">Masa Ekle</h2>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm text-slate-400 mb-1">Masa No</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={addTableNum}
+                  onChange={(e) => setAddTableNum(e.target.value)}
+                  placeholder="1"
+                  className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-400 mb-1">Masa Adı</label>
+                <input
+                  type="text"
+                  value={addTableName}
+                  onChange={(e) => setAddTableName(e.target.value)}
+                  placeholder="Masa 1"
+                  className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-400 mb-1">Bölüm</label>
+                <select
+                  value={addTableSection}
+                  onChange={(e) => setAddTableSection(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white"
+                >
+                  {SECTIONS.map((s) => (
+                    <option key={s} value={s}>Bölüm {s}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm text-slate-400 mb-1">Kapasite</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={addTableCapacity}
+                  onChange={(e) => setAddTableCapacity(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 mt-4">
+              <button onClick={() => setAddTableOpen(false)} disabled={addingTable} className="flex-1 px-4 py-2 rounded-lg bg-slate-700 text-slate-200">İptal</button>
+              <button onClick={submitAddTable} disabled={addingTable} className="flex-1 px-4 py-2 rounded-lg bg-sky-600 text-white font-medium">
+                {addingTable ? "..." : "Ekle"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

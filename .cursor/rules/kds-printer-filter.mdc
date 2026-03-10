@@ -1,0 +1,95 @@
+---
+description: KDS printer/station filtering - production-grade fix requirements
+globs: "**/kds/**/*.kt,**/Kds*.kt,**/KDS*.kt"
+alwaysApply: false
+---
+
+# KDS Printer/Station Selection Fix
+
+KDS printer/istasyon seçimi düzgün çalışmıyor. Bunu production-grade şekilde düzelt.
+
+## NE İSTİYORUM
+
+Her KDS ekranı / KDS cihazı sadece seçili printer/istasyonlara ait ürünleri göstersin.
+
+**Örnek:**
+- bir KDS sadece "6'lı ocak" ürünlerini görsün
+- başka bir KDS sadece "Bar" ürünlerini görsün
+- başka bir KDS sadece "4'lü ocak" ürünlerini görsün
+- bazı KDS ekranları birden fazla printer seçebilsin
+
+**Mantık:** KDS cihazına atanmış printer(lar) ile ürünün bağlı olduğu printer(lar) eşleşiyorsa ürün görünsün. Eşleşmiyorsa görünmesin.
+
+**Şu an gördüğüm sorun:**
+- KDS ekranında "Printer: All" gibi davranıyor
+- seçili printer/istasyon filtresi düzgün uygulanmıyor olabilir
+- ürün/kategori printer bilgisi var ama KDS görünürlüğü buna göre ayrılmıyor olabilir
+
+## MUTLAKA İNCELE
+
+- ProductEntity.printers
+- CategoryEntity.printers
+- PrinterEntity
+- KDS item filtering / rendering logic
+- KDS settings ekranı veya device assignment mantığı
+- printer id / printer name / printerType eşleme mantığı
+- sync sırasında printer listelerinin doğru gelmesi
+
+## DOĞRU MANTIK
+
+1. Her KDS cihazı / KDS ekranı için ayrı ayar: `assignedPrinterIds: [ ... ]`
+2. Ürün için printer çözümü: önce product.printers, boşsa category.printers
+3. KDS görünürlük kuralı: ürünün printer listesi ile KDS assignedPrinterIds kesişiyorsa göster, kesişmiyorsa gösterme
+4. KDS assignedPrinterIds boşsa: "All" modu olabilir ama açık ve kontrollü olsun
+5. KDS başlığında gerçek seçim görünsün: "Printer: All" yerine örn. "Printers: Bar, 6-Burner"
+
+## İSTEDİĞİM ÖZELLİKLER
+
+### A) KDS settings / config
+- KDS ekranında hangi printer(lar) seçili ayarlanabilsin
+- tek veya çoklu seçim
+- seçim kalıcı saklansın (prefs/datastore)
+- app yeniden açılınca seçim korunsun
+
+### B) KDS filtering
+- ürünler sadece seçili printer'lara göre gelsin
+- category fallback çalışsın
+- printerId üzerinden güvenli çalışsın
+- sadece isim/type text karşılaştırmasına güvenmesin
+
+### C) UI
+- seçili printer bilgisi görünsün
+- seçim yoksa "All printers" yazsın
+- birden fazla seçimde isimleri göster
+
+### D) Sync / mapping
+- API printer listeleri doğru parse edilsin
+- product/category/printer mapping bozuksa düzelt
+
+## MUHTEMEL KÖK NEDENLER
+
+1. KDS cihazına printer atama mantığı yok / eksik
+2. ürün printer listesi var ama KDS filtresi kullanmıyor
+3. product/category fallback hatalı
+4. printerId yerine name/type ile eşleme
+5. KDS varsayılan olarak hep "All" kalıyor
+
+## İSTEDİĞİM ÇIKTI
+
+- Current root cause
+- Applied KDS printer assignment logic
+- Files changed
+- How selected printers are stored
+- Final KDS visibility rule
+- How to test
+
+## TESTLER
+
+1. Sadece Bar seçili KDS → sadece Bar ürünleri
+2. Sadece 6'lı ocak seçili KDS → ona ait ürünler
+3. Bar + 6'lı ocak seçili → sadece bu ikisine ait ürünler
+4. Üründe printer yok ama category'de varsa → category fallback
+5. Seçim boşsa "All printers" davranışı net
+6. App kapanıp açılınca seçim korunmalı
+
+**Kodda olmayan şeyi yapıldı diye yazma. Minimal ama temiz çözüm yap.**

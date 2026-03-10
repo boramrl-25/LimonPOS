@@ -854,6 +854,31 @@ export async function createTable(table: Record<string, unknown>) {
   return res.json();
 }
 
+export async function deleteTable(tableId: string) {
+  const res = await fetch(`${API_URL}/tables/${tableId}`, {
+    method: "DELETE",
+    headers: headers(),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to delete table");
+  }
+  return res.json();
+}
+
+export async function importTables(rows: Array<Record<string, unknown>>) {
+  const res = await fetch(`${API_URL}/tables/import`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify(rows),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to import tables");
+  }
+  return res.json();
+}
+
 export type FloorPlanSections = { A: number[]; B: number[]; C: number[]; D: number[]; E: number[] };
 
 export async function getFloorPlanSections(): Promise<FloorPlanSections> {
@@ -869,6 +894,19 @@ export async function updateFloorPlanSections(sections: FloorPlanSections) {
     body: JSON.stringify(sections),
   });
   if (!res.ok) throw new Error("Failed to update floor plan sections");
+  return res.json();
+}
+
+export async function importFloorPlanSections(rows: Array<Record<string, unknown>>) {
+  const res = await fetch(`${API_URL}/floor-plan-sections/import`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify(rows),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to import section filters");
+  }
   return res.json();
 }
 

@@ -337,6 +337,10 @@ export async function updateTable(id, data) {
   return prisma.table.update({ where: { id }, data });
 }
 
+export async function deleteTable(id) {
+  return prisma.table.delete({ where: { id } });
+}
+
 export async function upsertTables(tables) {
   for (const t of tables) {
     await prisma.table.upsert({
