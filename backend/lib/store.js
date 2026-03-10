@@ -378,6 +378,49 @@ export async function createPayment(data) {
   return prisma.payment.create({ data });
 }
 
+/**
+ * Atomically: create payments, mark order as paid, set linked tables to free.
+ * Prevents race conditions when B pays while A has the table open.
+ * @param {Object} opts
+ * @param {string} opts.orderId
+ * @param {Array<{id:string, amount:number, method?:string, received_amount?:number, change_amount?:number}>} opts.paymentPayloads - with id pre-generated
+ * @param {string} opts.userId
+ * @param {number} opts.now - timestamp ms
+ */
+export async function completePaymentTransaction({ orderId, paymentPayloads, userId, now }) {
+  return prisma.$transaction(async (tx) => {
+    for (const p of paymentPayloads) {
+      await tx.payment.create({
+        data: {
+          id: p.id,
+          order_id: orderId,
+          amount: p.amount,
+          method: p.method || "cash",
+          received_amount: p.received_amount ?? p.amount,
+          change_amount: p.change_amount ?? 0,
+          user_id: userId,
+          created_at: new Date(now),
+        },
+      });
+    }
+    await tx.order.update({
+      where: { id: orderId },
+      data: { status: "paid", paid_at: new Date(now) },
+    });
+    await tx.table.updateMany({
+      where: { current_order_id: orderId },
+      data: {
+        status: "free",
+        current_order_id: null,
+        guest_count: 0,
+        waiter_id: null,
+        waiter_name: null,
+        opened_at: null,
+      },
+    });
+  });
+}
+
 // ============ VoidLog ============
 export async function createVoidLog(data) {
   return prisma.voidLog.create({ data });

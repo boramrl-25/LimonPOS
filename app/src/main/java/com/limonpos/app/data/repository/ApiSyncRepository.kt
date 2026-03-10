@@ -562,14 +562,22 @@ class ApiSyncRepository @Inject constructor(
         }
         val localOccupied = tableDao.getAllTables().first().filter { it.currentOrderId != null }
             .associateBy { it.id }
+        val orderIdsClosedByApi = mutableSetOf<String>()
+        for (dto in dtos) {
+            if (dto.status == "free" && dto.currentOrderId.isNullOrBlank()) {
+                localOccupied[dto.id]?.currentOrderId?.let { id -> orderIdsClosedByApi.add(id) }
+            }
+        }
         tableDao.deleteAll()
         val entities = dtos.map { dto ->
                 val local = localOccupied[dto.id]
                 val res = dto.reservation
                 // Server says reserved → always use reserved (web and app must show same state).
+                // Server says free → trust it (B may have taken payment; fixes race where A sees table open after B paid).
                 // Only use local status when preserving local occupied order (server has no order yet).
                 val isReservedFromApi = dto.status == "reserved" || res != null
-                val useLocalOccupied = !isReservedFromApi && local != null && dto.currentOrderId.isNullOrBlank() && local.currentOrderId != null
+                val apiSaysFree = dto.status == "free"
+                val useLocalOccupied = !isReservedFromApi && !apiSaysFree && local != null && dto.currentOrderId.isNullOrBlank() && local.currentOrderId != null
                 TableEntity(
                     id = dto.id,
                     number = dto.number.toString(),
@@ -599,6 +607,37 @@ class ApiSyncRepository @Inject constructor(
                 )
             }
         tableDao.insertTables(entities)
+        for (orderId in orderIdsClosedByApi) {
+            try {
+                val resp = apiService.getOrder(orderId)
+                if (!resp.isSuccessful) continue
+                val dto = resp.body() ?: continue
+                val items = dto.items ?: emptyList()
+                val voidedIds = voidLogDao.getVoidedItemIdsForOrder(dto.id).toSet()
+                val filteredItems = items.filter { it.id !in voidedIds }
+                val localItems = orderItemDao.getOrderItems(dto.id).first()
+                val orderEntity = OrderEntity(
+                    id = dto.id,
+                    tableId = dto.tableId,
+                    tableNumber = dto.tableNumber,
+                    waiterId = dto.waiterId,
+                    waiterName = dto.waiterName,
+                    status = dto.status,
+                    subtotal = dto.subtotal,
+                    taxAmount = dto.taxAmount,
+                    discountPercent = dto.discountPercent,
+                    discountAmount = dto.discountAmount,
+                    total = dto.total,
+                    createdAt = dto.createdAt,
+                    paidAt = dto.paidAt,
+                    syncStatus = "SYNCED"
+                )
+                orderDao.insertOrder(orderEntity)
+                upsertOrderItemsFromApi(dto.id, filteredItems, localItems)
+            } catch (e: Exception) {
+                Log.e("ApiSync", "syncTables: fetch closed order $orderId error: ${e.message}")
+            }
+        }
     }
 
     /** Pulls orders (with items) from API for tables that have currentOrderId. Line-identity upsert: no fuzzy merge, no delete-all. */

@@ -67,8 +67,16 @@ export default function FloorPlanPage() {
   }, []);
 
   useEffect(() => {
-    const t = setInterval(load, 10000); // her 10 sn'de bir güncelle
+    const t = setInterval(load, 5000); // her 5 sn'de bir güncelle (masa kapandı senkronizasyonu için)
     return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") load();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
   }, []);
 
   // Sound + toast when a table first has delayed items; cooldown per table to avoid spam

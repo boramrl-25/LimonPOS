@@ -2213,17 +2213,14 @@ app.post("/api/payments", authMiddleware, async (req, res) => {
   const { order_id, payments } = req.body;
   console.log("[Zoho] POST /api/payments received:", order_id, "payments:", payments?.length, "total:", payments?.reduce((s, p) => s + (p.amount || 0), 0));
   const now = Date.now();
-  for (const p of payments) {
-    await store.createPayment({
-      id: `pay_${uuid().slice(0, 8)}`, order_id, amount: p.amount, method: p.method || "cash",
-      received_amount: p.received_amount ?? p.amount, change_amount: p.change_amount ?? 0, user_id: userId, created_at: new Date(now),
-    });
-  }
-  const allPayments = await store.getPayments();
-  const totalPaid = allPayments.filter((p) => p.order_id === order_id).reduce((s, p) => s + p.amount, 0);
+
   const order = await store.getOrderById(order_id);
   const items = await store.getOrderItems(order_id);
-  const totalMatch = Math.abs(totalPaid - (order?.total || 0)) < 0.01;
+  const existingPayments = await store.getPayments();
+  const totalExisting = existingPayments.filter((p) => p.order_id === order_id).reduce((s, p) => s + p.amount, 0);
+  const totalNew = (payments || []).reduce((s, p) => s + (p.amount || 0), 0);
+  const totalPaid = totalExisting + totalNew;
+  const totalMatch = order && Math.abs(totalPaid - (order.total || 0)) < 0.01;
   const hasItems = items.length > 0;
   const notSentYet = !order?.zoho_receipt_id;
   const willPushZoho = order && totalMatch && hasItems && notSentYet;
@@ -2244,21 +2241,42 @@ app.post("/api/payments", authMiddleware, async (req, res) => {
   else if (!hasItems) console.log("[Zoho] Skip: 0 items for order", order_id, "- App must sync items before payment (includeAllItems=true in ensureOrderExistsOnApi)");
   else if (!notSentYet) console.log("[Zoho] Skip: already sent (zoho_receipt_id:", order.zoho_receipt_id, ")");
 
+  const paymentPayloads = (payments || []).map((p) => ({
+    id: `pay_${uuid().slice(0, 8)}`,
+    amount: p.amount,
+    method: p.method || "cash",
+    received_amount: p.received_amount ?? p.amount,
+    change_amount: p.change_amount ?? 0,
+  }));
+
+  if (order && totalMatch && paymentPayloads.length > 0) {
+    await store.completePaymentTransaction({
+      orderId: order_id,
+      paymentPayloads,
+      userId,
+      now,
+    });
+  } else if (order && paymentPayloads.length > 0) {
+    for (const p of paymentPayloads) {
+      await store.createPayment({
+        id: p.id,
+        order_id,
+        amount: p.amount,
+        method: p.method || "cash",
+        received_amount: p.received_amount ?? p.amount,
+        change_amount: p.change_amount ?? 0,
+        user_id: userId,
+        created_at: new Date(now),
+      });
+    }
+  }
+
   if (order && willPushZoho) {
     console.log("[Zoho] Pushing order", order_id, "to Zoho Books...");
     const orderPayments = (await store.getPayments()).filter((p) => p.order_id === order_id);
     const products = await store.getAllProducts();
     const ok = await pushToZohoBooks(order, items, orderPayments.map((p) => ({ amount: p.amount, method: p.method })), products);
     console.log("[Zoho] Result:", ok ? "OK" : "FAILED");
-  }
-  if (order && Math.abs(totalPaid - (order.total || 0)) < 0.01) {
-    await store.updateOrder(order_id, { status: "paid", paid_at: new Date(now) });
-    const tablesForPay = await store.getTables();
-    for (const t of tablesForPay) {
-      if (t.current_order_id === order_id) {
-        await store.updateTable(t.id, { status: "free", current_order_id: null, guest_count: 0, waiter_id: null, waiter_name: null, opened_at: null });
-      }
-    }
   }
   res.json({ success: true });
 });

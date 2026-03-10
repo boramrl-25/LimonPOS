@@ -141,17 +141,15 @@ class OrderViewModel @Inject constructor(
                 }
             }
         }
+        // Full sync every 12s so table/order changes (e.g. B paid while A has table open) propagate quickly
         viewModelScope.launch {
             while (true) {
-                delay(20000)
+                delay(12000)
                 try {
                     if (apiSyncRepository.isOnline()) {
-                        if (_uiState.value.categoriesWithProducts.isEmpty()) {
-                            apiSyncRepository.syncFromApi()
-                        } else {
-                            val ok = apiSyncRepository.syncCatalog()
-                            if (!ok) _uiState.update { it.copy(syncError = apiSyncRepository.lastSyncError ?: "Sync error") }
-                        }
+                        val ok = apiSyncRepository.syncFromApi()
+                        if (!ok) _uiState.update { it.copy(syncError = apiSyncRepository.lastSyncError ?: "Sync error") }
+                        loadTable() // refresh table status (e.g. closed by another user)
                         loadCategoriesWithProducts()
                     }
                 } catch (e: Exception) {
@@ -228,6 +226,7 @@ class OrderViewModel @Inject constructor(
                     _orderId.value = null
                     _uiState.update { it.copy(orderWithItems = null) }
                     _isRecalledOrder.value = false
+                    loadTable() // table may have been closed by another user (B paid)
                 }
             } catch (_: Exception) { }
         }
