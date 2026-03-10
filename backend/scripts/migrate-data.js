@@ -396,6 +396,41 @@ async function main() {
     });
     console.log("  Settings: OK");
 
+    // 14b. floor_plan_sections'taki masa numaralarından eksik masaları oluştur
+    const floorSections = data.floor_plan_sections || {};
+    const allTableNumbers = new Set();
+    for (const key of Object.keys(floorSections)) {
+      const arr = floorSections[key];
+      if (Array.isArray(arr)) for (const n of arr) allTableNumbers.add(parseInt(n, 10));
+    }
+    const existingByNumber = new Map();
+    for (const t of tables) {
+      const n = typeof t.number === "number" ? t.number : parseIntSafe(t.number, 0);
+      if (!isNaN(n)) existingByNumber.set(n, t.id);
+    }
+    let floorTablesAdded = 0;
+    for (const num of allTableNumbers) {
+      if (isNaN(num) || num < 1) continue;
+      if (existingByNumber.has(num)) continue;
+      const tid = `table-${num}`;
+      await prisma.table.upsert({
+        where: { id: tid },
+        create: {
+          id: tid,
+          number: num,
+          name: `Masa ${num}`,
+          floor: "Main",
+          status: "free",
+          current_order_id: null,
+          capacity: 4,
+        },
+        update: {},
+      });
+      existingByNumber.set(num, tid);
+      floorTablesAdded++;
+    }
+    if (floorTablesAdded) console.log("  floor_plan_sections'tan masalar oluşturuldu:", floorTablesAdded);
+
     // 15. ZohoConfig
     const zc = data.zoho_config || {};
     await prisma.zohoConfig.upsert({
