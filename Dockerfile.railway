@@ -1,0 +1,14 @@
+# Railway backend - build context = repo root
+# Railway: Root Directory = (empty), RAILWAY_DOCKERFILE_PATH = Dockerfile.railway
+
+FROM node:18-alpine
+WORKDIR /app
+
+COPY backend/package*.json ./
+COPY prisma ./prisma/
+RUN npm ci --omit=dev --ignore-scripts
+RUN npx prisma generate --schema=prisma/schema.prisma
+
+COPY backend/ ./
+EXPOSE 3002
+CMD ["node", "server.js"]

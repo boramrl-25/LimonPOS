@@ -1,9 +1,9 @@
-# Railway API service - ONLY backend. No web/backoffice.
-# Root Directory MUST be set to "backend" in Railway dashboard for this to work.
-# Alternative: If deploying from repo root, this forces backend-only start.
+# Railway API service - Backend only.
+# Root Directory = (empty) - build context must be repo root for prisma + backend.
+# Dockerfile.railway uses COPY backend/ and COPY prisma - both at repo root.
 
 [build]
-buildCommand = "cd backend && npm install"
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile.railway"
 
 [deploy]
-startCommand = "cd backend && node server.js"
