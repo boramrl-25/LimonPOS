@@ -108,8 +108,8 @@ echo "=== 6. Veritabanı tabloları oluşturuluyor... ==="
 echo "💾 Prisma Schema Push..."
 docker compose run --rm backend npx prisma db push --schema=prisma/schema.prisma
 
-echo "🌱 Veritabanı Seed Ediliyor..."
-docker compose run --rm backend npx prisma db seed --schema=prisma/schema.prisma 2>/dev/null || echo "(Seed yok - devam ediliyor)"
+echo "🌱 Başlangıç verileri yükleniyor (seed)..."
+docker compose run --rm backend npx prisma db seed --schema=prisma/schema.prisma
 
 # 7. BACKEND VE FRONTEND BAŞLAT (Tablolar hazır)
 echo ""

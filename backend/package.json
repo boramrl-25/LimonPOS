@@ -17,7 +17,8 @@
     "db:studio": "prisma studio"
   },
   "prisma": {
-    "schema": "../prisma/schema.prisma"
+    "schema": "../prisma/schema.prisma",
+    "seed": "node scripts/seed.js"
   },
   "dependencies": {
     "@prisma/client": "^6.9.0",
