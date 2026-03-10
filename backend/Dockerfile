@@ -6,10 +6,10 @@ WORKDIR /app
 COPY backend/package*.json ./
 COPY prisma ./prisma/
 
-# Install dependencies
-RUN npm ci --omit=dev
+# Install dependencies (skip postinstall - schema path differs in Docker)
+RUN npm ci --omit=dev --ignore-scripts
 
-# Generate Prisma client
+# Generate Prisma client (schema at ./prisma in build context)
 RUN npx prisma generate --schema=prisma/schema.prisma
 
 # Copy backend source
