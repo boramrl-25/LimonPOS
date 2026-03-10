@@ -106,19 +106,21 @@ export default function FloorPlanPage() {
   }
 
   const onMain = tables.filter((t) => (t.floor || "Main") === "Main");
-  const filtered = onMain.filter((t) => {
-    const num = parseInt(String(t.number), 10);
-    if (selectedSection !== "Main") {
-      const secNums = sections[selectedSection as keyof FloorPlanSections] || [];
-      if (!secNums.includes(num)) return false;
-    }
-    if (search.trim()) {
-      const q = search.trim().toLowerCase();
-      if (!String(t.number).toLowerCase().includes(q) && !String(t.name || "").toLowerCase().includes(q))
-        return false;
-    }
-    return true;
-  });
+  const filtered = onMain
+    .filter((t) => {
+      const num = parseInt(String(t.number), 10);
+      if (selectedSection !== "Main") {
+        const secNums = sections[selectedSection as keyof FloorPlanSections] || [];
+        if (!secNums.includes(num)) return false;
+      }
+      if (search.trim()) {
+        const q = search.trim().toLowerCase();
+        if (!String(t.number).toLowerCase().includes(q) && !String(t.name || "").toLowerCase().includes(q))
+          return false;
+      }
+      return true;
+    })
+    .sort((a, b) => parseInt(String(a.number), 10) - parseInt(String(b.number), 10));
 
   function addToSection(key: string) {
     const n = parseInt(addNum, 10);
