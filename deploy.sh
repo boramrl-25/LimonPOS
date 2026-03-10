@@ -88,27 +88,37 @@ PORT=3002
 NODE_ENV=production
 EOF
 
-# 4. SISTEMI INSA ET VE AYAGA KALDIR
+# 4. IMAJLARI INSA ET
 echo ""
 echo "=== 3. Docker imajları inşa ediliyor... (Next.js build biraz zaman alabilir) ==="
-docker compose up -d --build
+docker compose build
 
-# 5. VERITABANI YAPILANDIRMASI (Healthcheck sayesinde daha güvenli)
+# 5. ÖNCE SADECE DB VE REDIS BAŞLAT (Backend tablolar oluşmadan başlamasın)
 echo ""
-echo "=== 4. Servislerin stabil hale gelmesi bekleniyor... ==="
+echo "=== 4. Veritabanı ve Redis başlatılıyor... ==="
+docker compose up -d db redis
+
+echo ""
+echo "=== 5. DB hazır olana kadar bekleniyor... ==="
 sleep 25
 
+# 6. TABLOLARI OLUŞTUR (Backend başlamadan önce!)
 echo ""
-echo "=== 5. Veritabanı yapılandırması... ==="
+echo "=== 6. Veritabanı tabloları oluşturuluyor... ==="
 echo "💾 Prisma Schema Push..."
-docker compose exec -T backend npx prisma db push --schema=prisma/schema.prisma
+docker compose run --rm backend npx prisma db push --schema=prisma/schema.prisma
 
 echo "🌱 Veritabanı Seed Ediliyor..."
-docker compose exec -T backend npx prisma db seed --schema=prisma/schema.prisma 2>/dev/null || echo "(Seed yok - devam ediliyor)"
+docker compose run --rm backend npx prisma db seed --schema=prisma/schema.prisma 2>/dev/null || echo "(Seed yok - devam ediliyor)"
 
-# 6. FIREWALL VE ERISIM BILGILERI
+# 7. BACKEND VE FRONTEND BAŞLAT (Tablolar hazır)
 echo ""
-echo "=== 6. Güvenlik duvarı (ufw)... ==="
+echo "=== 7. Backend ve Frontend başlatılıyor... ==="
+docker compose up -d backend frontend
+
+# 8. FIREWALL VE ERISIM BILGILERI
+echo ""
+echo "=== 8. Güvenlik duvarı (ufw)... ==="
 ufw allow 3000/tcp 2>/dev/null || true
 ufw allow 3002/tcp 2>/dev/null || true
 ufw reload 2>/dev/null || true
