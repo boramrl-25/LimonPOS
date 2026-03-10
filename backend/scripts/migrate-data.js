@@ -32,6 +32,14 @@ async function main() {
   }
   if (!fs.existsSync(DATA_FILE)) {
     console.error("data.json not found:", DATA_FILE);
+    console.error("Lütfen data.json dosyasını sunucuya yükleyin: scp backend/data.json root@SUNUCU_IP:~/LimonPOS/backend/");
+    process.exit(1);
+  }
+  const stat = fs.statSync(DATA_FILE);
+  if (!stat.isFile()) {
+    console.error("HATA: data.json bir dizin olarak var. Silip tekrar deneyin:");
+    console.error("  rm -rf backend/data.json");
+    console.error("Sonra data.json dosyasını yükleyin.");
     process.exit(1);
   }
 
