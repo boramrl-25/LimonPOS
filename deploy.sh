@@ -56,6 +56,9 @@ services:
       DATABASE_URL: "postgresql://postgres:rv7RAingkwfq@db:5432/limonpos?schema=public"
       PORT: 3002
       NODE_ENV: production
+      DATA_DIR: /data
+    volumes:
+      - limonpos_data:/data
     depends_on:
       db:
         condition: service_healthy
@@ -79,6 +82,7 @@ services:
 
 volumes:
   db-data:
+  limonpos_data:
 EOF
 
 # 3. BACKEND .ENV DOSYASINI HAZIRLA
