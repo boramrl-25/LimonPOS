@@ -170,9 +170,32 @@ async function main() {
     }
     console.log("  Tables:", tables.length);
 
-    // 8. Orders
+    // 7b. Eksik masaları oluştur (Orders'daki table_id referansları için)
     const orders = data.orders || [];
+    const tableIds = new Set(tables.map((t) => t.id));
+    let extraTables = 0;
     for (const o of orders) {
+      const tid = o.table_id;
+      if (tid && !tableIds.has(tid)) {
+        await prisma.table.upsert({
+          where: { id: tid },
+          create: {
+            id: tid,
+            number: 999,
+            name: `Masa ${tid}`,
+            floor: "Main",
+            status: "free",
+            current_order_id: null,
+          },
+          update: {},
+        });
+        tableIds.add(tid);
+        extraTables++;
+      }
+    }
+    if (extraTables) console.log("  Eksik masalar oluşturuldu:", extraTables);
+
+    // 8. Orders
       await prisma.order.upsert({
         where: { id: o.id },
         create: {
