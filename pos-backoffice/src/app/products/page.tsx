@@ -165,10 +165,17 @@ export default function ProductsPage() {
   }
 
   function togglePrinter(id: string) {
-    setForm((f) => ({
-      ...f,
-      printers: f.printers.includes(id) ? f.printers.filter((x) => x !== id) : [...f.printers, id],
-    }));
+    setForm((f) => {
+      const next = f.printers.includes(id)
+        ? f.printers.filter((x) => x !== id)
+        : [...f.printers.filter((x) => x !== id), id];
+      next.sort((a, b) => {
+        const ia = printers.findIndex((pr) => pr.id === a);
+        const ib = printers.findIndex((pr) => pr.id === b);
+        return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib);
+      });
+      return { ...f, printers: next };
+    });
   }
 
   function toggleModifierGroup(id: string) {

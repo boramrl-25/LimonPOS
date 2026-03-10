@@ -648,10 +648,11 @@ app.post("/api/printers", authMiddleware, async (req, res) => {
   await ensurePrismaReady();
   const id = req.body.id || `pr_${uuid().slice(0, 8)}`;
   const body = req.body;
+  const enabled = body.enabled === false || body.enabled === 0 ? 0 : 1;
   const pr = await store.createPrinter({
     id, name: body.name || "Printer", printer_type: body.printer_type || "kitchen",
     ip_address: body.ip_address || "", port: body.port ?? 9100, connection_type: body.connection_type || "network",
-    status: body.status || "offline", is_backup: body.is_backup ? 1 : 0, kds_enabled: body.kds_enabled !== false ? 1 : 0,
+    status: body.status || "offline", is_backup: body.is_backup ? 1 : 0, kds_enabled: body.kds_enabled !== false ? 1 : 0, enabled,
   });
   res.json(pr);
 });
@@ -660,12 +661,14 @@ app.put("/api/printers/:id", authMiddleware, async (req, res) => {
   await ensurePrismaReady();
   const { id } = req.params;
   const body = req.body;
+  const data = {
+    name: body.name, printer_type: body.printer_type || "kitchen", ip_address: body.ip_address || "",
+    port: body.port ?? 9100, connection_type: body.connection_type || "network", status: body.status || "offline",
+    is_backup: body.is_backup ? 1 : 0, kds_enabled: body.kds_enabled !== false ? 1 : 0,
+  };
+  if (body.enabled !== undefined) data.enabled = body.enabled === false || body.enabled === 0 ? 0 : 1;
   try {
-    const pr = await store.updatePrinter(id, {
-      name: body.name, printer_type: body.printer_type || "kitchen", ip_address: body.ip_address || "",
-      port: body.port ?? 9100, connection_type: body.connection_type || "network", status: body.status || "offline",
-      is_backup: body.is_backup ? 1 : 0, kds_enabled: body.kds_enabled !== false ? 1 : 0,
-    });
+    const pr = await store.updatePrinter(id, data);
     res.json(pr);
   } catch (e) {
     if (e.code === "P2025") return res.status(404).json({ error: "Not found" });

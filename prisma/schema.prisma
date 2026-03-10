@@ -78,6 +78,7 @@ model Printer {
   status          String?  @default("offline")
   is_backup       Int      @default(0)
   kds_enabled     Int      @default(0)
+  enabled         Int      @default(1)   // 1=on (include in print jobs), 0=off
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }

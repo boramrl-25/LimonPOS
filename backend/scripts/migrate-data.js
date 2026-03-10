@@ -129,8 +129,8 @@ async function main() {
     for (const p of printers) {
       await prisma.printer.upsert({
         where: { id: p.id },
-        create: { id: p.id, name: p.name, printer_type: p.printer_type || "kitchen", ip_address: p.ip_address || null, port: p.port ?? 9100, connection_type: p.connection_type || "network", status: p.status || "offline", is_backup: p.is_backup ? 1 : 0, kds_enabled: p.kds_enabled ? 1 : 0 },
-        update: { name: p.name, printer_type: p.printer_type, ip_address: p.ip_address, port: p.port, connection_type: p.connection_type, status: p.status },
+        create: { id: p.id, name: p.name, printer_type: p.printer_type || "kitchen", ip_address: p.ip_address || null, port: p.port ?? 9100, connection_type: p.connection_type || "network", status: p.status || "offline", is_backup: p.is_backup ? 1 : 0, kds_enabled: p.kds_enabled ? 1 : 0, enabled: p.enabled === false || p.enabled === 0 ? 0 : 1 },
+        update: { name: p.name, printer_type: p.printer_type, ip_address: p.ip_address, port: p.port, connection_type: p.connection_type, status: p.status, enabled: p.enabled === false || p.enabled === 0 ? 0 : 1 },
       });
     }
     console.log("  Printers:", printers.length);
