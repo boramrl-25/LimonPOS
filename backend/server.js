@@ -3,7 +3,7 @@ console.log("[startup] Node", process.version, "PORT=" + (process.env.PORT || "3
 import express from "express";
 import cors from "cors";
 import { v4 as uuid } from "uuid";
-import { db, getDataFileInfo } from "./db.js";
+import * as store from "./lib/store.js";
 import { pushToZohoBooks, getZohoItems, getZohoItemGroups, getZohoContacts, syncFromZoho } from "./zoho.js";
 import {
   getBusinessDayRange,
@@ -57,82 +57,6 @@ app.use(express.json());
 
 const DEFAULT_SETUP = { id: "u1", name: "Setup", pin: "2222", role: "setup", active: 1, permissions: "[]", cash_drawer_permission: 0 };
 
-const offsetMin = () => (db.data?.settings?.timezone_offset_minutes ?? 0) | 0;
-
-/** Business day range if opening/closing configured; else calendar day. */
-function getTodayRange() {
-  const s = db.data?.settings || {};
-  const opening = s.opening_time;
-  const closing = s.closing_time;
-  const off = offsetMin();
-  const now = Date.now();
-  if (opening && closing && !isNaN(parseTimeToMinutes(opening)) && !isNaN(parseTimeToMinutes(closing))) {
-    const r = getBusinessDayRange(now, opening, closing, off);
-    if (r) return r;
-  }
-  const dayMs = 24 * 60 * 60 * 1000;
-  const localNow = now + off * 60 * 1000;
-  const startTs = Math.floor(localNow / dayMs) * dayMs - off * 60 * 1000;
-  return { startTs, endTs: startTs + dayMs };
-}
-
-/** Verilen gün (YYYY-MM-DD) için: business day kullanılıyorsa o güne ait range; değilse calendar day. */
-function getDayBounds(dateStr) {
-  const s = db.data?.settings || {};
-  const opening = s.opening_time;
-  const closing = s.closing_time;
-  const off = offsetMin();
-  if (opening && closing && !isNaN(parseTimeToMinutes(opening)) && !isNaN(parseTimeToMinutes(closing))) {
-    const r = getBusinessDayRangeForDate(dateStr, opening, closing, off);
-    if (r) return r;
-  }
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
-  if (!match) return null;
-  const y = parseInt(match[1], 10);
-  const m = parseInt(match[2], 10) - 1;
-  const d = parseInt(match[3], 10);
-  const dayMs = 24 * 60 * 60 * 1000;
-  const startTs = Date.UTC(y, m, d) - off * 60 * 1000;
-  return { startTs, endTs: startTs + dayMs };
-}
-
-/** Belirli gün aralığı [startTs, endTs) için satış özeti. */
-function getSalesSummaryForRange(startTs, endTs) {
-  const orders = db.data.orders || [];
-  const payments = db.data.payments || [];
-  const paymentMethods = db.data.payment_methods || [];
-  const voidLogs = db.data.void_logs || [];
-  const rangeVoidsForExclusion = voidLogs.filter((v) => v.created_at >= startTs && v.created_at < endTs && (v.type === "refund_full" || v.type === "recalled_void"));
-  const fullyVoidedOrderIds = new Set(rangeVoidsForExclusion.map((v) => v.order_id).filter(Boolean));
-  const paidInRange = orders.filter((o) => {
-    if (o.status !== "paid") return false;
-    if (fullyVoidedOrderIds.has(o.id)) return false;
-    const paidAt = o.paid_at ?? o.updated_at ?? o.created_at ?? 0;
-    return paidAt >= startTs && paidAt < endTs;
-  });
-  const paidOrderIds = new Set(paidInRange.map((o) => o.id));
-  let totalCash = 0;
-  let totalCard = 0;
-  for (const p of payments) {
-    if (!paidOrderIds.has(p.order_id)) continue;
-    const code = resolvePaymentMethodCode(p.method, paymentMethods);
-    if (code === "cash") totalCash += p.amount || 0;
-    else if (code === "card") totalCard += p.amount || 0;
-  }
-  const totalFromPayments = totalCash + totalCard;
-  const totalFromOrders = paidInRange.reduce((s, o) => s + (Number(o.total) || 0), 0);
-  const totalSales = totalFromPayments > 0 ? totalFromPayments : totalFromOrders;
-  if (totalFromPayments === 0 && totalFromOrders > 0) {
-    totalCash = totalFromOrders;
-    totalCard = 0;
-  }
-  const rangeVoids = voidLogs.filter((v) => v.created_at >= startTs && v.created_at < endTs);
-  const totalVoidAmount = rangeVoids.filter((v) => v.type !== "refund_full" && v.type !== "recalled_void").reduce((s, v) => s + (v.amount || 0), 0);
-  const totalRefundAmount = rangeVoids.filter((v) => v.type === "refund_full" || v.type === "refund").reduce((s, v) => s + (v.amount || 0), 0);
-  const netSales = totalSales - totalRefundAmount;
-  return { startTs, endTs, paidOrderIds, totalCash, totalCard, totalSales, totalVoidAmount, totalRefundAmount, netSales, paidToday: paidInRange };
-}
-
 /** Resolve payment method to cash/card from id, code or name. */
 function resolvePaymentMethodCode(method, paymentMethods) {
   if (!method) return null;
@@ -148,259 +72,19 @@ function resolvePaymentMethodCode(method, paymentMethods) {
   return null;
 }
 
-/** Bugünün başlangıç timestamp'i (business day veya calendar day). */
-function getTodayStartTimestamp() {
-  return getTodayRange().startTs;
-}
-
-/** Tek kaynak: bugünkü ödemeler + iade/void. Dashboard ve daily-sales aynı mantığı kullanır. */
-function getTodaySalesSummary() {
-  const range = getTodayRange();
-  const summary = getSalesSummaryForRange(range.startTs, range.endTs);
-  return { ...summary, todayTs: range.startTs, todayEndTs: range.endTs };
-}
-
-async function ensureData() {
-  await db.read();
-  if (!db.data) db.data = { users: [], categories: [], products: [], printers: [], payment_methods: [], orders: [], order_items: [], payments: [], tables: [], void_logs: [], void_requests: [], closed_bill_access_requests: [], zoho_config: {}, migrations: {}, devices: [], floor_plan_sections: null, discount_requests: [], table_reservations: [] };
-  if (!db.data.migrations) db.data.migrations = {};
-  if (!Array.isArray(db.data.devices)) db.data.devices = [];
-  if (!Array.isArray(db.data.products)) db.data.products = [];
-  if (!Array.isArray(db.data.orders)) db.data.orders = [];
-  if (!Array.isArray(db.data.order_items)) db.data.order_items = [];
-  if (!Array.isArray(db.data.discount_requests)) db.data.discount_requests = [];
-  if (!Array.isArray(db.data.table_reservations)) db.data.table_reservations = [];
-  let needWrite = false;
-  if (!db.data.floor_plan_sections) {
-    db.data.floor_plan_sections = { A: [29, 30, 31, 32, 33, 34, 35, 40], B: [24, 25, 26, 27, 28, 29, 36, 37, 38, 39], C: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], D: [11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21], E: [41, 42, 43] };
-    needWrite = true;
-  }
-  if (!db.data.users?.length) {
-    db.data.users = [DEFAULT_ADMIN];
-    needWrite = true;
-  }
-  if (!db.data.categories?.length) {
-    db.data.categories = [{ id: "cat1", name: "Beverages", color: "#84CC16", sort_order: 0, active: 1, show_till: 0, modifier_groups: "[]", printers: "[]" }];
-    needWrite = true;
-  }
-  if (!db.data.payment_methods?.length) {
-    db.data.payment_methods = [
-      { id: "pm1", name: "Cash", code: "cash", active: 1, sort_order: 0 },
-      { id: "pm2", name: "Card", code: "card", active: 1, sort_order: 1 },
-    ];
-    needWrite = true;
-  }
-  // Tables: only fill defaults when truly empty AND no orders (first run). If we have orders but tables empty (e.g. bad restart), rebuild from orders so data is not lost.
-  if (!Array.isArray(db.data.tables)) db.data.tables = [];
-  if (!Array.isArray(db.data.audit_log)) db.data.audit_log = [];
-  if (!Array.isArray(db.data.eod_logs)) db.data.eod_logs = [];
-  if (!Array.isArray(db.data.daily_cash_entries)) db.data.daily_cash_entries = [];
-  if (!db.data.settings || typeof db.data.settings.timezone_offset_minutes !== "number") {
-    db.data.settings = db.data.settings || {};
-    db.data.settings.timezone_offset_minutes = (db.data.settings.timezone_offset_minutes ?? 0) | 0;
-  }
-  if (typeof db.data.settings.overdue_undelivered_minutes !== "number") {
-    db.data.settings.overdue_undelivered_minutes = Math.min(1440, Math.max(1, (db.data.settings.overdue_undelivered_minutes ?? 10) | 0));
-  }
-  if (typeof db.data.settings.opening_time !== "string") db.data.settings.opening_time = db.data.settings.opening_time ?? "07:00";
-  if (typeof db.data.settings.closing_time !== "string") db.data.settings.closing_time = db.data.settings.closing_time ?? "01:30";
-  if (typeof db.data.settings.open_tables_warning_time !== "string") db.data.settings.open_tables_warning_time = db.data.settings.open_tables_warning_time ?? "01:00";
-  if (typeof db.data.settings.auto_close_open_tables !== "boolean") db.data.settings.auto_close_open_tables = !!db.data.settings.auto_close_open_tables;
-  if (typeof db.data.settings.auto_close_payment_method !== "string") db.data.settings.auto_close_payment_method = db.data.settings.auto_close_payment_method ?? "cash";
-  if (typeof db.data.settings.grace_minutes !== "number") db.data.settings.grace_minutes = Math.min(60, Math.max(0, (db.data.settings.grace_minutes ?? 0) | 0));
-  if (typeof db.data.settings.warning_enabled !== "boolean") db.data.settings.warning_enabled = db.data.settings.warning_enabled !== false;
-  if (!Array.isArray(db.data.business_operation_log)) db.data.business_operation_log = [];
-  if (typeof db.data.settings.last_auto_close_for_business_day !== "string") db.data.settings.last_auto_close_for_business_day = db.data.settings.last_auto_close_for_business_day ?? null;
-  if (db.data.tables.length === 0) {
-    const defaultTable = (i) => ({
-      id: `main-${i + 1}`,
-      number: String(i + 1),
-      name: `Table ${i + 1}`,
-      capacity: 4,
-      floor: "Main",
-      status: "free",
-      current_order_id: null,
-      guest_count: 0,
-      waiter_id: null,
-      waiter_name: null,
-      opened_at: null,
-      x: 80 + (i % 10) * 90,
-      y: 50 + Math.floor(i / 10) * 100,
-      width: 80,
-      height: 80,
-      shape: "square",
-    });
-    db.data.tables = Array.from({ length: 43 }, (_, i) => defaultTable(i));
-    const orders = db.data.orders || [];
-    if (orders.length > 0) {
-      for (const order of orders) {
-        const tid = order.table_id;
-        if (!tid) continue;
-        const tIdx = db.data.tables.findIndex((t) => t.id === tid);
-        if (tIdx >= 0) {
-          const t = db.data.tables[tIdx];
-          const isPaid = order.status === "paid";
-          db.data.tables[tIdx] = {
-            ...t,
-            status: isPaid ? "free" : "occupied",
-            current_order_id: isPaid ? null : order.id,
-            waiter_id: isPaid ? null : (order.waiter_id ?? t.waiter_id),
-            waiter_name: isPaid ? null : (order.waiter_name ?? t.waiter_name),
-          };
-        }
-      }
-    }
-    needWrite = true;
-  }
-  if (!Array.isArray(db.data.printers)) db.data.printers = [];
-  if (!Array.isArray(db.data.modifier_groups)) db.data.modifier_groups = [];
-  if (needWrite) await db.write();
-  // Migration: ensure setup user with PIN 2222 exists
-  if (!db.data.migrations.ensureAdminPin1234) {
-    const hasSetupPin = (db.data.users || []).some((u) => String(u.pin) === "2222");
-    if (!hasSetupPin) {
-      const existing = db.data.users.find((u) => u.id === "u1");
-      if (existing) {
-        existing.pin = "2222";
-        existing.name = "Setup";
-        existing.role = "setup";
-        existing.permissions = "[]";
-        existing.cash_drawer_permission = 0;
-      } else {
-        db.data.users = [DEFAULT_SETUP, ...(db.data.users || [])];
-      }
-      await db.write();
-    }
-    db.data.migrations.ensureAdminPin1234 = true;
-    await db.write();
-  }
-  // Migration: Replace 1234 with 2222 as setup PIN
-  if (!db.data.migrations.replace1234With2222) {
-    const user1234 = (db.data.users || []).find((u) => String(u.pin) === "1234");
-    if (user1234) {
-      user1234.pin = "2222";
-      user1234.role = "setup";
-      user1234.name = "Setup";
-      user1234.permissions = "[]";
-      user1234.cash_drawer_permission = 0;
-      await db.write();
-    }
-    const has2222 = (db.data.users || []).some((u) => String(u.pin) === "2222");
-    if (!has2222) {
-      db.data.users = [DEFAULT_SETUP, ...(db.data.users || [])];
-      await db.write();
-    }
-    db.data.migrations.replace1234With2222 = true;
-    await db.write();
-  }
-  // Migration: PIN 2222 must be setup role only (API URL)
-  if (!db.data.migrations.pin2222SetupOnly) {
-    const setupUser = (db.data.users || []).find((u) => String(u.pin) === "2222");
-    if (setupUser) {
-      setupUser.role = "setup";
-      setupUser.name = "Setup";
-      setupUser.permissions = "[]";
-      setupUser.cash_drawer_permission = 0;
-      await db.write();
-    }
-    db.data.migrations.pin2222SetupOnly = true;
-    await db.write();
-  }
-  // Migration: Remove 1234 (and legacy 2222) from users — 1234 maintenance only
-  if (!db.data.migrations.removeMaintenancePinsFromUsers) {
-    db.data.users = (db.data.users || []).filter((u) => {
-      const p = String(u?.pin ?? "");
-      return p !== "1234" && p !== "2222";
-    });
-    db.data.migrations.removeMaintenancePinsFromUsers = true;
-    await db.write();
-  }
-  // Migration: ensure default category has show_till and structure (one-time fix for old DBs)
-  if (!db.data.migrations.ensureDefaultsForWeb) {
-    if (db.data.categories?.length) {
-      db.data.categories = db.data.categories.map((c) => ({
-        ...c,
-        show_till: c.show_till !== undefined ? c.show_till : 0,
-        modifier_groups: c.modifier_groups ?? "[]",
-        printers: c.printers ?? "[]",
-      }));
-    }
-    if (!Array.isArray(db.data.printers)) db.data.printers = [];
-    if (!Array.isArray(db.data.modifier_groups)) db.data.modifier_groups = [];
-    db.data.migrations.ensureDefaultsForWeb = true;
-    await db.write();
-  }
-  // Migration: initial Zoho import set pos_enabled = 0 for all products.
-  // For POS app to show products in Order screen, default all existing products to pos_enabled = 1 once.
-  // For existing DBs without setup_complete, treat as already set up
-  if (db.data.setup_complete === undefined) {
-    db.data.setup_complete = true;
-    await db.write();
-  }
-  if (!db.data.migrations.posEnabledDefaultToOne) {
-    db.data.products = (db.data.products || []).map((p) => {
-      const val = p.pos_enabled;
-      const enabled =
-        val === undefined || val === null
-          ? 1
-          : val === 1 || val === "1" || val === true
-            ? 1
-            : 0;
-      return { ...p, pos_enabled: enabled };
-    });
-    db.data.migrations.posEnabledDefaultToOne = true;
-  }
-  if (!db.data.migrations.posEnabledRespectZero) {
-    db.data.products = (db.data.products || []).map((p) => {
-      const val = p.pos_enabled;
-      const enabled =
-        val === undefined || val === null
-          ? 1
-          : val === 1 || val === "1" || val === true
-            ? 1
-            : 0;
-      return { ...p, pos_enabled: enabled };
-    });
-    db.data.migrations.posEnabledRespectZero = true;
-  }
-  // Migration: normalize product modifier_groups to JSON array of string IDs (fix Zoho/old format)
-  if (!db.data.migrations.productModifierGroupsNormalize) {
-    function toModIds(val) {
-      if (!val) return [];
-      const arr = typeof val === "string" ? (() => { try { return JSON.parse(val); } catch { return []; } })() : Array.isArray(val) ? val : [];
-      return arr.map((x) => (typeof x === "string" ? x : x?.id ?? x?.Id)?.toString?.()?.trim()).filter(Boolean);
-    }
-    db.data.products = (db.data.products || []).map((p) => {
-      const ids = toModIds(p.modifier_groups);
-      return { ...p, modifier_groups: JSON.stringify(ids) };
-    });
-    db.data.migrations.productModifierGroupsNormalize = true;
-  }
-  // Migration: normalize table layout so tables are ordered by number (1–10 together, then 11–20, etc.)
-  if (!db.data.migrations.tablesGridLayoutV1) {
-    const tables = Array.isArray(db.data.tables) ? [...db.data.tables] : [];
-    tables.sort((a, b) => (parseInt(a.number, 10) || 0) - (parseInt(b.number, 10) || 0));
-    tables.forEach((t, i) => {
-      t.x = 80 + (i % 10) * 90;
-      t.y = 50 + Math.floor(i / 10) * 100;
-      t.width = 80;
-      t.height = 80;
-      t.shape = t.shape || "square";
-    });
-    db.data.tables = tables;
-    db.data.migrations.tablesGridLayoutV1 = true;
-  }
-  await db.write();
+async function ensurePrismaReady() {
+  await store.ensurePrismaReady();
 }
 
 const authMiddleware = (req, res, next) => {
   const auth = req.headers.authorization;
   if (!auth?.startsWith("Bearer ")) return res.status(401).json({ error: "Unauthorized" });
   const token = auth.slice(7);
-  const user = db.data.users.find((u) => u.id === token || u.pin === token);
-  if (!user || !user.active) return res.status(401).json({ error: "Unauthorized" });
-  req.user = user;
-  next();
+  store.getUserByIdOrPin(token).then((user) => {
+    if (!user || !user.active) return res.status(401).json({ error: "Unauthorized" });
+    req.user = user;
+    next();
+  }).catch(() => res.status(401).json({ error: "Unauthorized" }));
 };
 
 // Railway / load balancer health check (no auth)
@@ -408,26 +92,14 @@ app.get("/", (req, res) => {
   res.status(200).send("OK");
 });
 app.get("/api/health", (req, res) => {
-  const dataDir = process.env.DATA_DIR || "";
-  const fileInfo = getDataFileInfo();
-  res.json({
-    ok: true,
-    message: "LimonPOS API",
-    ts: Date.now(),
-    data_dir: dataDir || "(not set)",
-    persistent_storage: !!dataDir,
-    data_file: fileInfo.path,
-    data_file_ok: !fileInfo.inMemory && fileInfo.size != null,
-    data_file_size: fileInfo.size ?? undefined,
-    data_file_mtime: fileInfo.mtime ?? undefined,
-  });
+  res.json({ ok: true, message: "LimonPOS API", ts: Date.now() });
 });
 
 app.post("/api/auth/login", async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const pin = String((req.body || {}).pin || "").trim();
-  const user = db.data.users.find((u) => String(u.pin) === pin && u.active);
-  if (!user) return res.status(401).json({ error: "Invalid PIN" });
+  const user = await store.getUserByIdOrPin(pin);
+  if (!user || !user.active) return res.status(401).json({ error: "Invalid PIN" });
   const perms = JSON.parse(user.permissions || "[]");
   res.json({
     user: { id: user.id, name: user.name, pin: user.pin, role: user.role, active: !!user.active, permissions: perms, cash_drawer_permission: !!user.cash_drawer_permission },
@@ -448,43 +120,42 @@ app.get("/api/auth/me", authMiddleware, async (req, res) => {
 });
 
 app.post("/api/auth/verify-cash-drawer", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const pin = String((req.body || {}).pin || "").trim();
-  const user = (db.data.users || []).find((u) => String(u.pin) === pin && u.active);
-  if (!user || !(user.cash_drawer_permission || user.role === "admin" || user.role === "manager")) return res.status(403).json({ success: false, message: "No permission" });
-  db.data.cash_drawer_opens = db.data.cash_drawer_opens || [];
-  db.data.cash_drawer_opens.push({
+  const user = await store.getUserByIdOrPin(pin);
+  if (!user || !user.active || !(user.cash_drawer_permission || user.role === "admin" || user.role === "manager")) return res.status(403).json({ success: false, message: "No permission" });
+  await store.addCashDrawerOpen({
     id: uuid(),
     user_id: user.id,
     user_name: user.name || "—",
     opened_at: Date.now(),
   });
-  await db.write();
   res.json({ success: true, message: null });
 });
 
 // Setup (first-time wizard)
 app.get("/api/setup/status", authMiddleware, async (req, res) => {
-  await ensureData();
-  const setupComplete = db.data.setup_complete === true;
-  res.json({ setupComplete });
+  await ensurePrismaReady();
+  const s = await store.getSettings();
+  res.json({ setupComplete: s.setup_complete === true });
 });
 
 app.post("/api/setup/complete", authMiddleware, async (req, res) => {
-  await ensureData();
-  db.data.setup_complete = true;
-  await db.write();
+  await ensurePrismaReady();
+  await store.updateSettings({ setup_complete: true });
   res.json({ setupComplete: true });
 });
 
 /** Cihaz heartbeat: Android senkron sırasında çağırır; web "çevrimiçi" listesi için last_seen güncellenir. */
 const HEARTBEAT_TIMEOUT_MS = 3 * 60 * 1000; // 3 dakika içinde heartbeat alan cihaz çevrimiçi sayılır
 app.post("/api/devices/heartbeat", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const body = req.body || {};
   const deviceId = String(body.device_id || body.deviceId || "").trim();
   if (!deviceId) return res.status(400).json({ error: "device_id required" });
   const now = Date.now();
+  const devices = await store.getDevices();
+  const existing = devices.find((d) => d.id === deviceId);
   const device = {
     id: deviceId,
     name: body.device_name || body.deviceName || "Android POS",
@@ -492,55 +163,40 @@ app.post("/api/devices/heartbeat", authMiddleware, async (req, res) => {
     last_seen: now,
     user_id: req.user?.id || null,
   };
-  const idx = db.data.devices.findIndex((d) => d.id === deviceId);
-  if (idx >= 0) {
-    const existing = db.data.devices[idx];
-    const merged = { ...existing, ...device };
-    if (existing.clear_local_data_requested === true) {
-      merged.clear_local_data_requested = true;
-    }
-    db.data.devices[idx] = merged;
-  } else {
-    db.data.devices.push(device);
+  if (existing && existing.clear_local_data_requested === true) {
+    device.clear_local_data_requested = true;
   }
-  await db.write();
-  const dev = db.data.devices.find((d) => d.id === deviceId);
-  const clearRequested = !!(dev && dev.clear_local_data_requested);
+  await store.upsertDevice(deviceId, device);
+  const clearRequested = !!(device.clear_local_data_requested);
   res.json({ ok: true, last_seen: now, clear_local_data_requested: clearRequested });
 });
 
 app.post("/api/devices/:id/request-clear-local-data", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const perms = JSON.parse(req.user?.permissions || "[]");
   if (req.user?.role !== "admin" && req.user?.role !== "manager" && !perms.includes("web_settings")) {
     return res.status(403).json({ error: "Permission denied" });
   }
   const deviceId = req.params.id;
-  const idx = db.data.devices.findIndex((d) => d.id === deviceId);
-  if (idx < 0) {
-    return res.status(404).json({ error: "Device not found" });
-  }
-  db.data.devices[idx].clear_local_data_requested = true;
-  await db.write();
+  const devices = await store.getDevices();
+  if (!devices.some((d) => d.id === deviceId)) return res.status(404).json({ error: "Device not found" });
+  await store.updateDeviceClearRequested(deviceId, true);
   res.json({ ok: true, message: "Clear request sent. Device will clear local sales data on next sync." });
 });
 
 app.post("/api/devices/ack-clear", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const deviceId = String(req.body?.device_id || req.body?.deviceId || "").trim();
   if (!deviceId) return res.status(400).json({ error: "device_id required" });
-  const idx = db.data.devices.findIndex((d) => d.id === deviceId);
-  if (idx >= 0) {
-    delete db.data.devices[idx].clear_local_data_requested;
-    await db.write();
-  }
+  await store.deleteDeviceClearRequested(deviceId);
   res.json({ ok: true });
 });
 
 app.get("/api/devices", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const now = Date.now();
-  const list = (db.data.devices || []).map((d) => ({
+  const devices = await store.getDevices();
+  const list = devices.map((d) => ({
     id: d.id,
     name: d.name || "POS",
     app_version: d.app_version || null,
@@ -584,40 +240,41 @@ const PERMISSIONS = [
 ];
 
 app.get("/api/permissions", authMiddleware, async (req, res) => {
-  await ensureData();
-  const customRoles = (db.data.custom_roles || []).map((r) => ({ ...r, isCustom: true }));
+  await ensurePrismaReady();
+  const customRoles = (await store.getCustomRoles()).map((r) => ({ ...r, isCustom: true }));
   const builtIn = ROLES.map((r) => ({ ...r, isCustom: false }));
   res.json({ roles: [...builtIn, ...customRoles], permissions: PERMISSIONS });
 });
 
 app.post("/api/roles", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const body = req.body || {};
   const id = (body.id || "custom_" + (body.label || "role").toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "")).trim();
   if (!id) return res.status(400).json({ error: "id or label required" });
-  const allRoleIds = [...ROLES.map((r) => r.id), ...(db.data.custom_roles || []).map((r) => r.id)];
+  const customRoles = await store.getCustomRoles();
+  const allRoleIds = [...ROLES.map((r) => r.id), ...customRoles.map((r) => r.id)];
   if (allRoleIds.includes(id)) return res.status(400).json({ error: "Role id already exists" });
   const label = (body.label || id).trim();
   const labelTr = (body.labelTr || body.label || id).trim();
-  db.data.custom_roles = db.data.custom_roles || [];
-  db.data.custom_roles.push({ id, label, labelTr });
-  await db.write();
+  const updated = [...customRoles, { id, label, labelTr }];
+  await store.updateSettings({ custom_roles: updated });
   res.json({ id, label, labelTr });
 });
 
 app.delete("/api/roles/:id", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const { id } = req.params;
   if (ROLES.some((r) => r.id === id)) return res.status(400).json({ error: "Cannot delete built-in role" });
-  db.data.custom_roles = (db.data.custom_roles || []).filter((r) => r.id !== id);
-  await db.write();
+  const customRoles = (await store.getCustomRoles()).filter((r) => r.id !== id);
+  await store.updateSettings({ custom_roles: customRoles });
   res.status(204).send();
 });
 
 // Users
 app.get("/api/users", authMiddleware, async (req, res) => {
-  await ensureData();
-  res.json(db.data.users.map((r) => ({
+  await ensurePrismaReady();
+  const users = await store.getAllUsers();
+  res.json(users.map((r) => ({
     ...r,
     active: !!(r.active !== 0 && r.active !== false),
     permissions: JSON.parse(r.permissions || "[]"),
@@ -626,37 +283,46 @@ app.get("/api/users", authMiddleware, async (req, res) => {
 });
 
 app.post("/api/users", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const id = req.body.id || uuid().slice(0, 8);
   const body = req.body;
-  const user = { id, name: body.name || "User", pin: body.pin || "0000", role: body.role || "waiter", active: body.active !== false ? 1 : 0, permissions: JSON.stringify(body.permissions || []), cash_drawer_permission: body.cash_drawer_permission ? 1 : 0 };
-  db.data.users = db.data.users.filter((u) => u.id !== id);
-  db.data.users.push(user);
-  await db.write();
+  const user = await store.createUser({
+    id, name: body.name || "User", pin: body.pin || "0000", role: body.role || "waiter",
+    active: body.active !== false ? 1 : 0, permissions: JSON.stringify(body.permissions || []), cash_drawer_permission: body.cash_drawer_permission ? 1 : 0,
+  });
   res.json({ ...user, permissions: JSON.parse(user.permissions || "[]"), cash_drawer_permission: !!user.cash_drawer_permission });
 });
 
 app.put("/api/users/:id", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const { id } = req.params;
   const body = req.body;
-  const idx = db.data.users.findIndex((u) => u.id === id);
-  if (idx < 0) return res.status(404).json({ error: "Not found" });
-  db.data.users[idx] = { ...db.data.users[idx], name: body.name, pin: body.pin, role: body.role || "waiter", active: body.active !== false ? 1 : 0, permissions: JSON.stringify(body.permissions || []), cash_drawer_permission: body.cash_drawer_permission ? 1 : 0 };
-  await db.write();
-  res.json({ ...db.data.users[idx], permissions: JSON.parse(db.data.users[idx].permissions || "[]"), cash_drawer_permission: !!db.data.users[idx].cash_drawer_permission });
+  try {
+    const user = await store.updateUser(id, {
+      name: body.name, pin: body.pin, role: body.role || "waiter",
+      active: body.active !== false ? 1 : 0, permissions: JSON.stringify(body.permissions || []), cash_drawer_permission: body.cash_drawer_permission ? 1 : 0,
+    });
+    res.json({ ...user, permissions: JSON.parse(user.permissions || "[]"), cash_drawer_permission: !!user.cash_drawer_permission });
+  } catch (e) {
+    if (e.code === "P2025") return res.status(404).json({ error: "Not found" });
+    throw e;
+  }
 });
 
 app.delete("/api/users/:id", authMiddleware, async (req, res) => {
-  await ensureData();
-  db.data.users = db.data.users.filter((u) => u.id !== req.params.id);
-  await db.write();
-  res.status(204).send();
+  await ensurePrismaReady();
+  try {
+    await store.deleteUser(req.params.id);
+    res.status(204).send();
+  } catch (e) {
+    if (e.code === "P2025") return res.status(404).json({ error: "Not found" });
+    throw e;
+  }
 });
 
 // Import users from Excel (parsed in frontend, sent as JSON)
 app.post("/api/users/import", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const { users: rawUsers } = req.body || {};
   if (!Array.isArray(rawUsers) || rawUsers.length === 0) {
     return res.status(400).json({ error: "users array required" });
@@ -671,19 +337,18 @@ app.post("/api/users/import", authMiddleware, async (req, res) => {
     const phone = String(row["Phone Number"] || row.phone || "").replace(/\D/g, "");
     const pin = phone.length >= 4 ? phone.slice(-4) : String(1000 + Math.floor(Math.random() * 9000));
     const id = "u_" + uuid().slice(0, 8);
-    const user = { id, name, pin, role, active: 1, permissions: "[]", cash_drawer_permission: role === "cashier" || role === "admin" ? 1 : 0 };
-    db.data.users.push(user);
+    const user = await store.createUser({ id, name, pin, role, active: 1, permissions: "[]", cash_drawer_permission: role === "cashier" || role === "admin" ? 1 : 0 });
     created.push(user);
   }
-  await db.write();
-  res.json({ added: created.length, users: db.data.users });
+  const users = await store.getAllUsers();
+  res.json({ added: created.length, users });
 });
 
 // Categories — en az bir kategori don (app liste bos kalmasin); active olmayanlari da gonder, app filtreler
 app.get("/api/categories", authMiddleware, async (req, res) => {
-  await ensureData();
-  let cats = (db.data.categories || []).filter((c) => c.active).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
-  if (cats.length === 0) cats = (db.data.categories || []).slice().sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+  await ensurePrismaReady();
+  let cats = (await store.getAllCategories()).filter((c) => c.active).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+  if (cats.length === 0) cats = (await store.getAllCategories()).slice().sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
   res.json(cats.map((c) => ({
     ...c,
     show_till: c.show_till !== undefined && c.show_till !== null ? Number(c.show_till) : 0,
@@ -693,39 +358,52 @@ app.get("/api/categories", authMiddleware, async (req, res) => {
 });
 
 app.post("/api/categories", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const id = req.body.id || `cat_${uuid().slice(0, 8)}`;
   const body = req.body;
-  const cat = { id, name: body.name || "Category", color: body.color || "#84CC16", sort_order: body.sort_order ?? 0, active: body.active !== false ? 1 : 0, show_till: body.show_till ? 1 : 0, modifier_groups: JSON.stringify(body.modifier_groups || []), printers: JSON.stringify(body.printers || []), overdue_undelivered_minutes: body.overdue_undelivered_minutes != null && body.overdue_undelivered_minutes !== "" ? Math.min(1440, Math.max(1, Number(body.overdue_undelivered_minutes) || 10)) : null };
-  db.data.categories = db.data.categories.filter((c) => c.id !== id);
-  db.data.categories.push(cat);
-  await db.write();
+  const cat = await store.createCategory({
+    id, name: body.name || "Category", color: body.color || "#84CC16", sort_order: body.sort_order ?? 0,
+    active: body.active !== false ? 1 : 0, show_till: body.show_till ? 1 : 0,
+    modifier_groups: JSON.stringify(body.modifier_groups || []), printers: JSON.stringify(body.printers || []),
+  });
   res.json({ ...cat, modifier_groups: JSON.parse(cat.modifier_groups), printers: JSON.parse(cat.printers || "[]") });
 });
 
 app.put("/api/categories/:id", authMiddleware, async (req, res) => {
-  await ensureData();
-  const idx = db.data.categories.findIndex((c) => c.id === req.params.id);
-  if (idx < 0) return res.status(404).json({ error: "Not found" });
+  await ensurePrismaReady();
+  const { id } = req.params;
   const body = req.body;
-  db.data.categories[idx] = { ...db.data.categories[idx], name: body.name, color: body.color || "#84CC16", sort_order: body.sort_order ?? 0, active: body.active !== false ? 1 : 0, show_till: body.show_till ? 1 : 0, modifier_groups: JSON.stringify(body.modifier_groups || []), printers: JSON.stringify(body.printers || []), overdue_undelivered_minutes: body.overdue_undelivered_minutes != null && body.overdue_undelivered_minutes !== "" ? Math.min(1440, Math.max(1, Number(body.overdue_undelivered_minutes) || 10)) : (db.data.categories[idx].overdue_undelivered_minutes ?? null) };
-  await db.write();
-  res.json({ ...db.data.categories[idx], modifier_groups: JSON.parse(db.data.categories[idx].modifier_groups || "[]"), printers: JSON.parse(db.data.categories[idx].printers || "[]") });
+  try {
+    const cat = await store.updateCategory(id, {
+      name: body.name, color: body.color || "#84CC16", sort_order: body.sort_order ?? 0,
+      active: body.active !== false ? 1 : 0, show_till: body.show_till ? 1 : 0,
+      modifier_groups: JSON.stringify(body.modifier_groups || []), printers: JSON.stringify(body.printers || []),
+    });
+    res.json({ ...cat, modifier_groups: JSON.parse(cat.modifier_groups || "[]"), printers: JSON.parse(cat.printers || "[]") });
+  } catch (e) {
+    if (e.code === "P2025") return res.status(404).json({ error: "Not found" });
+    throw e;
+  }
 });
 
 app.delete("/api/categories/:id", authMiddleware, async (req, res) => {
-  await ensureData();
-  db.data.categories = db.data.categories.filter((c) => c.id !== req.params.id);
-  await db.write();
-  res.status(204).send();
+  await ensurePrismaReady();
+  try {
+    await store.deleteCategory(req.params.id);
+    res.status(204).send();
+  } catch (e) {
+    if (e.code === "P2025") return res.status(404).json({ error: "Not found" });
+    throw e;
+  }
 });
 
 // Products — only return sellable items (exclude sellable === false). Requires Authorization: Bearer <token>.
 app.get("/api/products", authMiddleware, async (req, res) => {
-  await ensureData();
-  const cats = Object.fromEntries((db.data.categories || []).map((r) => [r.id, r.name]));
-  const catById = Object.fromEntries((db.data.categories || []).map((c) => [c.id, c]));
-  const products = (db.data.products || []).filter((p) => p.sellable !== false);
+  await ensurePrismaReady();
+  const categories = await store.getAllCategories();
+  const cats = Object.fromEntries(categories.map((r) => [r.id, r.name]));
+  const catById = Object.fromEntries(categories.map((c) => [c.id, c]));
+  const products = (await store.getProducts()).filter((p) => p.sellable !== false);
   console.log("GET /api/products - count:", products.length, "from", req.ip);
   function toModifierIds(arr) {
     if (!Array.isArray(arr)) return [];
@@ -757,15 +435,18 @@ app.get("/api/products", authMiddleware, async (req, res) => {
 });
 
 app.post("/api/products", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const id = req.body.id || `p_${uuid().slice(0, 8)}`;
   const body = req.body;
   const posEnabled = body.pos_enabled === undefined ? 1 : (body.pos_enabled === true || body.pos_enabled === 1 || body.pos_enabled === "1" ? 1 : 0);
-  const prod = { id, name: body.name || "Product", name_arabic: body.name_arabic || "", name_turkish: body.name_turkish || "", sku: body.sku || "", category_id: body.category_id || null, price: body.price ?? 0, tax_rate: body.tax_rate ?? 0, image_url: body.image_url || "", printers: JSON.stringify(body.printers || []), modifier_groups: JSON.stringify(body.modifier_groups || []), active: body.active !== false ? 1 : 0, pos_enabled: posEnabled, sellable: true, overdue_undelivered_minutes: body.overdue_undelivered_minutes != null && body.overdue_undelivered_minutes !== "" ? Math.min(1440, Math.max(1, Number(body.overdue_undelivered_minutes) || 10)) : null };
-  db.data.products = db.data.products.filter((p) => p.id !== id);
-  db.data.products.push(prod);
-  await db.write();
-  const cats = Object.fromEntries((db.data.categories || []).map((r) => [r.id, r.name]));
+  const prod = await store.createProduct({
+    id, name: body.name || "Product", name_arabic: body.name_arabic || "", name_turkish: body.name_turkish || "",
+    sku: body.sku || "", category_id: body.category_id || null, price: body.price ?? 0, tax_rate: body.tax_rate ?? 0,
+    image_url: body.image_url || "", printers: JSON.stringify(body.printers || []), modifier_groups: JSON.stringify(body.modifier_groups || []),
+    active: body.active !== false ? 1 : 0, pos_enabled: posEnabled, sellable: true,
+  });
+  const categories = await store.getAllCategories();
+  const cats = Object.fromEntries(categories.map((r) => [r.id, r.name]));
   res.json({ ...prod, category: cats[prod.category_id] || "", printers: JSON.parse(prod.printers || "[]"), modifier_groups: JSON.parse(prod.modifier_groups || "[]") });
 });
 
@@ -779,64 +460,79 @@ function parseShowInTill(value) {
 }
 
 app.patch("/api/products/:id/show-in-till", authMiddleware, async (req, res) => {
-  await ensureData();
-  const idx = db.data.products.findIndex((p) => p.id === req.params.id);
-  if (idx < 0) return res.status(404).json({ error: "Not found" });
+  await ensurePrismaReady();
   const show = parseShowInTill(req.body?.show);
   if (show === undefined) return res.status(400).json({ error: "show (boolean) required" });
-  db.data.products[idx].pos_enabled = show;
-  await db.write();
-  const r = db.data.products[idx];
-  const cats = Object.fromEntries((db.data.categories || []).map((c) => [c.id, c.name]));
-  res.json({ ...r, category: cats[r.category_id] || "", printers: JSON.parse(r.printers || "[]"), modifier_groups: JSON.parse(r.modifier_groups || "[]"), pos_enabled: r.pos_enabled });
+  try {
+    const r = await store.updateProduct(req.params.id, { pos_enabled: show });
+    const categories = await store.getAllCategories();
+    const cats = Object.fromEntries(categories.map((c) => [c.id, c.name]));
+    res.json({ ...r, category: cats[r.category_id] || "", printers: JSON.parse(r.printers || "[]"), modifier_groups: JSON.parse(r.modifier_groups || "[]"), pos_enabled: r.pos_enabled });
+  } catch (e) {
+    if (e.code === "P2025") return res.status(404).json({ error: "Not found" });
+    throw e;
+  }
 });
 
 app.put("/api/products/:id", authMiddleware, async (req, res) => {
-  await ensureData();
-  const idx = db.data.products.findIndex((p) => p.id === req.params.id);
-  if (idx < 0) return res.status(404).json({ error: "Not found" });
+  await ensurePrismaReady();
+  const { id } = req.params;
   const body = req.body;
-  const existing = db.data.products[idx];
-  const active = body.active === undefined ? existing.active : (body.active !== false && body.active !== 0 ? 1 : 0);
-  const posEnabled = body.pos_enabled === undefined ? existing.pos_enabled : (body.pos_enabled !== false && body.pos_enabled !== 0 ? 1 : 0);
-  db.data.products[idx] = { ...existing, name: body.name, name_arabic: body.name_arabic || "", name_turkish: body.name_turkish || "", sku: body.sku || "", category_id: body.category_id || null, price: body.price ?? 0, tax_rate: body.tax_rate ?? 0, image_url: body.image_url ?? existing.image_url ?? "", printers: JSON.stringify(body.printers || []), modifier_groups: JSON.stringify(body.modifier_groups || []), active, pos_enabled: posEnabled, overdue_undelivered_minutes: body.overdue_undelivered_minutes != null && body.overdue_undelivered_minutes !== "" ? Math.min(1440, Math.max(1, Number(body.overdue_undelivered_minutes) || 10)) : (existing.overdue_undelivered_minutes ?? null) };
-  await db.write();
-  const cats = Object.fromEntries((db.data.categories || []).map((r) => [r.id, r.name]));
-  res.json({ ...db.data.products[idx], category: cats[db.data.products[idx].category_id] || "", printers: JSON.parse(db.data.products[idx].printers || "[]"), modifier_groups: JSON.parse(db.data.products[idx].modifier_groups || "[]") });
+  try {
+    const products = await store.getAllProducts();
+    const existing = products.find((p) => p.id === id);
+    if (!existing) return res.status(404).json({ error: "Not found" });
+    const active = body.active === undefined ? existing.active : (body.active !== false && body.active !== 0 ? 1 : 0);
+    const posEnabled = body.pos_enabled === undefined ? existing.pos_enabled : (body.pos_enabled !== false && body.pos_enabled !== 0 ? 1 : 0);
+    const r = await store.updateProduct(id, {
+      name: body.name, name_arabic: body.name_arabic || "", name_turkish: body.name_turkish || "", sku: body.sku || "",
+      category_id: body.category_id || null, price: body.price ?? 0, tax_rate: body.tax_rate ?? 0,
+      image_url: body.image_url ?? existing.image_url ?? "", printers: JSON.stringify(body.printers ?? existing.printers ?? "[]"), modifier_groups: JSON.stringify(body.modifier_groups ?? existing.modifier_groups ?? "[]"),
+      active, pos_enabled: posEnabled,
+    });
+    const categories = await store.getAllCategories();
+    const cats = Object.fromEntries(categories.map((r) => [r.id, r.name]));
+    res.json({ ...r, category: cats[r.category_id] || "", printers: JSON.parse(r.printers || "[]"), modifier_groups: JSON.parse(r.modifier_groups || "[]") });
+  } catch (e) {
+    if (e.code === "P2025") return res.status(404).json({ error: "Not found" });
+    throw e;
+  }
 });
 
 app.delete("/api/products/:id", authMiddleware, async (req, res) => {
-  await ensureData();
-  db.data.products = db.data.products.filter((p) => p.id !== req.params.id);
-  await db.write();
-  res.status(204).send();
+  await ensurePrismaReady();
+  try {
+    await store.deleteProduct(req.params.id);
+    res.status(204).send();
+  } catch (e) {
+    if (e.code === "P2025") return res.status(404).json({ error: "Not found" });
+    throw e;
+  }
 });
 
 // Zoho'dan sync (upsert); önce silme yok. Hata olursa ürünler geri yüklenir – ürün kaybı önlenir.
 app.post("/api/products/clear-and-sync", authMiddleware, async (req, res) => {
-  await ensureData();
-  const backupProducts = [...(db.data.products || [])];
-  const backupCategories = [...(db.data.categories || [])];
+  await ensurePrismaReady();
   let syncResult = { categoriesAdded: 0, productsAdded: 0, productsUpdated: 0, productsRemoved: 0, productsSuggestedForRemoval: [], itemsFetched: 0, error: null };
   try {
-    syncResult = await syncFromZoho(db, {});
+    syncResult = await syncFromZoho({});
   } catch (e) {
     syncResult.error = (e && e.message) || "Sync failed";
-    db.data.products = backupProducts;
-    db.data.categories = backupCategories;
-    await db.write();
   }
-  await db.read();
-  const cats = Object.fromEntries((db.data.categories || []).map((r) => [r.id, r.name]));
-  const products = (db.data.products || []).filter((p) => p.sellable !== false).map((r) => ({ ...r, category: cats[r.category_id] || "", printers: JSON.parse(r.printers || "[]"), modifier_groups: JSON.parse(r.modifier_groups || "[]"), zoho_suggest_remove: !!r.zoho_suggest_remove }));
-  res.json({ ...syncResult, products });
+  const categories = await store.getAllCategories();
+  const products = (await store.getProducts()).filter((p) => p.sellable !== false);
+  const cats = Object.fromEntries(categories.map((r) => [r.id, r.name]));
+  const productsMapped = products.map((r) => ({ ...r, category: cats[r.category_id] || "", printers: JSON.parse(r.printers || "[]"), modifier_groups: JSON.parse(r.modifier_groups || "[]"), zoho_suggest_remove: !!r.zoho_suggest_remove }));
+  res.json({ ...syncResult, products: productsMapped });
 });
 
 // Zoho'da artık olmayan (silinecek önerisi) ürünler listesi; onay verilene kadar satışta kalır.
 app.get("/api/products/pending-zoho-removal", authMiddleware, async (req, res) => {
-  await ensureData();
-  const cats = Object.fromEntries((db.data.categories || []).map((r) => [r.id, r.name]));
-  const list = (db.data.products || []).filter((p) => p.zoho_suggest_remove === true).map((r) => ({
+  await ensurePrismaReady();
+  const categories = await store.getAllCategories();
+  const cats = Object.fromEntries(categories.map((r) => [r.id, r.name]));
+  const allProducts = await store.getAllProducts();
+  const list = allProducts.filter((p) => p.zoho_suggest_remove === true).map((r) => ({
     ...r,
     category: cats[r.category_id] || "",
     printers: JSON.parse(r.printers || "[]"),
@@ -847,134 +543,175 @@ app.get("/api/products/pending-zoho-removal", authMiddleware, async (req, res) =
 
 // Seçilen ürünleri kalıcı sil (onay sonrası). Sadece zoho_suggest_remove olanlar için kullanılır.
 app.post("/api/products/confirm-removal", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const productIds = Array.isArray(req.body?.productIds) ? req.body.productIds.map(String) : [];
   if (productIds.length === 0) return res.status(400).json({ error: "productIds required (array)" });
-  const before = (db.data.products || []).length;
-  db.data.products = (db.data.products || []).filter((p) => !productIds.includes(p.id));
-  const removed = before - db.data.products.length;
-  await db.write();
+  let removed = 0;
+  for (const id of productIds) {
+    try {
+      await store.deleteProduct(id);
+      removed++;
+    } catch {}
+  }
   res.json({ removed, productIds });
 });
 
 // Printers
 app.get("/api/printers", authMiddleware, async (req, res) => {
-  await ensureData();
-  res.json(db.data.printers || []);
+  await ensurePrismaReady();
+  res.json(await store.getPrinters());
 });
 
 app.post("/api/printers", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const id = req.body.id || `pr_${uuid().slice(0, 8)}`;
   const body = req.body;
-  const pr = { id, name: body.name || "Printer", printer_type: body.printer_type || "kitchen", ip_address: body.ip_address || "", port: body.port ?? 9100, connection_type: body.connection_type || "network", status: body.status || "offline", is_backup: body.is_backup ? 1 : 0, kds_enabled: body.kds_enabled !== false ? 1 : 0, enabled: body.enabled !== false ? 1 : 0 };
-  db.data.printers = db.data.printers.filter((p) => p.id !== id);
-  db.data.printers.push(pr);
-  await db.write();
+  const pr = await store.createPrinter({
+    id, name: body.name || "Printer", printer_type: body.printer_type || "kitchen",
+    ip_address: body.ip_address || "", port: body.port ?? 9100, connection_type: body.connection_type || "network",
+    status: body.status || "offline", is_backup: body.is_backup ? 1 : 0, kds_enabled: body.kds_enabled !== false ? 1 : 0,
+  });
   res.json(pr);
 });
 
 app.put("/api/printers/:id", authMiddleware, async (req, res) => {
-  await ensureData();
-  const idx = db.data.printers.findIndex((p) => p.id === req.params.id);
-  if (idx < 0) return res.status(404).json({ error: "Not found" });
+  await ensurePrismaReady();
+  const { id } = req.params;
   const body = req.body;
-  db.data.printers[idx] = { ...db.data.printers[idx], name: body.name, printer_type: body.printer_type || "kitchen", ip_address: body.ip_address || "", port: body.port ?? 9100, connection_type: body.connection_type || "network", status: body.status || "offline", is_backup: body.is_backup ? 1 : 0, kds_enabled: body.kds_enabled !== false ? 1 : 0, enabled: body.enabled !== false ? 1 : 0 };
-  await db.write();
-  res.json(db.data.printers[idx]);
+  try {
+    const pr = await store.updatePrinter(id, {
+      name: body.name, printer_type: body.printer_type || "kitchen", ip_address: body.ip_address || "",
+      port: body.port ?? 9100, connection_type: body.connection_type || "network", status: body.status || "offline",
+      is_backup: body.is_backup ? 1 : 0, kds_enabled: body.kds_enabled !== false ? 1 : 0,
+    });
+    res.json(pr);
+  } catch (e) {
+    if (e.code === "P2025") return res.status(404).json({ error: "Not found" });
+    throw e;
+  }
 });
 
 app.put("/api/printers/:id/status", authMiddleware, async (req, res) => {
-  await ensureData();
-  const idx = db.data.printers.findIndex((p) => p.id === req.params.id);
-  if (idx < 0) return res.status(404).json({ error: "Not found" });
-  db.data.printers[idx].status = req.query.status || "offline";
-  await db.write();
-  res.json(db.data.printers[idx]);
+  await ensurePrismaReady();
+  const { id } = req.params;
+  try {
+    const pr = await store.updatePrinter(id, { status: req.query.status || "offline" });
+    res.json(pr);
+  } catch (e) {
+    if (e.code === "P2025") return res.status(404).json({ error: "Not found" });
+    throw e;
+  }
 });
 
 app.delete("/api/printers/:id", authMiddleware, async (req, res) => {
-  await ensureData();
-  db.data.printers = db.data.printers.filter((p) => p.id !== req.params.id);
-  await db.write();
-  res.status(204).send();
+  await ensurePrismaReady();
+  try {
+    await store.deletePrinter(req.params.id);
+    res.status(204).send();
+  } catch (e) {
+    if (e.code === "P2025") return res.status(404).json({ error: "Not found" });
+    throw e;
+  }
 });
 
 // Payment methods
 app.get("/api/payment-methods", authMiddleware, async (req, res) => {
-  await ensureData();
-  res.json((db.data.payment_methods || []).filter((p) => p.active).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)));
+  await ensurePrismaReady();
+  const pms = await store.getPaymentMethods();
+  res.json(pms.filter((p) => p.active).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)));
 });
 
 app.post("/api/payment-methods", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const id = req.body.id || `pm_${uuid().slice(0, 8)}`;
   const body = req.body;
-  const pm = { id, name: body.name || "Method", code: body.code || "other", active: body.active !== false ? 1 : 0, sort_order: body.sort_order ?? 0 };
-  db.data.payment_methods = db.data.payment_methods.filter((p) => p.id !== id);
-  db.data.payment_methods.push(pm);
-  await db.write();
+  const pm = await store.createPaymentMethod({
+    id, name: body.name || "Method", code: body.code || "other",
+    active: body.active !== false ? 1 : 0, sort_order: body.sort_order ?? 0,
+  });
   res.json(pm);
 });
 
 app.put("/api/payment-methods/:id", authMiddleware, async (req, res) => {
-  await ensureData();
-  const idx = db.data.payment_methods.findIndex((p) => p.id === req.params.id);
-  if (idx < 0) return res.status(404).json({ error: "Not found" });
+  await ensurePrismaReady();
+  const { id } = req.params;
   const body = req.body;
-  db.data.payment_methods[idx] = { ...db.data.payment_methods[idx], name: body.name, code: body.code || "other", active: body.active !== false ? 1 : 0, sort_order: body.sort_order ?? 0 };
-  await db.write();
-  res.json(db.data.payment_methods[idx]);
+  try {
+    const pm = await store.updatePaymentMethod(id, {
+      name: body.name, code: body.code || "other", active: body.active !== false ? 1 : 0, sort_order: body.sort_order ?? 0,
+    });
+    res.json(pm);
+  } catch (e) {
+    if (e.code === "P2025") return res.status(404).json({ error: "Not found" });
+    throw e;
+  }
 });
 
 app.delete("/api/payment-methods/:id", authMiddleware, async (req, res) => {
-  await ensureData();
-  db.data.payment_methods = db.data.payment_methods.filter((p) => p.id !== req.params.id);
-  await db.write();
-  res.status(204).send();
+  await ensurePrismaReady();
+  try {
+    await store.deletePaymentMethod(req.params.id);
+    res.status(204).send();
+  } catch (e) {
+    if (e.code === "P2025") return res.status(404).json({ error: "Not found" });
+    throw e;
+  }
 });
 
 // Modifier groups
 app.get("/api/modifier-groups", authMiddleware, async (req, res) => {
-  await ensureData();
-  res.json((db.data.modifier_groups || []).map((r) => ({ ...r, options: JSON.parse(r.options || "[]") })));
+  await ensurePrismaReady();
+  const mgs = await store.getModifierGroups();
+  res.json(mgs.map((r) => ({ ...r, options: JSON.parse(r.options || "[]") })));
 });
 
 app.post("/api/modifier-groups", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const id = req.body.id || `mg_${uuid().slice(0, 8)}`;
   const body = req.body;
   const opts = (body.options || []).map((o, i) => ({ id: o.id || `mo_${id}_${i}`, name: o.name || "Option", price: o.price ?? 0 }));
-  const mg = { id, name: body.name || "Modifier Group", min_select: body.min_select ?? 0, max_select: body.max_select ?? 1, required: body.required ? 1 : 0, options: JSON.stringify(opts) };
-  db.data.modifier_groups = db.data.modifier_groups || [];
-  db.data.modifier_groups = db.data.modifier_groups.filter((m) => m.id !== id);
-  db.data.modifier_groups.push(mg);
-  await db.write();
+  const mg = await store.createModifierGroup({
+    id, name: body.name || "Modifier Group", min_select: body.min_select ?? 0, max_select: body.max_select ?? 1,
+    required: body.required ? 1 : 0, options: JSON.stringify(opts),
+  });
   res.json({ ...mg, options: opts });
 });
 
 app.put("/api/modifier-groups/:id", authMiddleware, async (req, res) => {
-  await ensureData();
-  const idx = (db.data.modifier_groups || []).findIndex((m) => m.id === req.params.id);
-  if (idx < 0) return res.status(404).json({ error: "Not found" });
+  await ensurePrismaReady();
+  const { id } = req.params;
   const body = req.body;
-  const opts = (body.options || []).map((o, i) => ({ id: o.id || `mo_${req.params.id}_${i}`, name: o.name || "Option", price: o.price ?? 0 }));
-  db.data.modifier_groups[idx] = { ...db.data.modifier_groups[idx], name: body.name || db.data.modifier_groups[idx].name, min_select: body.min_select ?? 0, max_select: body.max_select ?? 1, required: body.required ? 1 : 0, options: JSON.stringify(opts) };
-  await db.write();
-  res.json({ ...db.data.modifier_groups[idx], options: opts });
+  const mgs = await store.getModifierGroups();
+  const existing = mgs.find((m) => m.id === id);
+  if (!existing) return res.status(404).json({ error: "Not found" });
+  const opts = (body.options || []).map((o, i) => ({ id: o.id || `mo_${id}_${i}`, name: o.name || "Option", price: o.price ?? 0 }));
+  try {
+    const mg = await store.updateModifierGroup(id, {
+      name: body.name || existing.name, min_select: body.min_select ?? 0, max_select: body.max_select ?? 1,
+      required: body.required ? 1 : 0, options: JSON.stringify(opts),
+    });
+    res.json({ ...mg, options: opts });
+  } catch (e) {
+    if (e.code === "P2025") return res.status(404).json({ error: "Not found" });
+    throw e;
+  }
 });
 
 app.delete("/api/modifier-groups/:id", authMiddleware, async (req, res) => {
-  await ensureData();
-  db.data.modifier_groups = (db.data.modifier_groups || []).filter((m) => m.id !== req.params.id);
-  await db.write();
-  res.status(204).send();
+  await ensurePrismaReady();
+  try {
+    await store.deleteModifierGroup(req.params.id);
+    res.status(204).send();
+  } catch (e) {
+    if (e.code === "P2025") return res.status(404).json({ error: "Not found" });
+    throw e;
+  }
 });
 
 // Settings (timezone, receipt/bill, kitchen, currency)
 app.get("/api/settings", authMiddleware, async (req, res) => {
-  await ensureData();
-  const s = db.data.settings || {};
+  await ensurePrismaReady();
+  const s = await store.getSettings();
   res.json({
     timezone_offset_minutes: s.timezone_offset_minutes ?? 0,
     overdue_undelivered_minutes: Math.min(1440, Math.max(1, (s.overdue_undelivered_minutes ?? 10) | 0)),
@@ -1004,64 +741,49 @@ function validateTimeHHMM(str) {
 }
 
 app.patch("/api/settings", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const perms = JSON.parse(req.user?.permissions || "[]");
   if (req.user?.role !== "admin" && req.user?.role !== "manager" && !perms.includes("web_settings")) {
     return res.status(403).json({ error: "Permission denied. Settings require admin, manager, or web_settings." });
   }
-  db.data.settings = db.data.settings || {};
-  const prevSettings = { ...db.data.settings };
+  const prevSettings = await store.getSettings();
+  const updates = {};
   if (typeof req.body.timezone_offset_minutes === "number") {
-    db.data.settings.timezone_offset_minutes = Math.round(req.body.timezone_offset_minutes);
-    if (db.data.settings.timezone_offset_minutes < -720) db.data.settings.timezone_offset_minutes = -720;
-    if (db.data.settings.timezone_offset_minutes > 840) db.data.settings.timezone_offset_minutes = 840;
+    let v = Math.round(req.body.timezone_offset_minutes);
+    if (v < -720) v = -720;
+    if (v > 840) v = 840;
+    updates.timezone_offset_minutes = v;
   }
   if (typeof req.body.overdue_undelivered_minutes === "number") {
     const v = Math.round(req.body.overdue_undelivered_minutes);
-    db.data.settings.overdue_undelivered_minutes = Math.min(1440, Math.max(1, v));
+    updates.overdue_undelivered_minutes = Math.min(1440, Math.max(1, v));
   }
-  if (typeof req.body.company_name === "string") db.data.settings.company_name = req.body.company_name.slice(0, 200);
-  if (typeof req.body.company_address === "string") db.data.settings.company_address = req.body.company_address.slice(0, 400);
-  if (typeof req.body.receipt_header === "string") db.data.settings.receipt_header = req.body.receipt_header.slice(0, 100) || "BILL / RECEIPT";
-  if (typeof req.body.receipt_footer_message === "string") db.data.settings.receipt_footer_message = req.body.receipt_footer_message.slice(0, 300) || "Thank you!";
-  if (typeof req.body.kitchen_header === "string") db.data.settings.kitchen_header = req.body.kitchen_header.slice(0, 100) || "KITCHEN";
+  if (typeof req.body.company_name === "string") updates.company_name = req.body.company_name.slice(0, 200);
+  if (typeof req.body.company_address === "string") updates.company_address = req.body.company_address.slice(0, 400);
+  if (typeof req.body.receipt_header === "string") updates.receipt_header = req.body.receipt_header.slice(0, 100) || "BILL / RECEIPT";
+  if (typeof req.body.receipt_footer_message === "string") updates.receipt_footer_message = req.body.receipt_footer_message.slice(0, 300) || "Thank you!";
+  if (typeof req.body.kitchen_header === "string") updates.kitchen_header = req.body.kitchen_header.slice(0, 100) || "KITCHEN";
   if (typeof req.body.receipt_item_size === "number") {
-    const v = Math.round(req.body.receipt_item_size);
-    db.data.settings.receipt_item_size = Math.min(2, Math.max(0, v));
+    updates.receipt_item_size = Math.min(2, Math.max(0, Math.round(req.body.receipt_item_size)));
   }
   const validCurrencyCodes = ["AED", "TRY", "USD", "EUR", "GBP"];
-  if (typeof req.body.currency_code === "string" && validCurrencyCodes.includes(req.body.currency_code)) {
-    db.data.settings.currency_code = req.body.currency_code;
-  }
+  if (typeof req.body.currency_code === "string" && validCurrencyCodes.includes(req.body.currency_code)) updates.currency_code = req.body.currency_code;
   const ot = validateTimeHHMM(req.body.opening_time);
-  if (ot) db.data.settings.opening_time = ot;
+  if (ot) updates.opening_time = ot;
   const ct = validateTimeHHMM(req.body.closing_time);
-  if (ct) db.data.settings.closing_time = ct;
+  if (ct) updates.closing_time = ct;
   const wt = validateTimeHHMM(req.body.open_tables_warning_time);
-  if (wt) db.data.settings.open_tables_warning_time = wt;
-  if (typeof req.body.auto_close_open_tables === "boolean") db.data.settings.auto_close_open_tables = req.body.auto_close_open_tables;
-  if (typeof req.body.auto_close_payment_method === "string") db.data.settings.auto_close_payment_method = req.body.auto_close_payment_method.slice(0, 50) || "cash";
-  if (typeof req.body.grace_minutes === "number") db.data.settings.grace_minutes = Math.min(60, Math.max(0, Math.round(req.body.grace_minutes)));
-  if (typeof req.body.warning_enabled === "boolean") db.data.settings.warning_enabled = req.body.warning_enabled;
-  if (typeof req.body.vat_percent === "number") {
-    const v = Math.round(req.body.vat_percent);
-    db.data.settings.vat_percent = Math.min(100, Math.max(0, v));
-  }
+  if (wt) updates.open_tables_warning_time = wt;
+  if (typeof req.body.auto_close_open_tables === "boolean") updates.auto_close_open_tables = req.body.auto_close_open_tables;
+  if (typeof req.body.auto_close_payment_method === "string") updates.auto_close_payment_method = req.body.auto_close_payment_method.slice(0, 50) || "cash";
+  if (typeof req.body.grace_minutes === "number") updates.grace_minutes = Math.min(60, Math.max(0, Math.round(req.body.grace_minutes)));
+  if (typeof req.body.warning_enabled === "boolean") updates.warning_enabled = req.body.warning_enabled;
+  if (typeof req.body.vat_percent === "number") updates.vat_percent = Math.min(100, Math.max(0, Math.round(req.body.vat_percent)));
+  if (Object.keys(updates).length > 0) await store.updateSettings(updates);
   const businessKeys = ["opening_time", "closing_time", "open_tables_warning_time", "auto_close_open_tables", "auto_close_payment_method", "grace_minutes", "warning_enabled", "currency_code", "vat_percent"];
-  const changed = businessKeys.filter((k) => String(prevSettings[k] ?? "") !== String(db.data.settings[k] ?? ""));
-  if (changed.length > 0) {
-    db.data.business_operation_log = db.data.business_operation_log || [];
-    db.data.business_operation_log.push({
-      ts: Date.now(),
-      action: "settings_changed",
-      user_id: req.user?.id,
-      user_name: req.user?.name,
-      changed,
-    });
-    if (db.data.business_operation_log.length > 2000) db.data.business_operation_log = db.data.business_operation_log.slice(-2000);
-  }
-  await db.write();
-  const s = db.data.settings;
+  const changed = businessKeys.filter((k) => String(prevSettings[k] ?? "") !== String(updates[k] ?? prevSettings[k] ?? ""));
+  if (changed.length > 0) await store.appendBusinessOperationLog({ ts: Date.now(), action: "settings_changed", user_id: req.user?.id, user_name: req.user?.name, changed });
+  const s = await store.getSettings();
   res.json({
     timezone_offset_minutes: s.timezone_offset_minutes ?? 0,
     overdue_undelivered_minutes: Math.min(1440, Math.max(1, (s.overdue_undelivered_minutes ?? 10) | 0)),
@@ -1085,10 +807,10 @@ app.patch("/api/settings", authMiddleware, async (req, res) => {
 
 // End of Day (Günü Kapat) – gece 12 sonrası satışlar için; açık masalar varsa uyarı veya kapatıp ödeme alınmış say
 app.get("/api/eod/status", authMiddleware, async (req, res) => {
-  await ensureData();
-  const tables = db.data.tables || [];
-  const orders = db.data.orders || [];
-  const eodLogs = db.data.eod_logs || [];
+  await ensurePrismaReady();
+  const tables = await store.getTables();
+  const orders = await store.getOrders();
+  const eodLogs = await store.getEodLogs();
   const lastEod = eodLogs.length > 0 ? eodLogs[eodLogs.length - 1] : null;
   const openTablesNow = tables
     .filter((t) => t.current_order_id)
@@ -1104,11 +826,10 @@ app.get("/api/eod/status", authMiddleware, async (req, res) => {
 });
 
 app.post("/api/eod/run", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const closeOpenTables = !!req.body?.closeOpenTables;
-  const tables = db.data.tables || [];
-  const orders = db.data.orders || [];
-  db.data.payments = db.data.payments || [];
+  const tables = await store.getTables();
+  const orders = await store.getOrders();
   const openTables = tables.filter((t) => t.current_order_id);
   const now = Date.now();
   const userId = req.user?.id ?? "";
@@ -1133,27 +854,20 @@ app.post("/api/eod/run", authMiddleware, async (req, res) => {
     const order = orders.find((o) => o.id === orderId);
     if (!order || order.status === "paid") continue;
     const amount = order.total ?? 0;
-    db.data.payments.push({ id: `pay_${uuid().slice(0, 8)}`, order_id: orderId, amount, method: "cash", received_amount: amount, change_amount: 0, user_id: userId, created_at: now });
-    const oidx = orders.findIndex((o) => o.id === orderId);
-    if (oidx >= 0) {
-      db.data.orders[oidx].status = "paid";
-      db.data.orders[oidx].paid_at = now;
-    }
-    db.data.tables.forEach((tbl) => {
-      if (tbl.current_order_id === orderId) {
-        tbl.status = "free";
-        tbl.current_order_id = null;
-        tbl.guest_count = 0;
-        tbl.waiter_id = null;
-        tbl.waiter_name = null;
-        tbl.opened_at = null;
-      }
+    await store.createPayment({
+      id: `pay_${uuid().slice(0, 8)}`, order_id: orderId, amount, method: "cash",
+      received_amount: amount, change_amount: 0, user_id: userId, created_at: new Date(now),
     });
+    await store.updateOrder(orderId, { status: "paid", paid_at: new Date(now) });
+    for (const tbl of tables) {
+      if (tbl.current_order_id === orderId) {
+        await store.updateTable(tbl.id, { status: "free", current_order_id: null, guest_count: 0, waiter_id: null, waiter_name: null, opened_at: null });
+      }
+    }
     tablesClosed.push({ table_id: t.id, table_number: t.number, order_id: orderId, amount });
   }
 
-  db.data.eod_logs = db.data.eod_logs || [];
-  db.data.eod_logs.push({
+  await store.appendEodLog({
     id: `eod_${uuid().slice(0, 8)}`,
     ran_at: now,
     user_id: userId,
@@ -1161,7 +875,6 @@ app.post("/api/eod/run", authMiddleware, async (req, res) => {
     tables_closed: tablesClosed,
     orders_closed_count: tablesClosed.length,
   });
-  await db.write();
 
   res.json({
     success: true,
@@ -1172,11 +885,11 @@ app.post("/api/eod/run", authMiddleware, async (req, res) => {
 
 // Dashboard stats. Open Tables = only tables that have an order with status open/sent (masaya bağlı açık hesap).
 app.get("/api/dashboard/stats", authMiddleware, async (req, res) => {
-  await ensureData();
-  const summary = getTodaySalesSummary();
-  const orders = db.data.orders || [];
-  const tables = db.data.tables || [];
-  const voidLogs = db.data.void_logs || [];
+  await ensurePrismaReady();
+  const summary = await store.getTodaySalesSummary();
+  const orders = await store.getOrders();
+  const tables = await store.getTables();
+  const voidLogs = await store.getVoidLogs();
   const paymentByMethod = {};
   if (summary.totalCash) paymentByMethod.cash = summary.totalCash;
   if (summary.totalCard) paymentByMethod.card = summary.totalCard;
@@ -1185,10 +898,10 @@ app.get("/api/dashboard/stats", authMiddleware, async (req, res) => {
   const openCount = tablesWithOpenCheck.length;
   const preVoids = voidLogs.filter((v) => v.type === "pre_void").length;
   const postVoids = voidLogs.filter((v) => v.type === "post_void").length;
-  const eodLogs = db.data.eod_logs || [];
+  const eodLogs = await store.getEodLogs();
   const lastEod = eodLogs.length > 0 ? eodLogs[eodLogs.length - 1] : null;
-  const voidRequests = db.data.void_requests || [];
-  const closedBillAccessRequests = db.data.closed_bill_access_requests || [];
+  const voidRequests = await store.getVoidRequests();
+  const closedBillAccessRequests = await store.getClosedBillAccessRequests();
   const pendingVoidRequestsCount = voidRequests.filter((v) => v.status === "pending").length;
   const pendingClosedBillAccessRequestsCount = closedBillAccessRequests.filter((r) => r.status === "pending").length;
   res.json({
@@ -1209,17 +922,17 @@ app.get("/api/dashboard/stats", authMiddleware, async (req, res) => {
 
 // Business day status: for warning banner, open tables count. Supervisor/manager only.
 app.get("/api/dashboard/business-day-status", authMiddleware, async (req, res) => {
-  await ensureData();
-  const s = db.data.settings || {};
+  await ensurePrismaReady();
+  const s = await store.getSettings();
   const opening = s.opening_time ?? "07:00";
   const closing = s.closing_time ?? "01:30";
   const warning = s.open_tables_warning_time ?? "01:00";
-  const off = offsetMin();
+  const off = await store.offsetMin();
   const now = Date.now();
   const key = getBusinessDayKey(now, opening, closing, off);
   const afterWarning = isAfterWarningTime(now, warning, opening, closing, off);
-  const tables = db.data.tables || [];
-  const orders = db.data.orders || [];
+  const tables = await store.getTables();
+  const orders = await store.getOrders();
   const orderIdsOpenOrSent = new Set(orders.filter((o) => o.status === "open" || o.status === "sent").map((o) => o.id));
   const openCount = tables.filter((t) => t.current_order_id && orderIdsOpenOrSent.has(t.current_order_id)).length;
   const lastShown = s.last_warning_shown_for_business_day;
@@ -1233,33 +946,23 @@ app.get("/api/dashboard/business-day-status", authMiddleware, async (req, res) =
 });
 
 app.post("/api/dashboard/warning-shown", authMiddleware, async (req, res) => {
-  await ensureData();
-  const s = db.data.settings || {};
-  const key = getBusinessDayKey(Date.now(), s.opening_time ?? "07:00", s.closing_time ?? "01:30", offsetMin());
+  await ensurePrismaReady();
+  const s = await store.getSettings();
+  const key = getBusinessDayKey(Date.now(), s.opening_time ?? "07:00", s.closing_time ?? "01:30", await store.offsetMin());
   if (key) {
-    db.data.settings.last_warning_shown_for_business_day = key;
-    db.data.business_operation_log = db.data.business_operation_log || [];
-    db.data.business_operation_log.push({
-      ts: Date.now(),
-      action: "warning_shown",
-      user_id: req.user?.id,
-      user_name: req.user?.name,
-      business_day_key: key,
-    });
-    if (db.data.business_operation_log.length > 2000) db.data.business_operation_log = db.data.business_operation_log.slice(-2000);
-    await db.write();
+    await store.updateSettings({ last_warning_shown_for_business_day: key });
+    await store.appendBusinessOperationLog({ ts: Date.now(), action: "warning_shown", user_id: req.user?.id, user_name: req.user?.name, business_day_key: key });
   }
   res.json({ ok: true });
 });
 
 // Open tables not closed: detailed list for dashboard "end of day" section.
 app.get("/api/dashboard/open-tables-not-closed", authMiddleware, async (req, res) => {
-  await ensureData();
-  const orders = db.data.orders || [];
-  const orderItems = db.data.order_items || [];
-  const tables = db.data.tables || [];
-  const s = db.data.settings || {};
-  const key = getBusinessDayKey(Date.now(), s.opening_time ?? "07:00", s.closing_time ?? "01:30", offsetMin());
+  await ensurePrismaReady();
+  const orders = await store.getOrders();
+  const orderItems = await store.getAllOrderItems();
+  const s = await store.getSettings();
+  const key = getBusinessDayKey(Date.now(), s.opening_time ?? "07:00", s.closing_time ?? "01:30", await store.offsetMin());
   const orderIdsLinkedToTable = new Set(tables.filter((t) => t.current_order_id).map((t) => t.current_order_id));
   const openOrders = orders.filter((o) => (o.status === "open" || o.status === "sent") && orderIdsLinkedToTable.has(o.id));
   const list = openOrders.map((o) => {
@@ -1285,9 +988,9 @@ app.get("/api/dashboard/open-tables-not-closed", authMiddleware, async (req, res
 
 // Open orders: only orders that are linked to a table (current_order_id). App ile uyumlu.
 app.get("/api/dashboard/open-orders", authMiddleware, async (req, res) => {
-  await ensureData();
-  const orders = db.data.orders || [];
-  const tables = db.data.tables || [];
+  await ensurePrismaReady();
+  const orders = await store.getOrders();
+  const tables = await store.getTables();
   const orderIdsLinkedToTable = new Set(tables.filter((t) => t.current_order_id).map((t) => t.current_order_id));
   const openOrders = orders.filter((o) => (o.status === "open" || o.status === "sent") && orderIdsLinkedToTable.has(o.id));
   const list = openOrders.map((o) => ({
@@ -1304,13 +1007,13 @@ app.get("/api/dashboard/open-orders", authMiddleware, async (req, res) => {
 
 // Masalarda gecikmiş ürünü olan masa id'leri (mutfağa gitti, masaya gitmedi, ürün bazlı süre aşıldı). Web floor'da yanıp sönsün.
 app.get("/api/dashboard/overdue-table-ids", authMiddleware, async (req, res) => {
-  await ensureData();
-  const settings = db.data.settings || {};
+  await ensurePrismaReady();
+  const settings = await store.getSettings();
   const defaultOverdueMinutes = Math.min(1440, Math.max(1, (settings.overdue_undelivered_minutes ?? 10) | 0));
-  const tables = db.data.tables || [];
-  const orders = db.data.orders || [];
-  const orderItems = db.data.order_items || [];
-  const products = db.data.products || [];
+  const tables = await store.getTables();
+  const orders = await store.getOrders();
+  const orderItems = await store.getAllOrderItems();
+  const products = await store.getAllProducts();
   const orderIdsLinkedToTable = new Set(tables.filter((t) => t.current_order_id).map((t) => t.current_order_id));
   const openOrders = orders.filter((o) => (o.status === "open" || o.status === "sent") && orderIdsLinkedToTable.has(o.id));
   const now = Date.now();
@@ -1330,7 +1033,7 @@ app.get("/api/dashboard/overdue-table-ids", authMiddleware, async (req, res) => 
 
 // Daily Sales: ?date=YYYY-MM-DD (tek gün) veya ?dateFrom=YYYY-MM-DD&dateTo=YYYY-MM-DD (aralık); yoksa bugün.
 app.get("/api/dashboard/daily-sales", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const dateStr = (req.query.date || "").toString().trim();
   const dateFromStr = (req.query.dateFrom || "").toString().trim();
   const dateToStr = (req.query.dateTo || "").toString().trim();
@@ -1338,30 +1041,30 @@ app.get("/api/dashboard/daily-sales", authMiddleware, async (req, res) => {
   let dayStartTs;
   let dayEndTs;
   if (dateFromStr && dateToStr) {
-    const fromBounds = getDayBounds(dateFromStr);
-    const toBounds = getDayBounds(dateToStr);
+    const fromBounds = await store.getDayBounds(dateFromStr);
+    const toBounds = await store.getDayBounds(dateToStr);
     if (!fromBounds || !toBounds) return res.status(400).json({ error: "invalid_date", message: "dateFrom and dateTo must be YYYY-MM-DD" });
     dayStartTs = fromBounds.startTs;
     dayEndTs = toBounds.endTs;
     if (dayStartTs > dayEndTs) return res.status(400).json({ error: "invalid_range", message: "dateFrom must be before or equal to dateTo" });
-    summary = getSalesSummaryForRange(dayStartTs, dayEndTs);
+    summary = await store.getSalesSummaryForRange(dayStartTs, dayEndTs);
   } else if (dateStr) {
-    const bounds = getDayBounds(dateStr);
+    const bounds = await store.getDayBounds(dateStr);
     if (!bounds) return res.status(400).json({ error: "invalid_date", message: "date must be YYYY-MM-DD" });
-    summary = getSalesSummaryForRange(bounds.startTs, bounds.endTs);
+    summary = await store.getSalesSummaryForRange(bounds.startTs, bounds.endTs);
     dayStartTs = bounds.startTs;
     dayEndTs = bounds.endTs;
   } else {
-    const todaySummary = getTodaySalesSummary();
+    const todaySummary = await store.getTodaySalesSummary();
     summary = todaySummary;
     dayStartTs = todaySummary.todayTs;
     dayEndTs = todaySummary.todayEndTs;
   }
-  const orders = db.data.orders || [];
-  const orderItems = db.data.order_items || [];
-  const products = db.data.products || [];
-  const categories = db.data.categories || [];
-  const voidLogs = db.data.void_logs || [];
+  const orders = await store.getOrders();
+  const orderItems = await store.getAllOrderItems();
+  const products = await store.getAllProducts();
+  const categories = await store.getAllCategories();
+  const voidLogs = await store.getVoidLogs();
 
   const catMap = Object.fromEntries((categories || []).map((c) => [c.id, c.name]));
   const prodCat = Object.fromEntries((products || []).map((p) => [p.id, p.category_id]));
@@ -1391,8 +1094,9 @@ app.get("/api/dashboard/daily-sales", authMiddleware, async (req, res) => {
   const voids = todayVoids.filter((v) => (v.type === "pre_void" || v.type === "post_void" || v.type === "recalled_void") && (v.order_id == null || orderIdsSet.has(v.order_id)));
   const refunds = todayVoids.filter((v) => (v.type === "refund" || v.type === "refund_full") && (v.order_id == null || orderIdsSet.has(v.order_id)));
 
-  const paymentMethods = db.data.payment_methods || [];
-  const paymentsByOrder = (db.data.payments || []).reduce((acc, p) => {
+  const paymentMethods = await store.getAllPaymentMethods();
+  const payments = await store.getPayments();
+  const paymentsByOrder = payments.reduce((acc, p) => {
     if (!acc[p.order_id]) acc[p.order_id] = [];
     acc[p.order_id].push(p);
     return acc;
@@ -1421,9 +1125,10 @@ app.get("/api/dashboard/daily-sales", authMiddleware, async (req, res) => {
     };
   });
 
-  const eodLogs = db.data.eod_logs || [];
+  const eodLogs = await store.getEodLogs();
   const lastEod = eodLogs.length > 0 ? eodLogs[eodLogs.length - 1] : null;
-  const openTablesCount = (db.data.tables || []).filter((t) => t.current_order_id).length;
+  const tablesForOpen = await store.getTables();
+  const openTablesCount = tablesForOpen.filter((t) => t.current_order_id).length;
   res.json({
     date: dateStr || null,
     totalCash: summary.totalCash,
@@ -1439,14 +1144,15 @@ app.get("/api/dashboard/daily-sales", authMiddleware, async (req, res) => {
     paidTickets,
     lastEod: lastEod ? { ran_at: lastEod.ran_at, user_name: lastEod.user_name, tables_closed_count: lastEod.tables_closed?.length ?? 0 } : null,
     openTablesCount,
-    dailyCashEntry: getDailyCashEntryForBounds(dayStartTs, dayEndTs),
-    dailyCashEntries: getDailyCashEntriesForBounds(dayStartTs, dayEndTs),
-    physicalCashTotal: getPhysicalCashTotalForBounds(dayStartTs, dayEndTs),
+    dailyCashEntry: await getDailyCashEntryForBounds(dayStartTs, dayEndTs),
+    dailyCashEntries: await getDailyCashEntriesForBounds(dayStartTs, dayEndTs),
+    physicalCashTotal: await getPhysicalCashTotalForBounds(dayStartTs, dayEndTs),
   });
 });
 
-function getDailyCashEntriesForBounds(dayStartTs, dayEndTs) {
-  const entries = (db.data.daily_cash_entries || []).filter((e) => {
+async function getDailyCashEntriesForBounds(dayStartTs, dayEndTs) {
+  const dailyEntries = await store.getDailyCashEntries();
+  const entries = dailyEntries.filter((e) => {
     const t = e.date_ts ?? e.created_at ?? 0;
     return t >= dayStartTs && t < dayEndTs;
   });
@@ -1454,13 +1160,14 @@ function getDailyCashEntriesForBounds(dayStartTs, dayEndTs) {
   return entries;
 }
 
-function getPhysicalCashTotalForBounds(dayStartTs, dayEndTs) {
-  const entries = getDailyCashEntriesForBounds(dayStartTs, dayEndTs);
+async function getPhysicalCashTotalForBounds(dayStartTs, dayEndTs) {
+  const entries = await getDailyCashEntriesForBounds(dayStartTs, dayEndTs);
   return entries.reduce((sum, e) => sum + (e.physical_cash ?? 0), 0);
 }
 
-function getDailyCashEntryForBounds(dayStartTs, dayEndTs) {
-  const entries = (db.data.daily_cash_entries || []).filter((e) => {
+async function getDailyCashEntryForBounds(dayStartTs, dayEndTs) {
+  const dailyEntries = await store.getDailyCashEntries();
+  const entries = dailyEntries.filter((e) => {
     const t = e.date_ts ?? e.created_at ?? 0;
     return t >= dayStartTs && t < dayEndTs;
   });
@@ -1470,16 +1177,17 @@ function getDailyCashEntryForBounds(dayStartTs, dayEndTs) {
 }
 
 app.post("/api/daily-cash-entry", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const physicalCash = parseFloat(req.body.physical_cash);
   if (isNaN(physicalCash) || physicalCash < 0) {
     return res.status(400).json({ error: "invalid_physical_cash", message: "physical_cash must be a non-negative number" });
   }
   const dateStr = (req.body.date || "").toString().trim() || new Date().toISOString().slice(0, 10);
-  const bounds = getDayBounds(dateStr);
-  const dayStartTs = bounds ? bounds.startTs : getTodayRange().startTs;
-  const dayEndTs = bounds ? bounds.endTs : getTodayRange().endTs;
-  const summary = getSalesSummaryForRange(dayStartTs, dayEndTs);
+  const bounds = await store.getDayBounds(dateStr);
+  const todayRange = await store.getTodayRange();
+  const dayStartTs = bounds ? bounds.startTs : todayRange.startTs;
+  const dayEndTs = bounds ? bounds.endTs : todayRange.endTs;
+  const summary = await store.getSalesSummaryForRange(dayStartTs, dayEndTs);
   const systemCash = summary.totalCash;
   const difference = physicalCash - systemCash;
   const entry = {
@@ -1493,19 +1201,17 @@ app.post("/api/daily-cash-entry", authMiddleware, async (req, res) => {
     user_name: req.user?.name || "—",
     created_at: Date.now(),
   };
-  db.data.daily_cash_entries = db.data.daily_cash_entries || [];
-  db.data.daily_cash_entries.push(entry);
-  await db.write();
+  await store.appendDailyCashEntry(entry);
   res.json(entry);
 });
 
 app.get("/api/daily-cash-entry", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const dateStr = (req.query.date || "").toString().trim() || new Date().toISOString().slice(0, 10);
-  const bounds = getDayBounds(dateStr);
+  const bounds = await store.getDayBounds(dateStr);
   if (!bounds) return res.status(400).json({ error: "invalid_date", message: "date must be YYYY-MM-DD" });
-  const entry = getDailyCashEntryForBounds(bounds.startTs, bounds.endTs);
-  const summary = getSalesSummaryForRange(bounds.startTs, bounds.endTs);
+  const entry = await getDailyCashEntryForBounds(bounds.startTs, bounds.endTs);
+  const summary = await store.getSalesSummaryForRange(bounds.startTs, bounds.endTs);
   res.json({
     date: dateStr,
     systemCash: summary.totalCash,
@@ -1515,8 +1221,8 @@ app.get("/api/daily-cash-entry", authMiddleware, async (req, res) => {
 
 // Reconciliation: Cash & Card from UTAP/Bank emails (auto-forward)
 app.get("/api/reconciliation/inbox-config", authMiddleware, async (req, res) => {
-  await ensureData();
-  const c = db.data.reconciliation_inbox_config;
+  await ensurePrismaReady();
+  const c = await store.getReconciliationInboxConfig();
   res.json({
     configured: !!(c && c.host && c.user),
     host: c?.host ? "***" : null,
@@ -1525,112 +1231,110 @@ app.get("/api/reconciliation/inbox-config", authMiddleware, async (req, res) => 
 });
 
 app.put("/api/reconciliation/inbox-config", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const perms = JSON.parse(req.user?.permissions || "[]");
   if (!perms.includes("web_settings") && !["admin", "manager"].includes(req.user?.role)) {
     return res.status(403).json({ error: "Forbidden" });
   }
   const { host, port, user, password, secure } = req.body || {};
-  db.data.reconciliation_inbox_config = {
-    host: host?.trim() || null,
-    port: port || 993,
-    user: user?.trim() || null,
-    password: password?.trim() || null,
-    secure: secure !== false,
-  };
-  await db.write();
+  await store.updateSettings({
+    reconciliation_inbox_config: {
+      host: host?.trim() || null,
+      port: port || 993,
+      user: user?.trim() || null,
+      password: password?.trim() || null,
+      secure: secure !== false,
+    },
+  });
   res.json({ ok: true });
 });
 
 app.post("/api/reconciliation/fetch-now", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const result = await fetchReconciliationEmails();
   res.json(result);
 });
 
 app.get("/api/reconciliation/bank-settings", authMiddleware, async (req, res) => {
-  await ensureData();
-  const s = db.data.reconciliation_bank_settings;
+  await ensurePrismaReady();
+  let s = await store.getReconciliationBankSettings();
   if (!s) {
-    db.data.reconciliation_bank_settings = { default_percentage: 1.9, card_types: [{ name: "CREDIT PREMIUM", percentage: 2 }, { name: "INTERNATIONAL CARDS", percentage: 1.5 }] };
-    await db.write();
+    await store.updateSettings({ reconciliation_bank_settings: { default_percentage: 1.9, card_types: [{ name: "CREDIT PREMIUM", percentage: 2 }, { name: "INTERNATIONAL CARDS", percentage: 1.5 }] } });
+    s = await store.getReconciliationBankSettings();
   }
-  res.json(db.data.reconciliation_bank_settings);
+  res.json(s);
 });
 
 app.put("/api/reconciliation/bank-settings", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const perms = JSON.parse(req.user?.permissions || "[]");
   if (!perms.includes("web_settings") && !["admin", "manager"].includes(req.user?.role)) {
     return res.status(403).json({ error: "Forbidden" });
   }
   const { default_percentage, card_types } = req.body || {};
-  db.data.reconciliation_bank_settings = {
+  const current = await store.getReconciliationBankSettings();
+  const updated = {
     default_percentage: typeof default_percentage === "number" ? default_percentage : (parseFloat(default_percentage) || 1.9),
-    card_types: Array.isArray(card_types) ? card_types.map((c) => ({ name: String(c.name || "").trim() || "Card", percentage: parseFloat(c.percentage) || 0 })).filter((c) => c.name) : (db.data.reconciliation_bank_settings?.card_types || []),
+    card_types: Array.isArray(card_types) ? card_types.map((c) => ({ name: String(c.name || "").trim() || "Card", percentage: parseFloat(c.percentage) || 0 })).filter((c) => c.name) : (current?.card_types || []),
   };
-  await db.write();
-  res.json(db.data.reconciliation_bank_settings);
+  await store.updateSettings({ reconciliation_bank_settings: updated });
+  res.json(updated);
 });
 
 app.get("/api/reconciliation/bank-accounts", authMiddleware, async (req, res) => {
-  await ensureData();
-  const a = db.data.reconciliation_bank_accounts || { card_account: "", cash_account: "" };
+  await ensurePrismaReady();
+  const a = await store.getReconciliationBankAccounts();
   res.json(a);
 });
 
 app.put("/api/reconciliation/bank-accounts", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const perms = JSON.parse(req.user?.permissions || "[]");
   if (!perms.includes("web_settings") && !["admin", "manager"].includes(req.user?.role)) {
     return res.status(403).json({ error: "Forbidden" });
   }
   const { card_account, cash_account } = req.body || {};
-  db.data.reconciliation_bank_accounts = {
-    card_account: String(card_account || "").trim(),
-    cash_account: String(cash_account || "").trim(),
-  };
-  await db.write();
-  res.json(db.data.reconciliation_bank_accounts);
+  const updated = { card_account: String(card_account || "").trim(), cash_account: String(cash_account || "").trim() };
+  await store.updateSettings({ reconciliation_bank_accounts: updated });
+  res.json(updated);
 });
 
 app.get("/api/reconciliation/warnings", authMiddleware, async (req, res) => {
-  await ensureData();
-  const warnings = (db.data.reconciliation_warnings || []).slice(-50).reverse();
+  await ensurePrismaReady();
+  const warnings = (await store.getReconciliationWarnings()).slice(-50).reverse();
   res.json({ warnings });
 });
 
 app.post("/api/reconciliation/warnings/clear", authMiddleware, async (req, res) => {
-  await ensureData();
-  db.data.reconciliation_warnings = [];
-  await db.write();
+  await ensurePrismaReady();
+  await store.updateSettings({ reconciliation_warnings: [] });
   res.json({ ok: true });
 });
 
 app.get("/api/reconciliation/summary", authMiddleware, async (req, res) => {
   try {
-    await ensureData();
+    await ensurePrismaReady();
     const dateStr = (req.query.date || "").toString().trim() || new Date().toISOString().slice(0, 10);
-    const bounds = getDayBounds(dateStr);
+    const bounds = await store.getDayBounds(dateStr);
     if (!bounds) return res.status(400).json({ error: "invalid_date" });
 
-    const summary = getSalesSummaryForRange(bounds.startTs, bounds.endTs);
-    const imports = db.data.reconciliation_imports || [];
+    const summary = await store.getSalesSummaryForRange(bounds.startTs, bounds.endTs);
+    const imports = await store.getReconciliationImports();
     const byDate = aggregateReconciliationByDate(imports);
     const dayData = byDate[dateStr] || { cash: 0, card: 0 };
 
-    const dailyCashEntries = getDailyCashEntriesForBounds(bounds.startTs, bounds.endTs);
-    const physicalCashTotal = getPhysicalCashTotalForBounds(bounds.startTs, bounds.endTs);
+    const dailyCashEntries = await getDailyCashEntriesForBounds(bounds.startTs, bounds.endTs);
+    const physicalCashTotal = await getPhysicalCashTotalForBounds(bounds.startTs, bounds.endTs);
 
-    const utapImportsForDate = (db.data.reconciliation_imports || []).filter((i) => i.source === "utap" && i.date === dateStr);
+    const utapImportsForDate = (await store.getReconciliationImports()).filter((i) => i.source === "utap" && i.date === dateStr);
     const totalUtapDeduction = utapImportsForDate.reduce((s, i) => s + (i.deduction ?? 0), 0);
-    const bankSettings = db.data.reconciliation_bank_settings || {};
+    const bankSettings = await store.getReconciliationBankSettings() || {};
     const defaultPct = bankSettings.default_percentage ?? 1.9;
     const expectedDeduction = summary.totalCard * (defaultPct / 100);
     const deductionDiff = totalUtapDeduction > 0 ? totalUtapDeduction - expectedDeduction : null;
 
     // Manual physical count (next day) - for verification
-    const physicalCountStore = db.data.physical_cash_count_by_date || {};
+    const physicalCountStore = await store.getPhysicalCashCountByDate() || {};
     const manualPhysicalCount = physicalCountStore[dateStr] || null;
     // When manual count exists, use it for difference (manually counted cash - system); else use app deposits
     const effectivePhysicalCash = manualPhysicalCount ? manualPhysicalCount.amount : (physicalCashTotal > 0 ? physicalCashTotal : null);
@@ -1682,39 +1386,40 @@ app.get("/api/reconciliation/summary", authMiddleware, async (req, res) => {
 
 /** Set manual physical cash count (next day). */
 app.put("/api/reconciliation/physical-count", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const amount = parseFloat(req.body.amount);
   if (isNaN(amount) || amount < 0) return res.status(400).json({ error: "invalid_amount", message: "amount must be a non-negative number" });
   const dateStr = (req.body.date || "").toString().trim() || new Date().toISOString().slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return res.status(400).json({ error: "invalid_date" });
-  const store = db.data.physical_cash_count_by_date || {};
-  store[dateStr] = {
+  const physStore = await store.getPhysicalCashCountByDate() || {};
+  physStore[dateStr] = {
     amount,
     user_id: req.user?.id || "",
     user_name: req.user?.name || "—",
     created_at: Date.now(),
   };
-  db.data.physical_cash_count_by_date = store;
-  await db.write();
+  await store.updateSettings({ physical_cash_count_by_date: physStore });
   res.json({ ok: true, amount, date: dateStr });
 });
 
 /** Card transaction detail for reconciliation: POS vs UTAP, match status. */
 app.get("/api/reconciliation/card-detail", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const dateStr = (req.query.date || "").toString().trim() || new Date().toISOString().slice(0, 10);
-  const bounds = getDayBounds(dateStr);
+  const bounds = await store.getDayBounds(dateStr);
   if (!bounds) return res.status(400).json({ error: "invalid_date" });
 
-  const summary = getSalesSummaryForRange(bounds.startTs, bounds.endTs);
-  const paymentMethods = db.data.payment_methods || [];
-  const orders = (db.data.orders || []).reduce((acc, o) => {
+  const summary = await store.getSalesSummaryForRange(bounds.startTs, bounds.endTs);
+  const paymentMethods = await store.getAllPaymentMethods();
+  const ordersList = await store.getOrders();
+  const orders = ordersList.reduce((acc, o) => {
     acc[o.id] = o;
     return acc;
   }, {});
 
   const posTransactions = [];
-  for (const p of db.data.payments || []) {
+  const paymentsList = await store.getPayments();
+  for (const p of paymentsList) {
     if (!summary.paidOrderIds.has(p.order_id)) continue;
     const code = resolvePaymentMethodCode(p.method, paymentMethods);
     if (code !== "card") continue;
@@ -1730,7 +1435,7 @@ app.get("/api/reconciliation/card-detail", authMiddleware, async (req, res) => {
   }
   posTransactions.sort((a, b) => a.created_at - b.created_at);
 
-  const utapImports = (db.data.reconciliation_imports || []).filter((i) => (i.source === "utap" || i.source === "bank_email_card") && i.date === dateStr);
+  const utapImports = (await store.getReconciliationImports()).filter((i) => (i.source === "utap" || i.source === "bank_email_card") && i.date === dateStr);
   const utapTransactions = utapImports.map((i) => ({
     id: i.id,
     amount: i.amount,
@@ -1740,7 +1445,7 @@ app.get("/api/reconciliation/card-detail", authMiddleware, async (req, res) => {
     created_at: i.created_at,
   })).sort((a, b) => a.created_at - b.created_at);
 
-  const bankSettings = db.data.reconciliation_bank_settings || {};
+  const bankSettings = (await store.getReconciliationBankSettings()) || {};
   const defaultPct = bankSettings.default_percentage ?? 1.9;
   const totalUtapGross = utapTransactions.reduce((s, u) => s + u.amount, 0);
   const totalUtapDeduction = utapTransactions.reduce((s, u) => s + (u.deduction ?? 0), 0);
@@ -1800,33 +1505,34 @@ function parseReservationTime(v) {
   return isNaN(t) ? NaN : t;
 }
 
-function expireTableReservations() {
+async function expireTableReservations() {
   const now = Date.now();
-  const list = db.data.table_reservations || [];
+  const list = await store.getTableReservations();
   let changed = false;
-  for (let i = 0; i < list.length; i++) {
-    if (list[i].status === "active" && list[i].to_time != null && now > list[i].to_time + RESERVATION_GRACE_MS) {
-      list[i] = { ...list[i], status: "expired" };
+  for (const r of list) {
+    if (r.status === "active" && r.to_time != null && now > r.to_time + RESERVATION_GRACE_MS) {
+      await store.updateTableReservation(r.id, { ...r, status: "expired" });
       changed = true;
     }
   }
   return changed;
 }
 
-function getActiveReservationForTable(tableId) {
+async function getActiveReservationForTable(tableId) {
   const now = Date.now();
-  return (db.data.table_reservations || []).find(
+  const list = await store.getTableReservations();
+  return list.find(
     (r) => r.table_id === tableId && r.status === "active" && r.to_time != null && now <= r.to_time + RESERVATION_GRACE_MS
   );
 }
 
 // Tables
 app.get("/api/tables", authMiddleware, async (req, res) => {
-  await ensureData();
-  if (expireTableReservations()) await db.write();
-  const tables = db.data.tables || [];
-  res.json(
-    tables.map((r) => {
+  await ensurePrismaReady();
+  await expireTableReservations();
+  const tables = await store.getTables();
+  const tablesMapped = [];
+  for (const r of tables) {
       const num = typeof r.number === "string" ? parseInt(r.number, 10) || 0 : r.number ?? 0;
       const out = {
         ...r,
@@ -1836,7 +1542,7 @@ app.get("/api/tables", authMiddleware, async (req, res) => {
         waiter_name: r.waiter_name || null,
       };
       const isFree = !r.current_order_id;
-      const activeRes = isFree ? getActiveReservationForTable(r.id) : null;
+      const activeRes = isFree ? await getActiveReservationForTable(r.id) : null;
       if (activeRes) {
         out.status = "reserved";
         out.reservation = {
@@ -1847,32 +1553,37 @@ app.get("/api/tables", authMiddleware, async (req, res) => {
           to_time: activeRes.to_time,
         };
       }
-      return out;
-    })
-  );
+    tablesMapped.push(out);
+  }
+  res.json(tablesMapped);
 });
 
 app.post("/api/tables", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const id = req.body.id || `t_${uuid().slice(0, 8)}`;
   const body = req.body;
-  const t = { id, number: body.number ?? 1, name: body.name || `Table ${body.number || 1}`, capacity: body.capacity ?? 4, floor: body.floor || "main", status: body.status || "free", current_order_id: null, guest_count: 0, waiter_id: null, waiter_name: null, opened_at: null, x: body.x ?? 0, y: body.y ?? 0, width: body.width ?? 120, height: body.height ?? 100, shape: body.shape || "square" };
-  db.data.tables = db.data.tables.filter((x) => x.id !== id);
-  db.data.tables.push(t);
-  await db.write();
+  const num = typeof body.number === "number" ? body.number : parseInt(body.number, 10) || 1;
+  const t = await store.createTable({
+    id, number: num, name: body.name || `Table ${num}`, capacity: body.capacity ?? 4, floor: body.floor || "main",
+    status: body.status || "free", current_order_id: null, guest_count: 0, waiter_id: null, waiter_name: null, opened_at: null,
+    x: body.x ?? 0, y: body.y ?? 0, width: body.width ?? 120, height: body.height ?? 100, shape: body.shape || "square",
+  });
   res.json(t);
 });
 
 app.post("/api/tables/:id/open", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const { id } = req.params;
   const guestCount = parseInt(req.query.guest_count) || 1;
   const waiterId = req.query.waiter_id || req.user?.id;
-  const waiter = db.data.users.find((u) => u.id === waiterId);
-  const tbl = db.data.tables.find((t) => t.id === id);
+  const users = await store.getAllUsers();
+  const waiter = users.find((u) => u.id === waiterId);
+  const tables = await store.getTables();
+  const tbl = tables.find((t) => t.id === id);
   if (!tbl) return res.status(404).json({ error: "Not found" });
   const existingOrderId = tbl.current_order_id || null;
-  const existingOrder = existingOrderId ? db.data.orders.find((o) => o.id === existingOrderId) : null;
+  const orders = await store.getOrders();
+  const existingOrder = existingOrderId ? orders.find((o) => o.id === existingOrderId) : null;
   if (existingOrder && existingOrder.status !== "paid") {
     return res.status(409).json({
       error: "table_already_occupied",
@@ -1883,43 +1594,54 @@ app.post("/api/tables/:id/open", authMiddleware, async (req, res) => {
   }
   const orderId = `ord_${uuid().slice(0, 12)}`;
   const now = Date.now();
-  db.data.orders.push({ id: orderId, table_id: id, table_number: String(tbl.number), waiter_id: waiterId, waiter_name: waiter?.name || "Waiter", status: "open", subtotal: 0, tax_amount: 0, discount_percent: 0, discount_amount: 0, total: 0, created_at: now, paid_at: null, zoho_receipt_id: null });
-  const tidx = db.data.tables.findIndex((t) => t.id === id);
-  db.data.tables[tidx] = { ...db.data.tables[tidx], status: "occupied", current_order_id: orderId, guest_count: guestCount, waiter_id: waiterId, waiter_name: waiter?.name || "Waiter", opened_at: new Date(now).toISOString() };
-  await db.write();
-  res.json(db.data.tables[tidx]);
+  await store.createOrder({
+    id: orderId, table_id: id, table_number: String(tbl.number), waiter_id: waiterId, waiter_name: waiter?.name || "Waiter",
+    status: "open", subtotal: 0, tax_amount: 0, discount_percent: 0, discount_amount: 0, total: 0,
+    created_at: new Date(now), paid_at: null, zoho_receipt_id: null,
+  });
+  const updated = await store.updateTable(id, {
+    status: "occupied", current_order_id: orderId, guest_count: guestCount, waiter_id: waiterId,
+    waiter_name: waiter?.name || "Waiter", opened_at: new Date(now),
+  });
+  res.json(updated);
 });
 
 app.post("/api/tables/:id/close", authMiddleware, async (req, res) => {
-  await ensureData();
-  const idx = db.data.tables.findIndex((t) => t.id === req.params.id);
-  if (idx < 0) return res.status(404).json({ error: "Not found" });
-  db.data.tables[idx] = { ...db.data.tables[idx], status: "free", current_order_id: null, guest_count: 0, waiter_id: null, waiter_name: null, opened_at: null };
-  await db.write();
-  res.json(db.data.tables[idx]);
+  await ensurePrismaReady();
+  try {
+    const t = await store.updateTable(req.params.id, { status: "free", current_order_id: null, guest_count: 0, waiter_id: null, waiter_name: null, opened_at: null });
+    res.json(t);
+  } catch (e) {
+    if (e.code === "P2025") return res.status(404).json({ error: "Not found" });
+    throw e;
+  }
 });
 
 app.put("/api/tables/:id", authMiddleware, async (req, res) => {
-  await ensureData();
-  const idx = db.data.tables.findIndex((t) => t.id === req.params.id);
-  if (idx < 0) return res.status(404).json({ error: "Not found" });
+  await ensurePrismaReady();
   const body = req.body || {};
-  const t = db.data.tables[idx];
-  if (body.status != null) t.status = body.status;
-  if (body.current_order_id != null) t.current_order_id = body.current_order_id;
-  if (body.waiter_id != null) t.waiter_id = body.waiter_id;
-  if (body.waiter_name != null) t.waiter_name = body.waiter_name;
-  if (body.guest_count != null) t.guest_count = body.guest_count;
-  if (body.opened_at != null) t.opened_at = body.opened_at;
-  await db.write();
-  res.json({ ...t, number: typeof t.number === "string" ? parseInt(t.number, 10) || 0 : (t.number ?? 0), current_order_id: t.current_order_id || null, waiter_id: t.waiter_id || null, waiter_name: t.waiter_name || null });
+  const updates = {};
+  if (body.status != null) updates.status = body.status;
+  if (body.current_order_id != null) updates.current_order_id = body.current_order_id;
+  if (body.waiter_id != null) updates.waiter_id = body.waiter_id;
+  if (body.waiter_name != null) updates.waiter_name = body.waiter_name;
+  if (body.guest_count != null) updates.guest_count = body.guest_count;
+  if (body.opened_at != null) updates.opened_at = body.opened_at;
+  try {
+    const t = await store.updateTable(req.params.id, updates);
+    res.json({ ...t, number: typeof t.number === "string" ? parseInt(t.number, 10) || 0 : (t.number ?? 0), current_order_id: t.current_order_id || null, waiter_id: t.waiter_id || null, waiter_name: t.waiter_name || null });
+  } catch (e) {
+    if (e.code === "P2025") return res.status(404).json({ error: "Not found" });
+    throw e;
+  }
 });
 
 // Reserve table: guest name + time range. Reservation auto-expires 10 min after end time.
 app.post("/api/tables/:id/reserve", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const { id: tableId } = req.params;
-  const tbl = db.data.tables.find((t) => t.id === tableId);
+  const tables = await store.getTables();
+  const tbl = tables.find((t) => t.id === tableId);
   if (!tbl) return res.status(404).json({ error: "Table not found" });
   if (tbl.current_order_id) return res.status(409).json({ error: "Table is occupied" });
   const guestName = (req.body.guest_name || req.body.guestName || "").toString().trim();
@@ -1930,7 +1652,7 @@ app.post("/api/tables/:id/reserve", authMiddleware, async (req, res) => {
   if (isNaN(fromTime) || isNaN(toTime) || toTime <= fromTime)
     return res.status(400).json({ error: "Valid from_time and to_time (ISO or ms) required; to_time must be after from_time" });
   const now = Date.now();
-  const list = db.data.table_reservations || [];
+  const list = await store.getTableReservations();
   const overlapping = list.some(
     (r) =>
       r.table_id === tableId &&
@@ -1951,56 +1673,57 @@ app.post("/api/tables/:id/reserve", authMiddleware, async (req, res) => {
     created_at: now,
     status: "active",
   };
-  db.data.table_reservations.push(reservation);
-  await db.write();
+  await store.createTableReservation(reservation);
   res.status(201).json(reservation);
 });
 
 // Cancel reservation for table (by reservation id or any active for table)
 app.post("/api/tables/:id/reservation/cancel", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const { id: tableId } = req.params;
   const reservationId = req.body.reservation_id ?? req.body.reservationId ?? req.query.reservation_id;
-  const list = db.data.table_reservations || [];
+  const list = await store.getTableReservations();
   const idx = reservationId
     ? list.findIndex((r) => r.id === reservationId && r.table_id === tableId)
     : list.findIndex((r) => r.table_id === tableId && r.status === "active");
   if (idx < 0) return res.status(404).json({ error: "Reservation not found" });
-  db.data.table_reservations[idx] = { ...db.data.table_reservations[idx], status: "cancelled" };
-  await db.write();
-  res.json({ ok: true, reservation: db.data.table_reservations[idx] });
+  const r = list[idx];
+  await store.updateTableReservation(r.id, { ...r, status: "cancelled" });
+  res.json({ ok: true, reservation: { ...r, status: "cancelled" } });
 });
 
 // Floor plan sections (A,B,C,D,E filters)
 app.get("/api/floor-plan-sections", authMiddleware, async (req, res) => {
-  await ensureData();
-  res.json(db.data.floor_plan_sections || {});
+  await ensurePrismaReady();
+  res.json(await store.getFloorPlanSections() || {});
 });
 
 app.put("/api/floor-plan-sections", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const body = req.body || {};
   if (typeof body !== "object") return res.status(400).json({ error: "Body must be object" });
-  db.data.floor_plan_sections = { A: [], B: [], C: [], D: [], E: [] };
+  const sections = { A: [], B: [], C: [], D: [], E: [] };
   for (const k of ["A", "B", "C", "D", "E"]) {
     const arr = Array.isArray(body[k]) ? body[k].map((n) => (typeof n === "number" && n >= 1 && n <= 43 ? n : parseInt(n, 10))).filter((n) => !isNaN(n) && n >= 1 && n <= 43) : [];
-    db.data.floor_plan_sections[k] = [...new Set(arr)].sort((a, b) => a - b);
+    sections[k] = [...new Set(arr)].sort((a, b) => a - b);
   }
-  await db.write();
-  res.json(db.data.floor_plan_sections);
+  await store.updateSettings({ floor_plan_sections: sections });
+  res.json(sections);
 });
 
 // List pending discount requests (must be before /api/orders/:id so "discount-requests" is not matched as id)
 app.get("/api/orders/discount-requests", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const perms = JSON.parse(req.user?.permissions || "[]");
   if (!perms.includes("web_approve_discount") && req.user?.role !== "admin" && req.user?.role !== "manager") {
     return res.status(403).json({ error: "Permission denied" });
   }
   const status = req.query.status || "pending";
-  let list = (db.data.discount_requests || []).filter((r) => r.status === status);
+  const discountReqs = await store.getDiscountRequests();
+  let list = discountReqs.filter((r) => r.status === status);
+  const orders = await store.getOrders();
   list = list.map((r) => {
-    const order = db.data.orders.find((o) => o.id === r.order_id);
+    const order = orders.find((o) => o.id === r.order_id);
     return { ...r, order_subtotal: order?.subtotal, order_total_before_discount: order ? (order.subtotal || 0) + (order.tax_amount || 0) : 0 };
   });
   list.sort((a, b) => (a.requested_at || 0) - (b.requested_at || 0));
@@ -2009,32 +1732,39 @@ app.get("/api/orders/discount-requests", authMiddleware, async (req, res) => {
 
 // Orders (full ticket detail: order, items, payments, voids, refunds). Items enriched with product overdue_undelivered_minutes for web floor.
 app.get("/api/orders/:id", authMiddleware, async (req, res) => {
-  await ensureData();
-  const order = db.data.orders.find((o) => o.id === req.params.id);
+  await ensurePrismaReady();
+  const orders = await store.getOrders();
+  const order = orders.find((o) => o.id === req.params.id);
   if (!order) return res.status(404).json({ error: "Not found" });
-  const rawItems = (db.data.order_items || []).filter((i) => i.order_id === order.id);
-  const products = db.data.products || [];
-  const defaultOverdue = Math.min(1440, Math.max(1, (db.data.settings?.overdue_undelivered_minutes ?? 10) | 0));
+  const rawItems = await store.getOrderItems(order.id);
+  const products = await store.getAllProducts();
+  const s = await store.getSettings();
+  const defaultOverdue = Math.min(1440, Math.max(1, (s?.overdue_undelivered_minutes ?? 10) | 0));
   const items = rawItems.map((i) => {
     const product = i.product_id ? products.find((p) => p.id === i.product_id) : null;
     const overdue_undelivered_minutes = product?.overdue_undelivered_minutes != null ? product.overdue_undelivered_minutes : defaultOverdue;
     return { ...i, overdue_undelivered_minutes };
   });
-  const payments = (db.data.payments || []).filter((p) => p.order_id === order.id);
-  const voids = (db.data.void_logs || []).filter((v) => v.order_id === order.id);
+  const allPayments = await store.getPayments();
+  const payments = allPayments.filter((p) => p.order_id === order.id);
+  const allVoids = await store.getVoidLogs();
+  const voids = allVoids.filter((v) => v.order_id === order.id);
   res.json({ ...order, items, payments, voids });
 });
 
 app.post("/api/orders", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const body = req.body;
   const waiterId = req.query.waiter_id || req.user?.id;
-  const waiter = db.data.users.find((u) => u.id === waiterId);
-  const tbl = db.data.tables.find((t) => t.id === body.table_id);
+  const users = await store.getAllUsers();
+  const waiter = users.find((u) => u.id === waiterId);
+  const tables = await store.getTables();
+  const tbl = tables.find((t) => t.id === body.table_id);
   if (tbl?.current_order_id) {
-    const existingOrder = db.data.orders.find((o) => o.id === tbl.current_order_id);
+    const orders = await store.getOrders();
+    const existingOrder = orders.find((o) => o.id === tbl.current_order_id);
     if (existingOrder && existingOrder.status !== "paid") {
-      const items = (db.data.order_items || []).filter((i) => i.order_id === existingOrder.id);
+      const items = await store.getOrderItems(existingOrder.id);
       return res.status(409).json({
         error: "table_already_occupied",
         message: "Bu masada zaten açık sipariş var.",
@@ -2044,113 +1774,117 @@ app.post("/api/orders", authMiddleware, async (req, res) => {
     }
   }
   const orderId = body.id || `ord_${uuid().slice(0, 12)}`;
-  db.data.orders.push({ id: orderId, table_id: body.table_id, table_number: tbl?.number?.toString() || "1", waiter_id: waiterId, waiter_name: waiter?.name || "Waiter", status: "open", subtotal: 0, tax_amount: 0, discount_percent: 0, discount_amount: 0, total: 0, created_at: Date.now(), paid_at: null, zoho_receipt_id: null });
-  const tidx = db.data.tables.findIndex((t) => t.id === body.table_id);
-  if (tidx >= 0) {
-    db.data.tables[tidx].status = "occupied";
-    db.data.tables[tidx].current_order_id = orderId;
-    db.data.tables[tidx].waiter_id = waiterId;
-    db.data.tables[tidx].waiter_name = waiter?.name || "Waiter";
-    db.data.tables[tidx].guest_count = body.guest_count ?? 1;
-    db.data.tables[tidx].opened_at = new Date().toISOString();
+  const order = await store.createOrder({
+    id: orderId, table_id: body.table_id, table_number: tbl?.number?.toString() || "1", waiter_id: waiterId, waiter_name: waiter?.name || "Waiter",
+    status: "open", subtotal: 0, tax_amount: 0, discount_percent: 0, discount_amount: 0, total: 0,
+    created_at: new Date(), paid_at: null, zoho_receipt_id: null,
+  });
+  if (tbl) {
+    await store.updateTable(body.table_id, {
+      status: "occupied", current_order_id: orderId, waiter_id: waiterId, waiter_name: waiter?.name || "Waiter",
+      guest_count: body.guest_count ?? 1, opened_at: new Date(),
+    });
   }
-  await db.write();
-  const order = db.data.orders.find((o) => o.id === orderId);
-  const items = (db.data.order_items || []).filter((i) => i.order_id === orderId);
+  const items = await store.getOrderItems(orderId);
   res.json({ ...order, items });
 });
 
-function recalcOrderTotal(orderId) {
-  const items = (db.data.order_items || []).filter((i) => i.order_id === orderId);
+async function recalcOrderTotal(orderId) {
+  const items = await store.getOrderItems(orderId);
   let subtotal = 0;
   for (const i of items) subtotal += (i.quantity || 0) * (i.price || 0);
-  const vatPercent = Math.min(100, Math.max(0, (db.data.settings?.vat_percent ?? 0) | 0));
+  const s = await store.getSettings();
+  const vatPercent = Math.min(100, Math.max(0, (s?.vat_percent ?? 0) | 0));
   const taxAmount = subtotal * (vatPercent / 100);
-  const oidx = db.data.orders.findIndex((o) => o.id === orderId);
-  if (oidx < 0) return;
-  const order = db.data.orders[oidx];
+  const order = await store.getOrderById(orderId);
+  if (!order) return;
   const discountPercent = Number(order.discount_percent) || 0;
   const discountAmount = Number(order.discount_amount) || 0;
   const discount = (subtotal + taxAmount) * (discountPercent / 100) + discountAmount;
   const total = Math.max(0, subtotal + taxAmount - discount);
-  db.data.orders[oidx] = { ...order, subtotal, tax_amount: taxAmount, discount_percent: discountPercent, discount_amount: discountAmount, total };
+  await store.updateOrder(orderId, { subtotal, tax_amount: taxAmount, discount_percent: discountPercent, discount_amount: discountAmount, total });
 }
 
 app.post("/api/orders/:id/items", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const orderId = req.params.id;
   const body = req.body;
   const clientLineId = body.client_line_id || null;
-  db.data.order_items = db.data.order_items || [];
+  const orderItems = await store.getOrderItems(orderId);
 
   // Idempotency: if client_line_id provided, find existing line in same order and update instead of create
   if (clientLineId) {
-    const idx = db.data.order_items.findIndex((i) => i.order_id === orderId && i.client_line_id === clientLineId);
-    if (idx >= 0) {
-      const existing = db.data.order_items[idx];
-      const updated = {
-        ...existing,
+    const existing = orderItems.find((i) => i.client_line_id === clientLineId);
+    if (existing) {
+      const updated = await store.updateOrderItem(existing.id, {
         product_id: body.product_id ?? existing.product_id,
         product_name: body.product_name ?? existing.product_name,
         quantity: body.quantity ?? existing.quantity ?? 1,
         price: body.price ?? existing.price ?? 0,
         notes: body.notes ?? existing.notes ?? "",
-      };
-      db.data.order_items[idx] = updated;
-      recalcOrderTotal(orderId);
-      await db.write();
+      });
+      await recalcOrderTotal(orderId);
       return res.json({ ...updated, order_id: orderId });
     }
   }
 
   const itemId = `item_${uuid().slice(0, 8)}`;
-  const newItem = { id: itemId, order_id: orderId, product_id: body.product_id || null, product_name: body.product_name || "Item", quantity: body.quantity ?? 1, price: body.price ?? 0, notes: body.notes || "", status: "pending", sent_at: null, client_line_id: clientLineId };
-  db.data.order_items.push(newItem);
-  recalcOrderTotal(orderId);
-  await db.write();
-  const item = db.data.order_items.find((i) => i.id === itemId);
-  res.json({ ...item, order_id: orderId });
+  const newItem = await store.createOrderItem({
+    id: itemId, order_id: orderId, product_id: body.product_id || null, product_name: body.product_name || "Item",
+    quantity: body.quantity ?? 1, price: body.price ?? 0, notes: body.notes || "", status: "pending", sent_at: null, client_line_id: clientLineId,
+  });
+  await recalcOrderTotal(orderId);
+  res.json({ ...newItem, order_id: orderId });
 });
 
 app.put("/api/orders/:orderId/items/:itemId", authMiddleware, async (req, res) => {
-  await ensureData();
-  const idx = db.data.order_items.findIndex((i) => i.id === req.params.itemId && i.order_id === req.params.orderId);
-  if (idx < 0) return res.status(404).json({ error: "Not found" });
+  await ensurePrismaReady();
+  const { orderId, itemId } = req.params;
   const body = req.body;
-  db.data.order_items[idx] = { ...db.data.order_items[idx], product_id: body.product_id || null, product_name: body.product_name, quantity: body.quantity ?? 1, price: body.price ?? 0, notes: body.notes || "" };
-  recalcOrderTotal(req.params.orderId);
-  await db.write();
-  res.json(db.data.order_items[idx]);
+  const items = await store.getOrderItems(orderId);
+  const item = items.find((i) => i.id === itemId);
+  if (!item) return res.status(404).json({ error: "Not found" });
+  const updated = await store.updateOrderItem(itemId, {
+    product_id: body.product_id || null, product_name: body.product_name, quantity: body.quantity ?? 1, price: body.price ?? 0, notes: body.notes || "",
+  });
+  await recalcOrderTotal(orderId);
+  res.json(updated);
 });
 
 app.delete("/api/orders/:orderId/items/:itemId", authMiddleware, async (req, res) => {
-  await ensureData();
-  db.data.order_items = db.data.order_items.filter((i) => !(i.id === req.params.itemId && i.order_id === req.params.orderId));
-  recalcOrderTotal(req.params.orderId);
-  await db.write();
+  await ensurePrismaReady();
+  const { orderId, itemId } = req.params;
+  const items = await store.getOrderItems(orderId);
+  const item = items.find((i) => i.id === itemId);
+  if (!item) return res.status(404).json({ error: "Not found" });
+  await store.deleteOrderItem(itemId);
+  await recalcOrderTotal(orderId);
   res.status(204).send();
 });
 
 app.post("/api/orders/:id/send", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const now = Date.now();
-  db.data.order_items.forEach((i) => { if (i.order_id === req.params.id) { i.status = "sent"; i.sent_at = now; } });
-  const oidx = db.data.orders.findIndex((o) => o.id === req.params.id);
-  if (oidx >= 0) db.data.orders[oidx].status = "sent";
-  await db.write();
-  const order = db.data.orders.find((o) => o.id === req.params.id);
-  const items = (db.data.order_items || []).filter((i) => i.order_id === req.params.id);
-  res.json({ ...order, items });
+  const items = await store.getOrderItems(req.params.id);
+  for (const i of items) {
+    await store.updateOrderItem(i.id, { status: "sent", sent_at: new Date(now) });
+  }
+  await store.updateOrder(req.params.id, { status: "sent" });
+  const order = await store.getOrderById(req.params.id);
+  const itemsList = await store.getOrderItems(req.params.id);
+  res.json({ ...order, items: itemsList });
 });
 
 // Discount request (app): waiter requests discount; web approves
 app.post("/api/orders/:id/discount-request", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const orderId = req.params.id;
-  const order = db.data.orders.find((o) => o.id === orderId);
+  const ordersList = await store.getOrders();
+  const order = ordersList.find((o) => o.id === orderId);
   if (!order) return res.status(404).json({ error: "Order not found" });
   const body = req.body || {};
-  const existing = (db.data.discount_requests || []).find((r) => r.order_id === orderId && r.status === "pending");
+  const discountReqs = await store.getDiscountRequests();
+  const existing = discountReqs.find((r) => r.order_id === orderId && r.status === "pending");
   if (existing) return res.status(409).json({ error: "Already requested", request: existing });
   const id = `dr_${uuid().slice(0, 8)}`;
   const request = {
@@ -2171,37 +1905,37 @@ app.post("/api/orders/:id/discount-request", authMiddleware, async (req, res) =>
     discount_amount: null,
     approved_note: null,
   };
-  db.data.discount_requests = db.data.discount_requests || [];
-  db.data.discount_requests.push(request);
-  await db.write();
-  res.status(201).json(request);
+  const created = await store.createDiscountRequest(request);
+  res.status(201).json(created);
 });
 
 app.get("/api/orders/:id/discount-request", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const orderId = req.params.id;
-  const pending = (db.data.discount_requests || []).find((r) => r.order_id === orderId && r.status === "pending");
+  const discountReqs2 = await store.getDiscountRequests();
+  const pending = discountReqs2.find((r) => r.order_id === orderId && r.status === "pending");
   res.json({ request: pending || null });
 });
 
 app.post("/api/orders/:orderId/discount-request/:requestId/approve", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const perms = JSON.parse(req.user?.permissions || "[]");
   if (!perms.includes("web_approve_discount") && req.user?.role !== "admin" && req.user?.role !== "manager") {
     return res.status(403).json({ error: "Permission denied" });
   }
   const { orderId, requestId } = req.params;
   const body = req.body || {};
-  const reqIdx = (db.data.discount_requests || []).findIndex((r) => r.id === requestId && r.order_id === orderId && r.status === "pending");
-  if (reqIdx < 0) return res.status(404).json({ error: "Request not found or already processed" });
-  const oidx = db.data.orders.findIndex((o) => o.id === orderId);
-  if (oidx < 0) return res.status(404).json({ error: "Order not found" });
+  const discountReqs3 = await store.getDiscountRequests();
+  const reqItem = discountReqs3.find((r) => r.id === requestId && r.order_id === orderId && r.status === "pending");
+  if (!reqItem) return res.status(404).json({ error: "Request not found or already processed" });
+  const orderCheck = await store.getOrderById(orderId);
+  if (!orderCheck) return res.status(404).json({ error: "Order not found" });
   const discountPercent = body.discount_percent != null ? Number(body.discount_percent) : 0;
   const discountAmount = body.discount_amount != null ? Number(body.discount_amount) : 0;
-  db.data.orders[oidx] = { ...db.data.orders[oidx], discount_percent: discountPercent, discount_amount: discountAmount };
-  recalcOrderTotal(orderId);
-  db.data.discount_requests[reqIdx] = {
-    ...db.data.discount_requests[reqIdx],
+  await store.updateOrder(orderId, { discount_percent: discountPercent, discount_amount: discountAmount });
+  await recalcOrderTotal(orderId);
+  const updatedReq = {
+    ...reqItem,
     status: "approved",
     approved_by_user_id: req.user?.id || "",
     approved_by_user_name: req.user?.name || "",
@@ -2210,43 +1944,46 @@ app.post("/api/orders/:orderId/discount-request/:requestId/approve", authMiddlew
     discount_amount: discountAmount,
     approved_note: body.note || "",
   };
-  await db.write();
-  const order = db.data.orders.find((o) => o.id === orderId);
-  const items = (db.data.order_items || []).filter((i) => i.order_id === orderId);
-  res.json({ request: db.data.discount_requests[reqIdx], order: { ...order, items } });
+  await store.updateDiscountRequest(requestId, updatedReq);
+  const order = await store.getOrderById(orderId);
+  const items = await store.getOrderItems(orderId);
+  res.json({ request: updatedReq, order: { ...order, items } });
 });
 
 // İndirim talebini iptal et (web). Aynı yetki: web_approve_discount.
 app.post("/api/orders/:orderId/discount-request/:requestId/cancel", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const perms = JSON.parse(req.user?.permissions || "[]");
   if (!perms.includes("web_approve_discount") && req.user?.role !== "admin" && req.user?.role !== "manager") {
     return res.status(403).json({ error: "Permission denied" });
   }
   const { orderId, requestId } = req.params;
-  const reqIdx = (db.data.discount_requests || []).findIndex((r) => r.id === requestId && r.order_id === orderId && r.status === "pending");
-  if (reqIdx < 0) return res.status(404).json({ error: "Request not found or already processed" });
-  db.data.discount_requests[reqIdx] = {
-    ...db.data.discount_requests[reqIdx],
+  const discountReqs4 = await store.getDiscountRequests();
+  const reqItem2 = discountReqs4.find((r) => r.id === requestId && r.order_id === orderId && r.status === "pending");
+  if (!reqItem2) return res.status(404).json({ error: "Request not found or already processed" });
+  const cancelledReq = {
+    ...reqItem2,
     status: "cancelled",
     approved_by_user_id: req.user?.id || "",
     approved_by_user_name: req.user?.name || "",
     approved_at: Date.now(),
     approved_note: (req.body && req.body.note) ? String(req.body.note) : "",
   };
-  await db.write();
-  res.json({ request: db.data.discount_requests[reqIdx] });
+  await store.updateDiscountRequest(requestId, cancelledReq);
+  res.json({ request: cancelledReq });
 });
 
 app.get("/api/dashboard/discounts-today", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const date = req.query.date ? String(req.query.date) : new Date().toISOString().slice(0, 10);
   const dayStart = new Date(date + "T00:00:00.000Z").getTime();
   const dayEnd = dayStart + 24 * 60 * 60 * 1000;
-  const list = (db.data.discount_requests || [])
+  const discountReqs5 = await store.getDiscountRequests();
+  const ordersForDiscount = await store.getOrders();
+  const list = discountReqs5
     .filter((r) => r.status === "approved" && r.approved_at >= dayStart && r.approved_at < dayEnd)
     .map((r) => {
-      const order = db.data.orders.find((o) => o.id === r.order_id);
+      const order = ordersForDiscount.find((o) => o.id === r.order_id);
       const subtotal = Number(order?.subtotal) || 0;
       const taxAmount = Number(order?.tax_amount) || 0;
       const total = Number(order?.total) || 0;
@@ -2271,36 +2008,38 @@ app.get("/api/dashboard/discounts-today", authMiddleware, async (req, res) => {
 
 // KDS: update order item status (preparing / ready / delivered) for local-first sync
 app.put("/api/orders/:orderId/items/:itemId/status", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const { orderId, itemId } = req.params;
   const status = (req.body && req.body.status) || req.query.status;
   if (!status || !["preparing", "ready", "delivered"].includes(status)) {
     return res.status(400).json({ error: "status must be 'preparing', 'ready' or 'delivered'" });
   }
-  const idx = (db.data.order_items || []).findIndex((i) => i.id === itemId && i.order_id === orderId);
-  if (idx < 0) return res.status(404).json({ error: "Not found" });
-  db.data.order_items[idx].status = status;
-  if (status === "delivered") {
-    db.data.order_items[idx].delivered_at = Date.now();
-  }
-  await db.write();
-  res.json(db.data.order_items[idx]);
+  const items = await store.getOrderItems(orderId);
+  const item = items.find((i) => i.id === itemId);
+  if (!item) return res.status(404).json({ error: "Not found" });
+  const updates = { status };
+  if (status === "delivered") updates.delivered_at = new Date();
+  const updated = await store.updateOrderItem(itemId, updates);
+  res.json(updated);
 });
 
 // Payments
 app.post("/api/payments", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const userId = req.query.user_id || req.user?.id;
   const { order_id, payments } = req.body;
   console.log("[Zoho] POST /api/payments received:", order_id, "payments:", payments?.length, "total:", payments?.reduce((s, p) => s + (p.amount || 0), 0));
   const now = Date.now();
-  db.data.payments = db.data.payments || [];
   for (const p of payments) {
-    db.data.payments.push({ id: `pay_${uuid().slice(0, 8)}`, order_id, amount: p.amount, method: p.method || "cash", received_amount: p.received_amount ?? p.amount, change_amount: p.change_amount ?? 0, user_id: userId, created_at: now });
+    await store.createPayment({
+      id: `pay_${uuid().slice(0, 8)}`, order_id, amount: p.amount, method: p.method || "cash",
+      received_amount: p.received_amount ?? p.amount, change_amount: p.change_amount ?? 0, user_id: userId, created_at: new Date(now),
+    });
   }
-  const totalPaid = (db.data.payments || []).filter((p) => p.order_id === order_id).reduce((s, p) => s + p.amount, 0);
-  const order = db.data.orders.find((o) => o.id === order_id);
-  const items = (db.data.order_items || []).filter((i) => i.order_id === order_id);
+  const allPayments = await store.getPayments();
+  const totalPaid = allPayments.filter((p) => p.order_id === order_id).reduce((s, p) => s + p.amount, 0);
+  const order = await store.getOrderById(order_id);
+  const items = await store.getOrderItems(order_id);
   const totalMatch = Math.abs(totalPaid - (order?.total || 0)) < 0.01;
   const hasItems = items.length > 0;
   const notSentYet = !order?.zoho_receipt_id;
@@ -2324,63 +2063,68 @@ app.post("/api/payments", authMiddleware, async (req, res) => {
 
   if (order && willPushZoho) {
     console.log("[Zoho] Pushing order", order_id, "to Zoho Books...");
-    const orderPayments = (db.data.payments || []).filter((p) => p.order_id === order_id);
-    const products = db.data.products || [];
-    const ok = await pushToZohoBooks(db, order, items, orderPayments.map((p) => ({ amount: p.amount, method: p.method })), products);
+    const orderPayments = (await store.getPayments()).filter((p) => p.order_id === order_id);
+    const products = await store.getAllProducts();
+    const ok = await pushToZohoBooks(order, items, orderPayments.map((p) => ({ amount: p.amount, method: p.method })), products);
     console.log("[Zoho] Result:", ok ? "OK" : "FAILED");
   }
   if (order && Math.abs(totalPaid - (order.total || 0)) < 0.01) {
-    const oidx = db.data.orders.findIndex((o) => o.id === order_id);
-    if (oidx >= 0) { db.data.orders[oidx].status = "paid"; db.data.orders[oidx].paid_at = now; }
-    db.data.tables.forEach((t) => { if (t.current_order_id === order_id) { t.status = "free"; t.current_order_id = null; t.guest_count = 0; t.waiter_id = null; t.waiter_name = null; t.opened_at = null; } });
+    await store.updateOrder(order_id, { status: "paid", paid_at: new Date(now) });
+    const tablesForPay = await store.getTables();
+    for (const t of tablesForPay) {
+      if (t.current_order_id === order_id) {
+        await store.updateTable(t.id, { status: "free", current_order_id: null, guest_count: 0, waiter_id: null, waiter_name: null, opened_at: null });
+      }
+    }
   }
-  await db.write();
   res.json({ success: true });
 });
 
 // Voids
 app.post("/api/voids", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const body = req.body;
-  db.data.void_logs = db.data.void_logs || [];
-  db.data.void_logs.push({ id: `void_${uuid().slice(0, 8)}`, type: body.type || "post_void", order_id: body.order_id, order_item_id: body.order_item_id, product_name: body.product_name, quantity: body.quantity ?? 1, price: body.price ?? 0, amount: body.amount ?? 0, source_table_id: body.source_table_id, source_table_number: body.source_table_number, target_table_id: body.target_table_id, target_table_number: body.target_table_number, user_id: body.user_id, user_name: body.user_name, details: body.details || "", created_at: Date.now() });
-  await db.write();
-  res.json({ id: db.data.void_logs[db.data.void_logs.length - 1].id });
+  const v = await store.createVoidLog({
+    id: `void_${uuid().slice(0, 8)}`, type: body.type || "post_void", order_id: body.order_id, order_item_id: body.order_item_id,
+    product_name: body.product_name, quantity: body.quantity ?? 1, price: body.price ?? 0, amount: body.amount ?? 0,
+    source_table_id: body.source_table_id, source_table_number: body.source_table_number, target_table_id: body.target_table_id, target_table_number: body.target_table_number,
+    user_id: body.user_id, user_name: body.user_name, details: body.details || "", created_at: new Date(),
+  });
+  res.json({ id: v.id });
 });
 
 // Void requests
 app.get("/api/void-requests", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const status = req.query.status || "pending";
-  res.json((db.data.void_requests || []).filter((v) => v.status === status));
+  const voidReqs = await store.getVoidRequests();
+  res.json(voidReqs.filter((v) => v.status === status));
 });
 
 app.post("/api/void-requests", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const body = req.body;
   const id = body.id || `vr_${uuid().slice(0, 8)}`;
-  db.data.void_requests = db.data.void_requests || [];
-  db.data.void_requests.push({ id, order_id: body.order_id, order_item_id: body.order_item_id, product_name: body.product_name, quantity: body.quantity ?? 1, price: body.price ?? 0, table_number: body.table_number, requested_by_user_id: body.requested_by_user_id, requested_by_user_name: body.requested_by_user_name, requested_at: Date.now(), status: "pending", approved_by_supervisor_user_id: null, approved_by_supervisor_user_name: null, approved_by_supervisor_at: null, approved_by_kds_user_id: null, approved_by_kds_user_name: null, approved_by_kds_at: null });
-  await db.write();
-  res.json(db.data.void_requests.find((v) => v.id === id));
+  const payload = { id, order_id: body.order_id, order_item_id: body.order_item_id, product_name: body.product_name, quantity: body.quantity ?? 1, price: body.price ?? 0, table_number: body.table_number, requested_by_user_id: body.requested_by_user_id, requested_by_user_name: body.requested_by_user_name, requested_at: Date.now(), status: "pending", approved_by_supervisor_user_id: null, approved_by_supervisor_user_name: null, approved_by_supervisor_at: null, approved_by_kds_user_id: null, approved_by_kds_user_name: null, approved_by_kds_at: null };
+  const created = await store.createVoidRequest(payload);
+  res.json(created);
 });
 
 app.patch("/api/void-requests/:id", authMiddleware, async (req, res) => {
-  await ensureData();
-  const idx = db.data.void_requests.findIndex((v) => v.id === req.params.id);
-  if (idx < 0) return res.status(404).json({ error: "Not found" });
+  await ensurePrismaReady();
+  const voidReqs = await store.getVoidRequests();
+  const vr = voidReqs.find((v) => v.id === req.params.id);
+  if (!vr) return res.status(404).json({ error: "Not found" });
   const body = req.body;
-  db.data.void_requests[idx] = { ...db.data.void_requests[idx], status: body.status || "approved", approved_by_supervisor_user_id: body.approved_by_supervisor_user_id, approved_by_supervisor_user_name: body.approved_by_supervisor_user_name, approved_by_supervisor_at: body.approved_by_supervisor_at, approved_by_kds_user_id: body.approved_by_kds_user_id, approved_by_kds_user_name: body.approved_by_kds_user_name, approved_by_kds_at: body.approved_by_kds_at };
-  await db.write();
-  res.json(db.data.void_requests[idx]);
+  const updated = await store.updateVoidRequest(req.params.id, { ...vr, status: body.status || "approved", approved_by_supervisor_user_id: body.approved_by_supervisor_user_id, approved_by_supervisor_user_name: body.approved_by_supervisor_user_name, approved_by_supervisor_at: body.approved_by_supervisor_at, approved_by_kds_user_id: body.approved_by_kds_user_id, approved_by_kds_user_name: body.approved_by_kds_user_name, approved_by_kds_at: body.approved_by_kds_at });
+  res.json(updated);
 });
 
 // Closed bill access requests (user requests access; approver approves from app or web)
 app.get("/api/closed-bill-access-requests", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const status = (req.query.status || "pending").toString();
-  db.data.closed_bill_access_requests = db.data.closed_bill_access_requests || [];
-  const list = db.data.closed_bill_access_requests;
+  let list = await store.getClosedBillAccessRequests();
   if (status === "all" || status === "") {
     res.json(list.slice(-100));
   } else {
@@ -2389,11 +2133,10 @@ app.get("/api/closed-bill-access-requests", authMiddleware, async (req, res) => 
 });
 
 app.post("/api/closed-bill-access-requests", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const body = req.body;
   const id = body.id || `cbar_${uuid().slice(0, 8)}`;
-  db.data.closed_bill_access_requests = db.data.closed_bill_access_requests || [];
-  db.data.closed_bill_access_requests.push({
+  const cbarPayload = {
     id,
     requested_by_user_id: body.requested_by_user_id,
     requested_by_user_name: body.requested_by_user_name || "—",
@@ -2403,19 +2146,18 @@ app.post("/api/closed-bill-access-requests", authMiddleware, async (req, res) =>
     approved_by_user_name: null,
     approved_at: null,
     expires_at: body.expires_at || null,
-  });
-  await db.write();
-  res.json(db.data.closed_bill_access_requests.find((r) => r.id === id));
+  };
+  const created = await store.createClosedBillAccessRequest(cbarPayload);
+  res.json(created);
 });
 
 app.patch("/api/closed-bill-access-requests/:id", authMiddleware, async (req, res) => {
-  await ensureData();
-  db.data.closed_bill_access_requests = db.data.closed_bill_access_requests || [];
-  const idx = db.data.closed_bill_access_requests.findIndex((r) => r.id === req.params.id);
-  if (idx < 0) return res.status(404).json({ error: "Not found" });
+  await ensurePrismaReady();
+  const list = await store.getClosedBillAccessRequests();
+  const r = list.find((x) => x.id === req.params.id);
+  if (!r) return res.status(404).json({ error: "Not found" });
   const body = req.body;
-  const r = db.data.closed_bill_access_requests[idx];
-  db.data.closed_bill_access_requests[idx] = {
+  const updated = {
     ...r,
     status: body.status || "approved",
     approved_by_user_id: body.approved_by_user_id ?? r.approved_by_user_id,
@@ -2423,35 +2165,35 @@ app.patch("/api/closed-bill-access-requests/:id", authMiddleware, async (req, re
     approved_at: body.approved_at ?? (body.status === "approved" || body.status === "rejected" ? Date.now() : r.approved_at),
     expires_at: body.expires_at !== undefined ? body.expires_at : r.expires_at,
   };
-  await db.write();
-  res.json(db.data.closed_bill_access_requests[idx]);
+  await store.updateClosedBillAccessRequest(req.params.id, updated);
+  res.json(updated);
 });
 
 // Closed bill changes: ?date= or ?dateFrom=&dateTo= (same as daily-sales).
 app.get("/api/dashboard/closed-bill-changes", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const dateStr = (req.query.date || "").toString().trim();
   const dateFromStr = (req.query.dateFrom || "").toString().trim();
   const dateToStr = (req.query.dateTo || "").toString().trim();
-  const todayTs = getTodayStartTimestamp();
+  const todayTs = (await store.getTodayRange()).startTs;
   const dayMs = 24 * 60 * 60 * 1000;
   let startTs = todayTs;
   let endTs = todayTs + dayMs;
   if (dateFromStr && dateToStr) {
-    const fromBounds = getDayBounds(dateFromStr);
-    const toBounds = getDayBounds(dateToStr);
+    const fromBounds = await store.getDayBounds(dateFromStr);
+    const toBounds = await store.getDayBounds(dateToStr);
     if (!fromBounds || !toBounds) return res.status(400).json({ error: "invalid_date" });
     startTs = fromBounds.startTs;
     endTs = toBounds.endTs;
     if (startTs > endTs) return res.status(400).json({ error: "invalid_range" });
   } else if (dateStr) {
-    const bounds = getDayBounds(dateStr);
+    const bounds = await store.getDayBounds(dateStr);
     if (!bounds) return res.status(400).json({ error: "invalid_date" });
     startTs = bounds.startTs;
     endTs = bounds.endTs;
   }
-  const voidLogs = db.data.void_logs || [];
-  const orders = db.data.orders || [];
+  const voidLogs = await store.getVoidLogs();
+  const orders = await store.getOrders();
   const orderIds = new Set(orders.map((o) => o.id));
   const changes = voidLogs
     .filter((v) => v.created_at >= startTs && v.created_at < endTs && (v.type === "refund" || v.type === "refund_full" || v.type === "payment_method_change") && orderIds.has(v.order_id))
@@ -2483,41 +2225,42 @@ app.get("/api/dashboard/closed-bill-changes", authMiddleware, async (req, res) =
 
 // Cash drawer opens (no sale): who opened and when. ?date= or ?dateFrom=&dateTo=
 app.get("/api/dashboard/cash-drawer-opens", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const dateStr = (req.query.date || "").toString().trim();
   const dateFromStr = (req.query.dateFrom || "").toString().trim();
   const dateToStr = (req.query.dateTo || "").toString().trim();
-  const todayTs = getTodayStartTimestamp();
+  const todayTs = (await store.getTodayRange()).startTs;
   const dayMs = 24 * 60 * 60 * 1000;
   let startTs = todayTs;
   let endTs = todayTs + dayMs;
   if (dateFromStr && dateToStr) {
-    const fromBounds = getDayBounds(dateFromStr);
-    const toBounds = getDayBounds(dateToStr);
+    const fromBounds = await store.getDayBounds(dateFromStr);
+    const toBounds = await store.getDayBounds(dateToStr);
     if (!fromBounds || !toBounds) return res.status(400).json({ error: "invalid_date" });
     startTs = fromBounds.startTs;
     endTs = toBounds.endTs;
   } else if (dateStr) {
-    const bounds = getDayBounds(dateStr);
+    const bounds = await store.getDayBounds(dateStr);
     if (!bounds) return res.status(400).json({ error: "invalid_date" });
     startTs = bounds.startTs;
     endTs = bounds.endTs;
   }
-  const list = (db.data.cash_drawer_opens || []).filter((e) => e.opened_at >= startTs && e.opened_at < endTs);
+  const cashOpens = await store.getCashDrawerOpens();
+  const list = cashOpens.filter((e) => e.opened_at >= startTs && e.opened_at < endTs);
   list.sort((a, b) => (b.opened_at || 0) - (a.opened_at || 0));
   res.json({ count: list.length, opens: list });
 });
 
 // Clear sales (test data) by date range: deletes orders with created_at in [dateFrom start, dateTo end], related data, and all void_logs in that date range.
 app.post("/api/settings/clear-sales-by-date-range", authMiddleware, async (req, res) => {
-  await ensureData();
+  await ensurePrismaReady();
   const dateFromStr = (req.body?.dateFrom || req.query?.dateFrom || "").toString().trim();
   const dateToStr = (req.body?.dateTo || req.query?.dateTo || "").toString().trim();
   if (!dateFromStr || !dateToStr) {
     return res.status(400).json({ error: "dateFrom and dateTo required (YYYY-MM-DD)" });
   }
-  const fromBounds = getDayBounds(dateFromStr);
-  const toBounds = getDayBounds(dateToStr);
+  const fromBounds = await store.getDayBounds(dateFromStr);
+  const toBounds = await store.getDayBounds(dateToStr);
   if (!fromBounds || !toBounds) {
     return res.status(400).json({ error: "Invalid date format (use YYYY-MM-DD)" });
   }
@@ -2526,60 +2269,41 @@ app.post("/api/settings/clear-sales-by-date-range", authMiddleware, async (req, 
   if (startTs > endTs) {
     return res.status(400).json({ error: "dateFrom must be before or equal to dateTo" });
   }
-  const orders = db.data.orders || [];
-  const orderIdsInRange = new Set(orders.filter((o) => {
-    const created = o.created_at ?? o.updated_at ?? 0;
+  const orders = await store.getOrders();
+  const orderIdsArr = orders.filter((o) => {
+    const created = o.created_at ? (typeof o.created_at === "number" ? o.created_at : new Date(o.created_at).getTime()) : (o.updatedAt ? new Date(o.updatedAt).getTime() : 0);
     return created >= startTs && created <= endTs;
-  }).map((o) => o.id));
+  }).map((o) => o.id);
+  const orderIdsInRange = new Set(orderIdsArr);
 
-  // Remove order_items, payments for orders in range; remove orders in range
-  db.data.order_items = (db.data.order_items || []).filter((i) => !orderIdsInRange.has(i.order_id));
-  db.data.payments = (db.data.payments || []).filter((p) => !orderIdsInRange.has(p.order_id));
-  db.data.orders = (db.data.orders || []).filter((o) => !orderIdsInRange.has(o.id));
+  await store.deleteManyOrders(orderIdsArr);
+  const voidLogsBefore = (await store.getVoidLogs()).length;
+  await store.deleteVoidLogsByOrderIdsOrDateRange(Array.from(orderIdsInRange), startTs, endTs);
+  const deletedVoids = voidLogsBefore - (await store.getVoidLogs()).length;
 
-  // Remove void_logs: either belonging to deleted orders OR created_at in the date range (so Total Void drops for that period)
-  const voidLogsBefore = (db.data.void_logs || []).length;
-  db.data.void_logs = (db.data.void_logs || []).filter((v) => {
-    if (orderIdsInRange.has(v.order_id)) return false;
-    const created = v.created_at ?? 0;
-    if (created >= startTs && created <= endTs) return false;
-    return true;
+  const discountReqs = await store.getDiscountRequests();
+  const toDeleteDiscount = discountReqs.filter((r) => {
+    if (orderIdsInRange.has(r.order_id)) return true;
+    const t = r.requested_at ?? r.approved_at ?? 0;
+    return t >= startTs && t <= endTs;
   });
-  const deletedVoids = voidLogsBefore - (db.data.void_logs || []).length;
+  for (const r of toDeleteDiscount) await store.deleteDiscountRequest(r.id);
+  const deletedDiscounts = toDeleteDiscount.length;
 
-  // Remove discount_requests: for deleted orders OR requested_at in date range
-  const discountBefore = (db.data.discount_requests || []).length;
-  db.data.discount_requests = (db.data.discount_requests || []).filter((r) => {
-    if (orderIdsInRange.has(r.order_id)) return false;
-    const ts = r.requested_at ?? r.approved_at ?? 0;
-    if (ts >= startTs && ts <= endTs) return false;
-    return true;
+  const cashOpens = await store.getCashDrawerOpens();
+  const filteredCash = cashOpens.filter((e) => {
+    const t = e.opened_at ?? 0;
+    return t < startTs || t > endTs;
   });
-  const deletedDiscounts = discountBefore - (db.data.discount_requests || []).length;
+  await store.updateSettings({ cash_drawer_opens: filteredCash });
+  const deletedCashDrawer = cashOpens.length - filteredCash.length;
 
-  // Remove cash_drawer_opens in date range
-  const cashDrawerBefore = (db.data.cash_drawer_opens || []).length;
-  db.data.cash_drawer_opens = (db.data.cash_drawer_opens || []).filter((e) => {
-    const ts = e.opened_at ?? 0;
-    return ts < startTs || ts > endTs;
-  });
-  const deletedCashDrawer = cashDrawerBefore - (db.data.cash_drawer_opens || []).length;
-
-  const tables = db.data.tables || [];
-  for (let i = 0; i < tables.length; i++) {
-    if (tables[i].current_order_id && orderIdsInRange.has(tables[i].current_order_id)) {
-      db.data.tables[i] = {
-        ...db.data.tables[i],
-        status: "free",
-        current_order_id: null,
-        guest_count: 0,
-        waiter_id: null,
-        waiter_name: null,
-        opened_at: null,
-      };
+  const tables = await store.getTables();
+  for (const t of tables) {
+    if (t.current_order_id && orderIdsInRange.has(t.current_order_id)) {
+      await store.updateTable(t.id, { status: "free", current_order_id: null, guest_count: 0, waiter_id: null, waiter_name: null, opened_at: null });
     }
   }
-  await db.write();
   const msg = [
     orderIdsInRange.size > 0 && `Deleted ${orderIdsInRange.size} order(s) and related data`,
     deletedVoids > 0 && `Deleted ${deletedVoids} void log(s) in date range`,
@@ -2620,13 +2344,7 @@ app.post("/api/zoho/exchange-code", authMiddleware, async (req, res) => {
         throw e1;
       }
     }
-    await db.read();
-    db.data.zoho_config = db.data.zoho_config || {};
-    db.data.zoho_config.refresh_token = rt;
-    db.data.zoho_config.client_id = client_id;
-    db.data.zoho_config.client_secret = client_secret;
-    if (dc && String(dc).trim()) db.data.zoho_config.dc = String(dc).trim().toLowerCase();
-    await db.write();
+    await store.updateZohoConfig({ refresh_token: rt, client_id, client_secret, dc: dc && String(dc).trim() ? String(dc).trim().toLowerCase() : undefined });
     res.json({ refresh_token: rt, success: true });
   } catch (e) {
     const d = e.response?.data;
@@ -2637,29 +2355,29 @@ app.post("/api/zoho/exchange-code", authMiddleware, async (req, res) => {
 });
 
 app.get("/api/zoho-config", authMiddleware, async (req, res) => {
-  await ensureData();
-  db.data.zoho_config = db.data.zoho_config || {};
-  res.json(db.data.zoho_config);
+  await ensurePrismaReady();
+  const cfg = await store.getZohoConfig();
+  res.json(cfg);
 });
 
 app.put("/api/zoho-config", authMiddleware, async (req, res) => {
-  await ensureData();
-  db.data.zoho_config = db.data.zoho_config || {};
-  for (const [k, v] of Object.entries(req.body)) db.data.zoho_config[k] = v != null ? String(v) : "";
-  await db.write();
-  const cfg = db.data.zoho_config;
+  await ensurePrismaReady();
+  const updates = {};
+  for (const [k, v] of Object.entries(req.body)) updates[k] = v != null ? String(v) : "";
+  await store.updateZohoConfig(updates);
+  const cfg = await store.getZohoConfig();
   console.log("[Zoho] updateZohoConfig SAVED to DB:", {
     dc: cfg.dc,
     client_id_prefix: (cfg.client_id || "").slice(0, 12) + "...",
     client_secret_length: (cfg.client_secret || "").length,
     has_refresh_token: !!(cfg.refresh_token),
   });
-  res.json(db.data.zoho_config);
+  res.json(cfg);
 });
 
 app.get("/api/zoho/items", authMiddleware, async (req, res) => {
   try {
-    const result = await getZohoItems(db);
+    const result = await getZohoItems();
     if (!result) return res.status(400).json({ error: "Zoho Books bağlantısı yok veya yapılandırılmamış" });
     res.json(result);
   } catch (e) {
@@ -2668,13 +2386,13 @@ app.get("/api/zoho/items", authMiddleware, async (req, res) => {
 });
 
 app.get("/api/zoho/item-groups", authMiddleware, async (req, res) => {
-  const result = await getZohoItemGroups(db);
+  const result = await getZohoItemGroups();
   res.json(result);
 });
 
 app.get("/api/zoho/contacts", authMiddleware, async (req, res) => {
   try {
-    const result = await getZohoContacts(db);
+    const result = await getZohoContacts();
     res.json(result);
   } catch (e) {
     res.status(400).json({ error: (e && e.message) || "Zoho kişi listesi alınamadı", contacts: [] });
@@ -2684,7 +2402,7 @@ app.get("/api/zoho/contacts", authMiddleware, async (req, res) => {
 // Zoho sync: sadece upsert (clearZohoProductsFirst kullanılmaz – ürün kaybı önlenir).
 app.post("/api/zoho/sync", authMiddleware, async (req, res) => {
   try {
-    const result = await syncFromZoho(db, {});
+    const result = await syncFromZoho({});
     res.json(result);
   } catch (e) {
     res.status(500).json({ error: (e && e.message) || "Sync failed", categoriesAdded: 0, productsAdded: 0, productsUpdated: 0, productsRemoved: 0, itemsFetched: 0 });
@@ -2695,8 +2413,7 @@ app.post("/api/zoho/sync", authMiddleware, async (req, res) => {
 app.get("/api/zoho/check", authMiddleware, async (req, res) => {
   try {
     const { getZohoConfig, getZohoAccessToken, getZohoItems, getZohoItemGroups } = await import("./zoho.js");
-    await db.read();
-    const cfg = getZohoConfig(db);
+    const cfg = await getZohoConfig();
     const status = {
       ok: false,
       salesPushReady: false,
@@ -2732,11 +2449,11 @@ app.get("/api/zoho/check", authMiddleware, async (req, res) => {
     }
     let token;
     try {
-      token = await getZohoAccessToken(db);
+      token = await getZohoAccessToken();
     } catch (e) {
       let errMsg = e?.message || "Refresh Token / Client kontrol edin";
       try {
-        token = await getZohoAccessToken(db, true);
+        token = await getZohoAccessToken(true);
       } catch (e2) {
         const msg = e?.message || e2?.message || "Refresh Token / Client kontrol edin";
         status.error = "Token alınamadı: " + msg;
@@ -2752,8 +2469,8 @@ app.get("/api/zoho/check", authMiddleware, async (req, res) => {
     status.hasToken = true;
     status.salesPushReady = true;
     try {
-      const itemsRes = await getZohoItems(db);
-      const groupsRes = await getZohoItemGroups(db);
+      const itemsRes = await getZohoItems();
+      const groupsRes = await getZohoItemGroups();
       status.itemsCount = itemsRes?.items?.length ?? 0;
       status.groupsCount = groupsRes?.item_groups?.length ?? 0;
       status.ok = true;
@@ -2790,12 +2507,12 @@ let lastAutoCloseRunTs = 0;
 
 async function runAutoCloseIfDue() {
   try {
-    await db.read();
+    await store.ensurePrismaReady();
   } catch {
     return;
   }
-  const s = db.data?.settings || {};
-  if (!s.auto_close_open_tables) return;
+  const s = await store.getSettings();
+  if (!s?.auto_close_open_tables) return;
   const opening = s.opening_time ?? "07:00";
   const closing = s.closing_time ?? "01:30";
   const grace = Math.min(60, Math.max(0, (s.grace_minutes ?? 0) | 0));
@@ -2806,8 +2523,8 @@ async function runAutoCloseIfDue() {
   const key = getClosedBusinessDayKeyForAutoClose(now, opening, closing, off);
   if (!key || s.last_auto_close_for_business_day === key) return;
 
-  const tables = db.data.tables || [];
-  const orders = db.data.orders || [];
+  const tables = await store.getTables();
+  const orders = await store.getOrders();
   const openTables = tables.filter((t) => t.current_order_id);
   const tablesClosed = [];
   const pmCode = (s.auto_close_payment_method || "cash").toLowerCase();
@@ -2815,8 +2532,7 @@ async function runAutoCloseIfDue() {
     const order = orders.find((o) => o.id === t.current_order_id);
     if (!order || order.status === "paid") continue;
     const amount = order.total ?? 0;
-    db.data.payments = db.data.payments || [];
-    db.data.payments.push({
+    await store.createPayment({
       id: `pay_${uuid().slice(0, 8)}`,
       order_id: order.id,
       amount,
@@ -2824,29 +2540,18 @@ async function runAutoCloseIfDue() {
       received_amount: amount,
       change_amount: 0,
       user_id: "system",
-      created_at: now,
+      created_at: new Date(now),
     });
-    const oidx = orders.findIndex((o) => o.id === order.id);
-    if (oidx >= 0) {
-      db.data.orders[oidx].status = "paid";
-      db.data.orders[oidx].paid_at = now;
+    await store.updateOrder(order.id, { status: "paid", paid_at: new Date(now) });
+    const tbls = tables.filter((tbl) => tbl.current_order_id === order.id);
+    for (const tbl of tbls) {
+      await store.updateTable(tbl.id, { status: "free", current_order_id: null, guest_count: 0, waiter_id: null, waiter_name: null, opened_at: null });
     }
-    db.data.tables.forEach((tbl) => {
-      if (tbl.current_order_id === order.id) {
-        tbl.status = "free";
-        tbl.current_order_id = null;
-        tbl.guest_count = 0;
-        tbl.waiter_id = null;
-        tbl.waiter_name = null;
-        tbl.opened_at = null;
-      }
-    });
     tablesClosed.push({ table_id: t.id, table_number: t.number ?? t.id, order_id: order.id, amount });
   }
   if (tablesClosed.length > 0) {
-    db.data.settings.last_auto_close_for_business_day = key;
-    db.data.eod_logs = db.data.eod_logs || [];
-    db.data.eod_logs.push({
+    await store.updateSettings({ last_auto_close_for_business_day: key });
+    await store.appendEodLog({
       id: `eod_auto_${uuid().slice(0, 8)}`,
       ran_at: now,
       user_id: "system",
@@ -2854,15 +2559,12 @@ async function runAutoCloseIfDue() {
       tables_closed: tablesClosed,
       orders_closed_count: tablesClosed.length,
     });
-    db.data.business_operation_log = db.data.business_operation_log || [];
-    db.data.business_operation_log.push({
+    await store.appendBusinessOperationLog({
       ts: now,
       action: "open_tables_auto_closed",
       business_day_key: key,
       tables_closed: tablesClosed,
     });
-    if (db.data.business_operation_log.length > 2000) db.data.business_operation_log = db.data.business_operation_log.slice(-2000);
-    await db.write();
     lastAutoCloseRunTs = now;
   }
 }
@@ -2879,8 +2581,7 @@ async function startServer() {
     if (HOST === "0.0.0.0") {
       console.log("Listening on all interfaces – Railway/dış erişim için hazır.");
     }
-    // ensureData in background – don't block startup
-    ensureData().then(() => console.log("[startup] ensureData OK")).catch((e) => console.error("[startup] ensureData failed:", e?.message || e));
+    ensurePrismaReady().then(() => console.log("[startup] ensurePrismaReady OK")).catch((e) => console.error("[startup] ensurePrismaReady failed:", e?.message || e));
     setInterval(() => runAutoCloseIfDue().catch((e) => console.error("[auto-close]", e?.message)), 60 * 1000);
     setInterval(() => fetchReconciliationEmails().catch((e) => console.error("[reconciliation]", e?.message)), 5 * 60 * 1000);
   });

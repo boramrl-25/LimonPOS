@@ -1,0 +1,312 @@
+// LimonPOS - PostgreSQL Schema (data.json → Prisma)
+// Offline-first: String IDs, uuid() for new records
+// Mevcut data.json yapısına birebir uyumlu
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============ CORE ENTITIES ============
+
+model User {
+  id                 String   @id @default(uuid())
+  name               String
+  pin                String
+  role               String
+  active             Int      @default(1)
+  permissions        String   @default("[]")
+  cash_drawer_permission Int  @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  ordersAsWaiter     Order[]  @relation("OrderWaiter")
+  payments           Payment[]
+  voidLogs           VoidLog[]
+}
+
+model Category {
+  id             String   @id @default(uuid())
+  name           String
+  color          String   @default("#84CC16")
+  sort_order     Int      @default(0)
+  active         Int      @default(1)
+  modifier_groups String  @default("[]") // JSON array of modifier_group ids
+  printers       String   @default("[]") // JSON array of printer ids
+  show_till      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  products       Product[]
+}
+
+model Product {
+  id              String   @id @default(uuid())
+  name            String
+  name_arabic     String?  @default("")
+  name_turkish    String?  @default("")
+  sku             String?
+  category_id     String?
+  price           Float    @default(0)
+  tax_rate        Float    @default(0)
+  image_url       String?  @default("")
+  printers        String   @default("[]") // JSON array
+  modifier_groups String   @default("[]") // JSON array
+  active          Int      @default(1)
+  pos_enabled     Int      @default(1)
+  zoho_item_id         String?
+  sellable             Boolean  @default(true)
+  zoho_suggest_remove  Boolean? @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  category        Category? @relation(fields: [category_id], references: [id], onDelete: SetNull)
+  orderItems      OrderItem[]
+}
+
+model Printer {
+  id              String   @id @default(uuid())
+  name            String
+  printer_type    String   // "kitchen" | "receipt"
+  ip_address      String?
+  port            Int?     @default(9100)
+  connection_type String?  @default("network")
+  status          String?  @default("offline")
+  is_backup       Int      @default(0)
+  kds_enabled     Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model PaymentMethod {
+  id         String @id @default(uuid())
+  name       String
+  code       String
+  active     Int    @default(1)
+  sort_order Int    @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model ModifierGroup {
+  id         String   @id @default(uuid())
+  name       String
+  min_select Int      @default(0)
+  max_select Int      @default(1)
+  required   Int      @default(0)
+  options    String   @default("[]") // JSON array of {id, name, price}
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model Table {
+  id               String    @id @default(uuid())
+  number           Int
+  name             String
+  capacity         Int       @default(4)
+  floor            String
+  status           String    @default("free")
+  current_order_id String?
+  guest_count      Int       @default(0)
+  waiter_id        String?
+  waiter_name      String?
+  opened_at        DateTime?
+  x                Int       @default(80)
+  y                Int       @default(50)
+  width            Int       @default(80)
+  height           Int       @default(80)
+  shape            String    @default("square")
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  orders           Order[]   @relation("TableOrders")
+  currentOrder     Order?    @relation("TableCurrentOrder", fields: [current_order_id], references: [id], onDelete: SetNull)
+}
+
+model Order {
+  id               String    @id @default(uuid())
+  table_id         String
+  table_number     String
+  waiter_id        String?
+  waiter_name      String?
+  status           String    @default("open")
+  subtotal         Float     @default(0)
+  tax_amount       Float     @default(0)
+  discount_percent Float     @default(0)
+  discount_amount  Float     @default(0)
+  total            Float     @default(0)
+  created_at       DateTime?
+  paid_at          DateTime?
+  zoho_receipt_id  String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  table            Table     @relation("TableOrders", fields: [table_id], references: [id], onDelete: Cascade)
+  tablesAsCurrent  Table[]   @relation("TableCurrentOrder")
+  waiter           User?     @relation("OrderWaiter", fields: [waiter_id], references: [id], onDelete: SetNull)
+  orderItems       OrderItem[]
+  payments         Payment[]
+  voidLogs         VoidLog[]
+}
+
+model OrderItem {
+  id            String    @id @default(uuid())
+  order_id      String
+  product_id    String
+  product_name  String
+  quantity      Int       @default(1)
+  price         Float
+  notes         String?   @default("")
+  status        String    @default("pending")
+  sent_at       DateTime?
+  client_line_id String?  // idempotency
+  delivered_at  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  order        Order     @relation(fields: [order_id], references: [id], onDelete: Cascade)
+  product      Product   @relation(fields: [product_id], references: [id], onDelete: Restrict)
+  voidLogs     VoidLog[]
+}
+
+model Payment {
+  id              String   @id @default(uuid())
+  order_id        String
+  amount          Float
+  method          String
+  received_amount Float?
+  change_amount   Float?   @default(0)
+  user_id         String?
+  created_at      DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  order           Order    @relation(fields: [order_id], references: [id], onDelete: Cascade)
+  user            User?    @relation(fields: [user_id], references: [id], onDelete: SetNull)
+}
+
+model VoidLog {
+  id                  String   @id @default(uuid())
+  type                String
+  order_id            String?
+  order_item_id       String?
+  product_name        String?
+  quantity            Int?     @default(1)
+  price               Float?
+  amount              Float?
+  source_table_id     String?
+  source_table_number String?
+  user_id             String?
+  user_name           String?
+  details             String?
+  created_at          DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  order               Order?   @relation(fields: [order_id], references: [id], onDelete: SetNull)
+  orderItem           OrderItem? @relation(fields: [order_item_id], references: [id], onDelete: SetNull)
+  user                User?    @relation(fields: [user_id], references: [id], onDelete: SetNull)
+}
+
+// ============ LOG / REQUEST TABLES ============
+
+model VoidRequest {
+  id        String   @id @default(uuid())
+  payload   Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ClosedBillAccessRequest {
+  id        String   @id @default(uuid())
+  payload   Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model DiscountRequest {
+  id        String   @id @default(uuid())
+  payload   Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model TableReservation {
+  id        String   @id @default(uuid())
+  payload   Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Device {
+  id        String   @id  // client device_id
+  payload   Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  ts        BigInt?
+  action    String?
+  createdAt DateTime @default(now())
+}
+
+// ============ SINGLETON / CONFIG TABLES ============
+// settings ve zoho_config tekil veriler → tek satır tablolar
+
+model Settings {
+  id                              String   @id @default("default")
+  timezone_offset_minutes         Int      @default(0)
+  overdue_undelivered_minutes     Int      @default(10)
+  opening_time                    String   @default("07:00")
+  closing_time                    String   @default("01:30")
+  open_tables_warning_time        String   @default("01:00")
+  auto_close_open_tables          Boolean  @default(false)
+  auto_close_payment_method       String   @default("cash")
+  grace_minutes                   Int      @default(0)
+  warning_enabled                 Boolean  @default(true)
+  last_warning_shown_for_business_day  String?
+  last_auto_close_for_business_day     String?
+  floor_plan_sections             Json?    // { A: [29,30,...], B: [24,...], ... }
+  setup_complete                  Boolean  @default(false)
+  reconciliation_bank_settings    Json?    // { default_percentage, card_types: [] }
+  reconciliation_bank_accounts    Json?    // { card_account, cash_account }
+  physical_cash_count_by_date     Json?    // { "YYYY-MM-DD": { amount, user_id, ... } }
+  migrations                      Json?    // { ensureAdminPin1234: true, ... }
+  business_operation_log          Json?    // []
+  eod_logs                        Json?    // []
+  cash_drawer_opens               Json?    // []
+  daily_cash_entries              Json?    // []
+  custom_roles                    Json?    // []
+  reconciliation_imports          Json?    // []
+  reconciliation_inbox_config     Json?    // null
+  reconciliation_warnings         Json?    // []
+  company_name                    String?  @default("")
+  company_address                 String?  @default("")
+  receipt_header                  String?  @default("BILL / RECEIPT")
+  receipt_footer_message          String?  @default("Thank you!")
+  kitchen_header                  String?  @default("KITCHEN")
+  receipt_item_size               Int?     @default(0)
+  currency_code                   String?  @default("AED")
+  vat_percent                     Int?     @default(0)
+  createdAt                       DateTime @default(now())
+  updatedAt                       DateTime @updatedAt
+}
+
+model ZohoConfig {
+  id               String   @id @default("default")
+  enabled          String?  @default("false")
+  client_id        String?
+  client_secret    String?
+  refresh_token    String?
+  organization_id  String?
+  customer_id      String?
+  dc               String?  // "eu" | "com" | "in" | "au"
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}

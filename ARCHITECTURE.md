@@ -4,6 +4,21 @@ Bu dokümanda: backend teknolojisi, veritabanı, Android–web senkronizasyonu, 
 
 ---
 
+## Hosting – Değişiklik Planı
+
+> **Railway özet değiştir.** Backend API ve DB, Railway'den **DigitalOcean** veya **AWS Lightsail (Dubai)** taşınacak. Dashboard zaten Vercel'de.
+
+| Bileşen        | Şu an   | Hedef        | Süre     | Maliyet   |
+|----------------|---------|--------------|----------|-----------|
+| Backend host   | Railway | DigitalOcean / AWS Lightsail | 1 gün | Dahil     |
+| Veritabanı     | JSON (LowDB) | SQL (PostgreSQL) | 1 gün  | ~$10/ay   |
+| Backend        | Node.js | Node.js      | —        | —         |
+| Dashboard      | Next.js | Vercel       | —        | —         |
+| Zoho sync      | Senkron | Redis+BullMQ | 0.5 gün | Dahil     |
+| **Toplam**     | —       | —            | **~1 gün** | **~$10/ay** |
+
+---
+
 ## 1. Sistem Mimarisi
 
 ### 1.1. Backend teknolojisi

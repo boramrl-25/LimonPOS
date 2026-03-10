@@ -9,9 +9,18 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "dev:3002": "cross-env PORT=3002 node --watch server.js",
-    "migrate-to-railway": "node scripts/migrate-to-railway.js"
+    "migrate-to-railway": "node scripts/migrate-to-railway.js",
+    "postinstall": "prisma generate",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "db:studio": "prisma studio"
+  },
+  "prisma": {
+    "schema": "../prisma/schema.prisma"
   },
   "dependencies": {
+    "@prisma/client": "^6.9.0",
     "axios": "^1.7.7",
     "cors": "^2.8.5",
     "dotenv": "^17.3.1",
@@ -20,6 +29,7 @@
     "lowdb": "^7.0.1",
     "mailparser": "^3.9.4",
     "node-fetch": "^3.3.2",
+    "prisma": "^6.9.0",
     "proper-lockfile": "^4.1.2",
     "uuid": "^10.0.0",
     "xlsx": "^0.18.5"

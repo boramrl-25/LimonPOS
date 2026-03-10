@@ -1,4 +1,5 @@
 import axios from "axios";
+import * as store from "./lib/store.js";
 
 // EU hesabı için: Web'de Region=EU seçin veya ZOHO_DC=eu (Railway Variables)
 let cachedToken = null;
@@ -91,8 +92,9 @@ export async function exchangeCodeForRefreshToken(code, client_id, client_secret
 }
 
 /** Zoho ayarlarını okur. ÖNCELİK: DB (web'de kaydedilen) > env. Böylece Railway env, web'deki doğru değerleri ezmez. */
-export function getZohoConfig(db) {
-  const dbCfg = db?.data?.zoho_config || {};
+export async function getZohoConfig() {
+  const z = await store.getZohoConfig();
+  const dbCfg = z ? { refresh_token: z.refresh_token, client_id: z.client_id, client_secret: z.client_secret, organization_id: z.organization_id, customer_id: z.customer_id, cash_account_id: z.cash_account_id, card_account_id: z.card_account_id, dc: z.dc, enabled: z.enabled } : {};
   const env = {
     refresh_token: process.env.ZOHO_REFRESH_TOKEN,
     client_id: process.env.ZOHO_CLIENT_ID,
@@ -127,14 +129,14 @@ export function clearZohoTokenCache() {
 
 const DC_ORDER = ["eu", "com", "in", "au"];
 
-export async function getZohoAccessToken(db, tryAllDcs = false) {
-  await db.read();
-  const cfg = getZohoConfig(db);
+export async function getZohoAccessToken(tryAllDcs = false) {
+  const cfg = await getZohoConfig();
   const refresh_token = (cfg.refresh_token || "").trim();
   const client_id = (cfg.client_id || "").trim();
   const client_secret = (cfg.client_secret || "").trim();
   const dc = (cfg.dc || "").trim().toLowerCase() || "com";
-  const dbCfg = db?.data?.zoho_config || {};
+  const z = await store.getZohoConfig();
+  const dbCfg = z ? { client_id: z.client_id, client_secret: z.client_secret, refresh_token: z.refresh_token } : {};
   const fromDb = !!(dbCfg.client_id || dbCfg.client_secret || dbCfg.refresh_token);
   console.log("[Zoho] getZohoAccessToken config source:", {
     hasDbValues: fromDb,
@@ -202,15 +204,13 @@ function toZohoPaymentMode(method) {
 
 /**
  * Push order to Zoho Books as Invoice + Customer Payment.
- * @param {object} db - LowDB instance
  * @param {object} order - Order
  * @param {Array} items - Order items
  * @param {Array} payments - [{ amount, method }] - split payment desteği
  * @param {Array} products - Products (zoho_item_id için stok güncellemesi)
  */
-export async function pushToZohoBooks(db, order, items, payments = [], products = []) {
-  await db.read();
-  const cfg = getZohoConfig(db);
+export async function pushToZohoBooks(order, items, payments = [], products = []) {
+  const cfg = await getZohoConfig();
   const { organization_id, customer_id, enabled, cash_account_id, card_account_id, dc } = cfg;
   const { books: booksBase } = getZohoUrls(dc);
   if (enabled !== "true") {
@@ -226,7 +226,7 @@ export async function pushToZohoBooks(db, order, items, payments = [], products 
     return false;
   }
 
-  const token = await getZohoAccessToken(db);
+  const token = await getZohoAccessToken();
   if (!token) {
     console.log("[Zoho] pushToZohoBooks: skipped - token alinamadi (refresh_token/istemci bilgisi kontrol)");
     return false;
@@ -301,9 +301,7 @@ export async function pushToZohoBooks(db, order, items, payments = [], products 
       }
     }
 
-    const oidx = db.data.orders.findIndex((o) => o.id === order.id);
-    if (oidx >= 0) db.data.orders[oidx].zoho_receipt_id = "sent";
-    await db.write();
+    await store.updateOrder(order.id, { zoho_receipt_id: "sent" });
     return true;
   } catch (err) {
     const errData = err.response?.data;
@@ -346,13 +344,12 @@ async function fetchCategoriesFromEndpoint(token, organization_id, path, booksBa
 }
 
 /** Get Zoho Categories (item groups). Returns { item_groups: [...] } for compatibility. */
-export async function getZohoItemGroups(db) {
-  await db.read();
-  const cfg = getZohoConfig(db);
+export async function getZohoItemGroups() {
+  const cfg = await getZohoConfig();
   const { organization_id, enabled } = cfg;
   if (enabled !== "true" || !organization_id) return { item_groups: [] };
 
-  const token = await getZohoAccessToken(db);
+  const token = await getZohoAccessToken();
   if (!token) return { item_groups: [] };
 
   try {
@@ -368,13 +365,12 @@ export async function getZohoItemGroups(db) {
 }
 
 /** Fetch items from Zoho Books - only SELLABLE items. Returns { items: [...] } or null on error. Supports pagination and alternate response shapes. */
-export async function getZohoItems(db) {
-  await db.read();
-  const cfg = getZohoConfig(db);
+export async function getZohoItems() {
+  const cfg = await getZohoConfig();
   const { organization_id, enabled, dc } = cfg;
   if (enabled !== "true" || !organization_id) return null;
 
-  const token = await getZohoAccessToken(db);
+  const token = await getZohoAccessToken();
   if (!token) return null;
 
   const booksBase = getZohoUrls(dc).books;
@@ -413,13 +409,12 @@ export async function getZohoItems(db) {
 }
 
 /** Fetch contacts from Zoho Books. Returns { contacts: [{ contact_id, contact_name }] }. */
-export async function getZohoContacts(db) {
-  await db.read();
-  const cfg = getZohoConfig(db);
+export async function getZohoContacts() {
+  const cfg = await getZohoConfig();
   const { organization_id, enabled, dc } = cfg;
   if (enabled !== "true" || !organization_id) return { contacts: [] };
 
-  const token = await getZohoAccessToken(db);
+  const token = await getZohoAccessToken();
   if (!token) return { contacts: [] };
 
   const booksBase = getZohoUrls(dc).books;
@@ -539,17 +534,16 @@ function extractCategoriesFromItems(items) {
 }
 
 /** Sync: Clear entire product list, pull Categories from Category Name and all non-sellable-false items. Each product: name, SKU (digits only), category, sale price (rate). */
-export async function syncFromZoho(db, options = {}) {
-  await db.read();
-  const groupsRes = await getZohoItemGroups(db);
-  const itemsRes = await getZohoItems(db);
+export async function syncFromZoho(options = {}) {
+  const groupsRes = await getZohoItemGroups();
+  const itemsRes = await getZohoItems();
   const itemsFetched = itemsRes?.items?.length ?? 0;
   if (!itemsRes) {
-    const cfg = getZohoConfig(db);
+    const cfg = await getZohoConfig();
     const hasConfig = !!(cfg.organization_id && cfg.enabled === "true" && cfg.refresh_token && cfg.client_id && cfg.client_secret);
     let tokenOk = false;
     try {
-      tokenOk = !!(await getZohoAccessToken(db));
+      tokenOk = !!(await getZohoAccessToken());
     } catch (_) {}
     return {
       categoriesAdded: 0,
@@ -565,7 +559,7 @@ export async function syncFromZoho(db, options = {}) {
   // Categories are derived from Category Name in items (Excel/Zoho UI), not item groups
   let groups = extractCategoriesFromItems(itemsRes.items || []);
   const items = itemsRes.items || [];
-  const existingProducts = db.data.products || [];
+  const existingProducts = await store.getAllProducts();
 
   // Zoho boş liste döndüyse mevcut ürünlere dokunma – app/web liste kaybetmesin
   if (items.length === 0 && existingProducts.length > 0) {
@@ -580,7 +574,8 @@ export async function syncFromZoho(db, options = {}) {
     };
   }
 
-  const existingCatIds = new Set((db.data.categories || []).map((c) => c.id));
+  const existingCats = await store.getAllCategories();
+  const existingCatIds = new Set(existingCats.map((c) => c.id));
   const zohoCatIdToLocal = {};
   const zohoCatNameToLocal = {};
   let categoriesAdded = 0;
@@ -593,12 +588,11 @@ export async function syncFromZoho(db, options = {}) {
     zohoCatIdToLocal[zid] = localId;
     zohoCatNameToLocal[gName.toLowerCase()] = localId;
     if (!existingCatIds.has(localId)) {
-      db.data.categories = db.data.categories || [];
-      db.data.categories.push({
+      await store.createCategory({
         id: localId,
         name: g.name,
         color: "#84CC16",
-        sort_order: db.data.categories.length,
+        sort_order: existingCats.length + categoriesAdded,
         active: 1,
         modifier_groups: "[]",
         printers: "[]",
@@ -693,8 +687,26 @@ export async function syncFromZoho(db, options = {}) {
     };
   }
 
-  db.data.products = merged;
-  await db.write();
+  for (const row of merged) {
+    const data = {
+      name: row.name || "Unnamed",
+      name_arabic: row.name_arabic || "",
+      name_turkish: row.name_turkish || "",
+      sku: row.sku || "",
+      category_id: row.category_id || null,
+      price: Number(row.price) || 0,
+      tax_rate: Number(row.tax_rate) || 0,
+      image_url: row.image_url || "",
+      printers: row.printers || "[]",
+      modifier_groups: row.modifier_groups || "[]",
+      active: (row.active != null ? row.active : 1) | 0,
+      pos_enabled: (row.pos_enabled != null ? row.pos_enabled : 0) | 0,
+      zoho_item_id: row.zoho_item_id || null,
+      sellable: row.sellable !== false,
+      zoho_suggest_remove: !!row.zoho_suggest_remove,
+    };
+    await store.upsertProduct(row.id, data);
+  }
   return {
     categoriesAdded,
     productsAdded,

@@ -12,6 +12,10 @@
     "deploy": "powershell -ExecutionPolicy Bypass -File ./deploy-railway-vercel.ps1"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "concurrently": "^8.2.2",
+    "prisma": "^6.19.2"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.2"
   }
 }
