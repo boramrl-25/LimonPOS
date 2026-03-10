@@ -12,6 +12,56 @@ import { PrismaClient } from "@prisma/client";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_FILE = process.env.DATA_FILE || path.join(__dirname, "../data.json");
 
+/** Dosya adı → data anahtarı. Örn: order_items.json → order_items */
+const FILE_TO_KEY = {
+  users: "users",
+  categories: "categories",
+  printers: "printers",
+  payment_methods: "payment_methods",
+  modifier_groups: "modifier_groups",
+  products: "products",
+  tables: "tables",
+  orders: "orders",
+  order_items: "order_items",
+  payments: "payments",
+  void_logs: "void_logs",
+  discount_requests: "discount_requests",
+  devices: "devices",
+  settings: "settings",
+  zoho_config: "zoho_config",
+  floor_plan_sections: "floor_plan_sections",
+};
+
+function loadData(dataPath) {
+  const stat = fs.statSync(dataPath);
+  if (stat.isFile()) {
+    const raw = fs.readFileSync(dataPath, "utf-8");
+    return JSON.parse(raw);
+  }
+  if (stat.isDirectory()) {
+    const dataJsonPath = path.join(dataPath, "data.json");
+    if (fs.existsSync(dataJsonPath) && fs.statSync(dataJsonPath).isFile()) {
+      return loadData(dataJsonPath);
+    }
+    const data = {};
+    const allowed = new Set(Object.keys(FILE_TO_KEY));
+    const files = fs.readdirSync(dataPath).filter((f) => {
+      if (!f.endsWith(".json")) return false;
+      const base = path.basename(f, ".json");
+      return allowed.has(base);
+    });
+    for (const file of files) {
+      const base = path.basename(file, ".json");
+      const key = FILE_TO_KEY[base];
+      const fullPath = path.join(dataPath, file);
+      const raw = fs.readFileSync(fullPath, "utf-8");
+      data[key] = JSON.parse(raw);
+    }
+    return data;
+  }
+  throw new Error("DATA_FILE ne dosya ne dizin: " + dataPath);
+}
+
 function ts(ms) {
   if (ms == null || ms === "") return null;
   const n = Number(ms);
@@ -31,23 +81,17 @@ async function main() {
     process.exit(1);
   }
   if (!fs.existsSync(DATA_FILE)) {
-    console.error("data.json not found:", DATA_FILE);
-    console.error("Lütfen data.json dosyasını sunucuya yükleyin: scp backend/data.json root@SUNUCU_IP:~/LimonPOS/backend/");
+    console.error("Veri yolu bulunamadı:", DATA_FILE);
+    console.error("DATA_FILE ile tek data.json dosyası veya içinde .json dosyaları olan bir klasör verin.");
     process.exit(1);
   }
-  const stat = fs.statSync(DATA_FILE);
-  if (!stat.isFile()) {
-    console.error("HATA: data.json bir dizin olarak var. Silip tekrar deneyin:");
-    console.error("  rm -rf backend/data.json");
-    console.error("Sonra data.json dosyasını yükleyin.");
-    process.exit(1);
+  const data = loadData(DATA_FILE);
+  if (!data.floor_plan_sections && data.settings?.floor_plan_sections) {
+    data.floor_plan_sections = data.settings.floor_plan_sections;
   }
-
-  const raw = fs.readFileSync(DATA_FILE, "utf-8");
-  const data = JSON.parse(raw);
   const prisma = new PrismaClient();
 
-  console.log("Migrating data.json → PostgreSQL...");
+  console.log("Migrating → PostgreSQL...");
 
   try {
     // 1. Users
