@@ -451,6 +451,9 @@ body{font-family:system-ui,-apple-system,sans-serif;margin:0;background:#000;col
 .kds-status-preparing{color:#f59e0b}
 .kds-status-delayed{color:#ef4444}
 .btn-refresh{background:#f59e0b;color:#000;padding:8px 16px;border:none;border-radius:8px;cursor:pointer;font-weight:600}
+.kds-speaker{font-size:20px;cursor:pointer;color:#94a3b8;margin-left:8px;user-select:none}
+.kds-speaker:hover{color:#f59e0b}
+.kds-speaker.muted{color:#64748b;opacity:.7}
 .card{background:#0f0f0f;border-radius:12px;padding:16px;margin-bottom:12px;border:1px solid #262626;min-width:220px;max-width:280px}
 .card.sent{border-left:4px solid #f59e0b}
 .card.preparing{border-left:4px solid #f59e0b}
@@ -498,6 +501,7 @@ th{color:#f59e0b}
 <span class="kds-status-item kds-status-preparing"><span>⏱</span> <span id="kds-preparing-count">0</span> Preparing</span>
 <span class="kds-status-item kds-status-delayed"><span>⚠</span> <span id="kds-delayed-count">0</span> Delayed</span>
 </div>
+<span id="kds-speaker" class="kds-speaker" onclick="toggleKdsSound()" title="Ses açık – tıklayarak kapat">🔊</span>
 <button class="btn btn-refresh" onclick="loadKitchen()">Refresh</button>
 </div>
 </div>
@@ -519,6 +523,7 @@ var lastSeenItemIds = {};
 var kdsKitchenPrinters = [];
 var kdsSelectedPrinterIds = null;
 var KDS_STORAGE_KEY = 'kds_selected_printers';
+var KDS_SOUND_MUTED_KEY = 'kds_sound_muted';
 function loadStoredPrinterSelection() {
   try {
     var s = localStorage.getItem(KDS_STORAGE_KEY);
@@ -584,6 +589,45 @@ function toggleKdsPrinterBtn(id) {
   savePrinterSelection();
   loadKitchen();
 }
+function isKdsSoundMuted() { try { return localStorage.getItem(KDS_SOUND_MUTED_KEY) === '1'; } catch (e) { return false; } }
+function setKdsSoundMuted(muted) {
+  try { localStorage.setItem(KDS_SOUND_MUTED_KEY, muted ? '1' : '0'); } catch (e) {}
+  var el = document.getElementById('kds-speaker');
+  if (el) { el.textContent = muted ? '🔇' : '🔊'; el.className = muted ? 'kds-speaker muted' : 'kds-speaker'; el.title = muted ? 'Ses kapalı – tıklayarak aç' : 'Ses açık – tıklayarak kapat'; }
+}
+function toggleKdsSound() { setKdsSoundMuted(!isKdsSoundMuted()); }
+function updateKdsSpeakerUI() {
+  var el = document.getElementById('kds-speaker');
+  if (!el) return;
+  var m = isKdsSoundMuted();
+  el.textContent = m ? '🔇' : '🔊';
+  el.className = m ? 'kds-speaker muted' : 'kds-speaker';
+  el.title = m ? 'Ses kapalı – tıklayarak aç' : 'Ses açık – tıklayarak kapat';
+}
+function playNewOrderSound() {
+  if (isKdsSoundMuted()) return;
+  try {
+    var ctx = new (window.AudioContext || window.webkitAudioContext)();
+    var osc = ctx.createOscillator(); var gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.frequency.value = 880; osc.type = 'sine';
+    gain.gain.setValueAtTime(0.3, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
+    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.15);
+  } catch (e) {}
+}
+function playLateSound() {
+  if (isKdsSoundMuted()) return;
+  try {
+    var ctx = new (window.AudioContext || window.webkitAudioContext)();
+    var osc = ctx.createOscillator(); var gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.frequency.value = 400; osc.type = 'sawtooth';
+    gain.gain.setValueAtTime(0.2, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
+    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.4);
+  } catch (e) {}
+}
 function escapeHtml(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 function formatProductNameLines(name) {
   if (!name) return ''; var words = name.trim().split(/\s+/);
@@ -607,6 +651,16 @@ async function loadKitchen() {
     var r = await fetch(url);
     var orders = await r.json();
     if (!Array.isArray(orders)) orders = [];
+    var allPending = [];
+    for (var i = 0; i < orders.length; i++) {
+      var o = orders[i];
+      var items = (o.items || []).filter(function(x) { return x.status === 'sent' || x.status === 'preparing' || x.status === 'delivered'; });
+      for (var j = 0; j < items.length; j++) { allPending.push({ order: o, item: items[j] }); }
+    }
+    for (var k = 0; k < allPending.length; k++) {
+      if (!lastSeenItemIds[allPending[k].item.id]) { lastSeenItemIds[allPending[k].item.id] = true; playNewOrderSound(); break; }
+    }
+    for (var k = 0; k < allPending.length; k++) { lastSeenItemIds[allPending[k].item.id] = true; }
     var pendingCount = 0, preparingCount = 0, delayedCount = 0;
     var html = '';
     for (var i = 0; i < orders.length; i++) {
@@ -657,6 +711,27 @@ function startAll(orderId) { fetch(base + '/kitchen-orders/orders/' + encodeURIC
 function orderReady(orderId) { fetch(base + '/kitchen-orders/orders/' + encodeURIComponent(orderId) + '/ready', { method: 'POST' }).then(function() { loadKitchen(); }); }
 function startItem(id) { fetch(base + '/kitchen-orders/items/' + encodeURIComponent(id) + '/preparing', { method: 'POST' }).then(function() { loadKitchen(); }); }
 function readyItem(id) { fetch(base + '/kitchen-orders/items/' + encodeURIComponent(id) + '/ready', { method: 'POST' }).then(function() { loadKitchen(); }); }
+function checkLateAndShowPopup() {
+  var url = base + '/kitchen-orders';
+  if (kdsSelectedPrinterIds && kdsSelectedPrinterIds.length > 0) url += '?printers=' + encodeURIComponent(kdsSelectedPrinterIds.join(','));
+  fetch(url).then(function(r) { return r.json(); }).then(function(orders) {
+    if (!Array.isArray(orders)) return;
+    var lateItems = [];
+    for (var i = 0; i < orders.length; i++) {
+      var o = orders[i];
+      var items = (o.items || []).filter(function(x) { return (x.status === 'sent' || x.status === 'preparing' || x.status === 'delivered') && isLate(x); });
+      for (var j = 0; j < items.length; j++) { lateItems.push({ order: o, item: items[j] }); }
+    }
+    if (lateItems.length > 0) {
+      var listHtml = lateItems.map(function(x) {
+        return '<li><strong>Table ' + x.order.tableNumber + '</strong> — ' + x.item.productName + (x.item.quantity > 1 ? ' x' + x.item.quantity : '') + '</li>';
+      }).join('');
+      document.getElementById('late-list').innerHTML = listHtml;
+      document.getElementById('late-modal').style.display = 'flex';
+      playLateSound();
+    }
+  });
+}
 async function loadReports() {
   try {
     var sum = await fetch(base + '/reports/summary').then(function(r) { return r.json(); });
@@ -675,8 +750,10 @@ function showPage(id) {
   else if (id === 'settings') loadReports();
 }
 var urlParams = new URLSearchParams(window.location.search);
+updateKdsSpeakerUI();
 if (urlParams.get('page') === 'settings') showPage('settings'); else loadKdsPrinters();
 setInterval(function() { if (document.getElementById('kds') && document.getElementById('kds').classList.contains('active')) loadKitchen(); }, 2000);
+setInterval(function() { if (document.getElementById('kds') && document.getElementById('kds').classList.contains('active')) checkLateAndShowPopup(); }, 10 * 60 * 1000);
 </script>
 </body>
 </html>

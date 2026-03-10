@@ -114,27 +114,6 @@ export default function ReceiptSettingsPage() {
               className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white mb-4 placeholder-slate-500"
             />
 
-            <label className="block text-sm text-slate-300 mb-2">Receipt item size</label>
-            <div className="flex gap-3 mb-4">
-              {[
-                { value: 0, label: "Normal" },
-                { value: 1, label: "Large" },
-                { value: 2, label: "XLarge" },
-              ].map((opt) => (
-                <label key={opt.value} className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="receiptItemSize"
-                    checked={receiptItemSize === opt.value}
-                    onChange={() => setReceiptItemSize(opt.value)}
-                    className="text-sky-500"
-                  />
-                  <span className="text-slate-300">{opt.label}</span>
-                </label>
-              ))}
-            </div>
-            <p className="text-slate-500 text-xs mb-4">Fişteki ürün satırlarının font boyutu (uygulama sync ile güncellenir)</p>
-
             <label className="block text-sm text-slate-300 mb-2">Receipt footer message</label>
             <textarea
               value={receiptFooterMessage}
@@ -157,10 +136,33 @@ export default function ReceiptSettingsPage() {
               onChange={(e) => setKitchenHeader(e.target.value)}
               placeholder="KITCHEN / MUTFAK"
               maxLength={100}
-              className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white placeholder-slate-500"
+              className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white placeholder-slate-500 mb-4"
             />
-            <p className="text-slate-500 text-xs mt-2">
+            <p className="text-slate-500 text-xs mt-1 mb-4">
               Shown at the top of the receipt sent to the kitchen printer.
+            </p>
+
+            <label className="block text-sm text-slate-300 mb-2">Kitchen item size</label>
+            <div className="flex gap-4 mb-2">
+              {[
+                { value: 0, label: "Normal" },
+                { value: 1, label: "Large" },
+                { value: 2, label: "XLarge" },
+              ].map((opt) => (
+                <label key={opt.value} className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="kitchenItemSize"
+                    checked={receiptItemSize === opt.value}
+                    onChange={() => setReceiptItemSize(opt.value)}
+                    className="text-sky-500"
+                  />
+                  <span className="text-slate-300">{opt.label}</span>
+                </label>
+              ))}
+            </div>
+            <p className="text-slate-500 text-xs">
+              Mutfak yazıcısından çıkan fişteki ürün satırlarının yazı boyutu. Uygulama sync ile güncellenir.
             </p>
           </div>
 

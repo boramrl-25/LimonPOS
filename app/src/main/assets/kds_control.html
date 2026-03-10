@@ -33,8 +33,9 @@ body{font-family:system-ui,-apple-system,sans-serif;margin:0;background:#000;col
 .kds-status-pending{color:#3b82f6}
 .kds-status-preparing{color:#f59e0b}
 .kds-status-delayed{color:#ef4444}
-.kds-speaker{font-size:20px;cursor:pointer;color:#94a3b8;margin-left:8px}
+.kds-speaker{font-size:20px;cursor:pointer;color:#94a3b8;margin-left:8px;user-select:none}
 .kds-speaker:hover{color:#f59e0b}
+.kds-speaker.muted{color:#64748b;opacity:.7}
 .card{background:#0f0f0f;border-radius:12px;padding:16px;margin-bottom:12px;border:1px solid #262626;min-width:220px;max-width:280px}
 .card.sent{border-left:4px solid #f59e0b}
 .card.preparing{border-left:4px solid #f59e0b}
@@ -123,7 +124,7 @@ pre{background:#0a0a0a;padding:16px;border-radius:8px;overflow:auto;font-size:13
           <span class="kds-status-item kds-status-preparing"><span class="icon">⏱</span> <span id="kds-preparing-count">0</span> Preparing</span>
           <span class="kds-status-item kds-status-delayed"><span class="icon">⚠</span> <span id="kds-delayed-count">0</span> Delayed</span>
         </div>
-        <span class="kds-speaker" title="Sound on">🔊</span>
+        <span id="kds-speaker" class="kds-speaker" onclick="toggleKdsSound()" title="Ses açık – tıklayarak kapat">🔊</span>
         <button class="btn btn-refresh" onclick="loadKitchen()">Refresh</button>
       </div>
     </div>
@@ -156,6 +157,7 @@ var lastSeenItemIds = {};
 var kdsKitchenPrinters = [];
 var kdsSelectedPrinterIds = null;
 var KDS_STORAGE_KEY = 'kds_selected_printers';
+var KDS_SOUND_MUTED_KEY = 'kds_sound_muted';
 function loadStoredPrinterSelection() {
   try {
     var s = localStorage.getItem(KDS_STORAGE_KEY);
@@ -176,7 +178,32 @@ function formatProductNameLines(name) {
   if (words.length <= 2) return escapeHtml(name);
   return escapeHtml(words.slice(0, 2).join(' ')) + '<br>' + escapeHtml(words.slice(2).join(' '));
 }
+function isKdsSoundMuted() {
+  try { return localStorage.getItem(KDS_SOUND_MUTED_KEY) === '1'; } catch (e) { return false; }
+}
+function setKdsSoundMuted(muted) {
+  try { localStorage.setItem(KDS_SOUND_MUTED_KEY, muted ? '1' : '0'); } catch (e) {}
+  var el = document.getElementById('kds-speaker');
+  if (el) {
+    el.textContent = muted ? '🔇' : '🔊';
+    el.className = muted ? 'kds-speaker muted' : 'kds-speaker';
+    el.title = muted ? 'Ses kapalı – tıklayarak aç' : 'Ses açık – tıklayarak kapat';
+  }
+}
+function toggleKdsSound() {
+  var m = !isKdsSoundMuted();
+  setKdsSoundMuted(m);
+}
+function updateKdsSpeakerUI() {
+  var el = document.getElementById('kds-speaker');
+  if (!el) return;
+  var m = isKdsSoundMuted();
+  el.textContent = m ? '🔇' : '🔊';
+  el.className = m ? 'kds-speaker muted' : 'kds-speaker';
+  el.title = m ? 'Ses kapalı – tıklayarak aç' : 'Ses açık – tıklayarak kapat';
+}
 function playNewOrderSound() {
+  if (isKdsSoundMuted()) return;
   try {
     var ctx = new (window.AudioContext || window.webkitAudioContext)();
     var osc = ctx.createOscillator(); var gain = ctx.createGain();
@@ -194,6 +221,7 @@ function playNewOrderSound() {
   } catch (e) {}
 }
 function playLateSound() {
+  if (isKdsSoundMuted()) return;
   try {
     var ctx = new (window.AudioContext || window.webkitAudioContext)();
     var osc = ctx.createOscillator();
@@ -497,6 +525,7 @@ function openDrawer(btn) {
 }
 async function loadModifiers() { var r = await fetch(base + '/modifier-groups'); var d = await r.json(); document.getElementById('modifiers-data').textContent = JSON.stringify(d, null, 2); }
 var urlParams = new URLSearchParams(window.location.search);
+updateKdsSpeakerUI();
 if (urlParams.get('page') === 'settings') { showPage('settings'); } else { loadKdsPrinters(); }
 setInterval(function() { if (document.getElementById('kds').classList.contains('active')) loadKitchen(); }, 2000);
 setInterval(function() { if (document.getElementById('kds').classList.contains('active')) checkLateAndShowPopup(); }, 10 * 60 * 1000);

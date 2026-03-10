@@ -312,6 +312,10 @@ class OrderViewModel @Inject constructor(
     private val _navigateToFloorPlanRequest = MutableStateFlow(0)
     val navigateToFloorPlanRequest: StateFlow<Int> = _navigateToFloorPlanRequest.asStateFlow()
 
+    /** Triggered after Send to Kitchen — app should logout. */
+    private val _logoutAfterSendToKitchenRequest = MutableStateFlow(0)
+    val logoutAfterSendToKitchenRequest: StateFlow<Int> = _logoutAfterSendToKitchenRequest.asStateFlow()
+
     private val _productToAddWithNotes = MutableStateFlow<ProductEntity?>(null)
     val productToAddWithNotes: StateFlow<ProductEntity?> = _productToAddWithNotes.asStateFlow()
 
@@ -518,7 +522,7 @@ class OrderViewModel @Inject constructor(
             if (updated != null) {
                 _uiState.update { it.copy(orderWithItems = updated) }
             }
-            _navigateToFloorPlanRequest.value = _navigateToFloorPlanRequest.value + 1
+            _logoutAfterSendToKitchenRequest.value = _logoutAfterSendToKitchenRequest.value + 1
 
             // In background: push to API, then print (no need to mark again)
             applicationScope.launch {
@@ -623,11 +627,15 @@ class OrderViewModel @Inject constructor(
     }
 
     fun dismissOverdueWarning() {
-        overdueWarningHolder.update(null)
+        overdueWarningHolder.dismiss()
     }
 
     fun consumeNavigateToFloorPlanRequest() {
         _navigateToFloorPlanRequest.value = 0
+    }
+
+    fun consumeLogoutAfterSendToKitchenRequest() {
+        _logoutAfterSendToKitchenRequest.value = 0
     }
 
     fun showEditNoteForItem(item: OrderItemEntity) {
@@ -868,7 +876,17 @@ class OrderViewModel @Inject constructor(
             val mid = authRepository.getCurrentUserIdSync() ?: return@launch
             val mname = authRepository.getCurrentUserNameSync() ?: "Manager"
             tableRepository.transferTable(sourceTableId, targetTableId, mid, mname)
-                .onSuccess {
+                .onSuccess { _ ->
+                    val targetTable = tableRepository.getTableById(targetTableId)
+                    val orderId = targetTable?.currentOrderId
+                    if (orderId != null && targetTable != null) {
+                        apiSyncRepository.pushTableTransfer(
+                            sourceTableId,
+                            targetTableId,
+                            orderId,
+                            targetTable.number
+                        )
+                    }
                     closeTransferTableDialog()
                     onSuccess()
                 }

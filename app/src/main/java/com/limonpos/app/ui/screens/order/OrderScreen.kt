@@ -74,6 +74,7 @@ fun OrderScreen(
     viewModel: OrderViewModel = hiltViewModel(),
     onBack: () -> Unit,
     onNavigateToFloorPlan: () -> Unit = {},
+    onLogout: () -> Unit = {},
     onNavigateToTable: (String) -> Unit = {},
     onNavigateToPayment: (String) -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
@@ -81,6 +82,7 @@ fun OrderScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val navigateToFloorPlanRequest by viewModel.navigateToFloorPlanRequest.collectAsState()
+    val logoutAfterSendToKitchenRequest by viewModel.logoutAfterSendToKitchenRequest.collectAsState()
     val isRecalled by viewModel.isRecalledOrder.collectAsState(initial = false)
     val overdueWarning by viewModel.overdueWarning.collectAsState(initial = null)
     var showCloseTableConfirm by remember { mutableStateOf(false) }
@@ -112,6 +114,14 @@ fun OrderScreen(
             viewModel.consumeNavigateToFloorPlanRequest()
             viewModel.dismissCart()
             onNavigateToFloorPlan()
+        }
+    }
+
+    LaunchedEffect(logoutAfterSendToKitchenRequest) {
+        if (logoutAfterSendToKitchenRequest > 0) {
+            viewModel.consumeLogoutAfterSendToKitchenRequest()
+            viewModel.dismissCart()
+            onLogout()
         }
     }
 

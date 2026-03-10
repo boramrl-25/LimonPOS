@@ -87,6 +87,12 @@ interface ApiService {
     @GET("orders/{id}")
     suspend fun getOrder(@Path("id") id: String): Response<OrderDto>
 
+    @PATCH("orders/{id}")
+    suspend fun updateOrderTable(
+        @Path("id") orderId: String,
+        @Body body: Map<String, Any?>
+    ): Response<OrderDto>
+
     @POST("orders")
     suspend fun createOrder(
         @Query("waiter_id") waiterId: String,

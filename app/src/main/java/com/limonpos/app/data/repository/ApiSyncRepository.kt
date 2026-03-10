@@ -323,6 +323,35 @@ class ApiSyncRepository @Inject constructor(
         }
     }
 
+    /** Push table transfer to API so sync does not overwrite local state. Source must be free, target occupied, order table_id updated. */
+    suspend fun pushTableTransfer(sourceTableId: String, targetTableId: String, orderId: String, targetTableNumber: String) {
+        if (!isOnline()) return
+        try {
+            restoreAuthTokenIfNeeded()
+            val sourceBody = mapOf<String, Any?>(
+                "status" to "free",
+                "current_order_id" to null,
+                "guest_count" to 0,
+                "waiter_id" to null,
+                "waiter_name" to null,
+                "opened_at" to null
+            )
+            val srcRes = apiService.updateTable(sourceTableId, sourceBody)
+            if (!srcRes.isSuccessful) Log.e("ApiSync", "pushTableTransfer source ${sourceTableId} failed: ${srcRes.code()}")
+            val targetTable = tableDao.getTableById(targetTableId)
+            if (targetTable != null) {
+                pushTableState(targetTable)
+            }
+            val orderRes = apiService.updateOrderTable(
+                orderId,
+                mapOf("table_id" to targetTableId, "table_number" to targetTableNumber)
+            )
+            if (!orderRes.isSuccessful) Log.e("ApiSync", "pushTableTransfer order $orderId failed: ${orderRes.code()}")
+        } catch (e: Exception) {
+            Log.e("ApiSync", "pushTableTransfer error: ${e.message}", e)
+        }
+    }
+
     /** Push single item's delivered status immediately (so web floor shows "Masaya gitti" without waiting for full sync). */
     suspend fun pushItemDeliveredStatus(orderId: String, item: OrderItemEntity) {
         if (!isOnline() || item.deliveredAt == null) return

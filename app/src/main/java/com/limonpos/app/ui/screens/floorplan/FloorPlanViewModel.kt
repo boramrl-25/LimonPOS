@@ -146,7 +146,7 @@ class FloorPlanViewModel @Inject constructor(
     }
 
     fun dismissOverdueWarning() {
-        overdueWarningHolder.update(null)
+        overdueWarningHolder.dismiss()
     }
 
     fun dismissReservationReminder() {
@@ -428,7 +428,17 @@ class FloorPlanViewModel @Inject constructor(
             val mid = authRepository.getCurrentUserIdSync() ?: return@launch
             val mname = authRepository.getCurrentUserNameSync() ?: "Manager"
             tableRepository.transferTable(sourceTableId, targetTableId, mid, mname)
-                .onSuccess {
+                .onSuccess { _ ->
+                    val targetTable = tableRepository.getTableById(targetTableId)
+                    val orderId = targetTable?.currentOrderId
+                    if (orderId != null && targetTable != null) {
+                        apiSyncRepository.pushTableTransfer(
+                            sourceTableId,
+                            targetTableId,
+                            orderId,
+                            targetTable.number
+                        )
+                    }
                     closeTransferTableDialog()
                 }
                 .onFailure { /* ignore */ }

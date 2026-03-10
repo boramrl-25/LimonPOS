@@ -459,7 +459,7 @@ fun FloorPlanScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(modifier = Modifier.size(12.dp).background(LimonError, CircleShape))
                     Spacer(Modifier.width(4.dp))
-                    Text("Reservation soon", color = LimonTextSecondary, fontSize = 12.sp)
+                    Text("Res soon", color = LimonTextSecondary, fontSize = 12.sp)
                 }
             }
             LazyVerticalGrid(
@@ -1184,7 +1184,7 @@ private fun TableCard(
                 if (isOccupiedWithUpcomingReservation) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Reservation soon",
+                        text = "Res soon",
                         color = LimonError,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Medium

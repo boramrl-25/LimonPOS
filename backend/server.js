@@ -1935,6 +1935,20 @@ app.get("/api/orders/:id", authMiddleware, async (req, res) => {
   res.json({ ...order, items, payments, voids });
 });
 
+app.patch("/api/orders/:id", authMiddleware, async (req, res) => {
+  await ensurePrismaReady();
+  const orderId = req.params.id;
+  const body = req.body || {};
+  const order = await store.getOrderById(orderId);
+  if (!order) return res.status(404).json({ error: "Order not found" });
+  const updates = {};
+  if (body.table_id != null) updates.table_id = body.table_id;
+  if (body.table_number != null) updates.table_number = body.table_number;
+  if (Object.keys(updates).length === 0) return res.json(order);
+  const updated = await store.updateOrder(orderId, updates);
+  res.json(updated);
+});
+
 app.post("/api/orders", authMiddleware, async (req, res) => {
   await ensurePrismaReady();
   const body = req.body;

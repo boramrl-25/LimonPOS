@@ -16,8 +16,27 @@ class OverdueWarningHolder @Inject constructor() {
     private var lastNotifiedAt: Long = 0L
     private val NOTIFICATION_COOLDOWN_MS = 2 * 60 * 1000L
 
+    /** When user taps OK, suppress showing again for 2 min; then re-show if items still overdue. */
+    private var dismissedAt: Long = 0L
+    private val DISMISS_COOLDOWN_MS = 2 * 60 * 1000L
+
     fun update(list: List<OverdueUndelivered>?) {
+        if (list.isNullOrEmpty()) {
+            _overdue.value = null
+            return
+        }
+        val now = System.currentTimeMillis()
+        if (dismissedAt > 0 && (now - dismissedAt) < DISMISS_COOLDOWN_MS) {
+            return
+        }
+        dismissedAt = 0L
         _overdue.value = list
+    }
+
+    /** Call when user taps OK/Tamam. Clears dialog; next update (if items still overdue) will be suppressed for 2 min. */
+    fun dismiss() {
+        _overdue.value = null
+        dismissedAt = System.currentTimeMillis()
     }
 
     /**

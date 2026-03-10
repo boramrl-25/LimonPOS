@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import * as XLSX from "xlsx";
-import { ArrowLeft, Search, RefreshCw, Settings2, X, Calendar, Upload, Download, Trash2, Plus } from "lucide-react";
+import { ArrowLeft, Search, RefreshCw, Settings2, X, Calendar, Upload, Download, Trash2, Plus, Volume2, VolumeX } from "lucide-react";
 import { getTables, getFloorPlanSections, updateFloorPlanSections, getOrder, getOverdueTableIds, reserveTable, cancelTableReservation, deleteTable, importTables, createTable, importFloorPlanSections, type FloorPlanSections, type Order, type TableReservation } from "@/lib/api";
 import {
   FLOOR_LEGEND,
@@ -27,6 +27,16 @@ type Table = {
 };
 
 const SECTIONS = ["A", "B", "C", "D", "E"] as const;
+const KDS_SOUND_MUTED_KEY = "kds_sound_muted";
+
+function isSoundMuted(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return localStorage.getItem(KDS_SOUND_MUTED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
 
 export default function FloorPlanPage() {
   const [tables, setTables] = useState<Table[]>([]);
@@ -58,9 +68,14 @@ export default function FloorPlanPage() {
   const [addTableCapacity, setAddTableCapacity] = useState("4");
   const [addingTable, setAddingTable] = useState(false);
   const [importingFilters, setImportingFilters] = useState(false);
+  const [soundMuted, setSoundMuted] = useState(false);
   const overdueCooldownMs = 2 * 60 * 1000; // 2 min same table
   const lastOverdueWarningAt = useRef<Record<string, number>>({});
   const prevOverdueTableIds = useRef<string[]>([]);
+
+  useEffect(() => {
+    setSoundMuted(isSoundMuted());
+  }, []);
 
   useEffect(() => {
     load();
@@ -91,20 +106,22 @@ export default function FloorPlanPage() {
         const table = tables.find((t) => t.id === tableId);
         const tableNum = table?.number ?? tableId;
         setToastMessage(TOAST_TABLE_DELAYED(tableNum));
-        try {
-          const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          osc.connect(gain);
-          gain.connect(ctx.destination);
-          osc.frequency.value = 800;
-          osc.type = "sine";
-          gain.gain.setValueAtTime(0.15, ctx.currentTime);
-          gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
-          osc.start(ctx.currentTime);
-          osc.stop(ctx.currentTime + 0.15);
-        } catch {
-          // ignore if AudioContext not allowed (e.g. autoplay policy)
+        if (!isSoundMuted()) {
+          try {
+            const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.frequency.value = 800;
+            osc.type = "sine";
+            gain.gain.setValueAtTime(0.15, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
+            osc.start(ctx.currentTime);
+            osc.stop(ctx.currentTime + 0.15);
+          } catch {
+            // ignore if AudioContext not allowed (e.g. autoplay policy)
+          }
         }
       }
     }
@@ -483,6 +500,17 @@ export default function FloorPlanPage() {
         >
           <Trash2 className="w-4 h-4" />
           {deleteMode ? "İptal" : "Masa Sil"}
+        </button>
+        <button
+          onClick={() => {
+            const next = !isSoundMuted();
+            try { localStorage.setItem(KDS_SOUND_MUTED_KEY, next ? "1" : "0"); } catch { /* ignore */ }
+            setSoundMuted(next);
+          }}
+          className={`p-2 rounded-lg ${soundMuted ? "bg-slate-800 text-slate-500" : "bg-slate-800 text-slate-400 hover:bg-slate-700"}`}
+          title={soundMuted ? "Ses kapalı – tıklayarak aç" : "Ses açık – tıklayarak kapat"}
+        >
+          {soundMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
         </button>
         <button onClick={() => load()} disabled={loading} className="p-2 rounded-lg bg-slate-800 text-slate-400 hover:bg-slate-700">
           <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
