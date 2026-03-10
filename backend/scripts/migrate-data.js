@@ -196,14 +196,16 @@ async function main() {
     if (extraTables) console.log("  Eksik masalar oluşturuldu:", extraTables);
 
     // 8. Orders
+    const userIds = new Set(users.map((u) => u.id));
     for (const o of orders) {
+      const waiterId = o.waiter_id && userIds.has(o.waiter_id) ? o.waiter_id : null;
       await prisma.order.upsert({
         where: { id: o.id },
         create: {
           id: o.id,
           table_id: o.table_id,
           table_number: String(o.table_number || ""),
-          waiter_id: o.waiter_id || null,
+          waiter_id: waiterId,
           waiter_name: o.waiter_name || null,
           status: o.status || "open",
           subtotal: parseFloat(o.subtotal) || 0,
