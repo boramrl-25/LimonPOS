@@ -7,7 +7,8 @@ set -e
 echo "=== LimonPOS Docker Kurulumu ==="
 
 # 1. DOCKER YAPILANDIRMASI (mevcut yapıya uyumlu)
-cat <<'EOF' > docker-compose.yml
+SERVER_IP=$(curl -s ifconfig.me 2>/dev/null || echo "77.42.70.162")
+cat <<EOF > docker-compose.yml
 services:
   db:
     image: postgres:16-alpine
@@ -54,6 +55,21 @@ services:
       redis:
         condition: service_healthy
 
+  frontend:
+    build:
+      context: ./pos-backoffice
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: "http://${SERVER_IP}:3002/api"
+    environment:
+      - PORT=3000
+    container_name: limonpos-frontend
+    restart: always
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
 volumes:
   db-data:
 EOF
@@ -64,15 +80,16 @@ cat <<'EOF' > backend/.env.docker
 DATABASE_URL="postgresql://posuser:rv7RAingkwfq@db:5432/limonpos"
 EOF
 
-# 3. SİSTEMİ AYAĞA KALDIR
+# 4. SİSTEMİ AYAĞA KALDIR
 echo "Docker build ve start..."
 docker compose up -d --build
 
 # 4. GÜVENLİK DUVARI
+ufw allow 3000/tcp 2>/dev/null || true
 ufw allow 3002/tcp 2>/dev/null || true
 ufw allow 5432/tcp 2>/dev/null || true
 
-# 5. VERİTABANI KURULUMU
+# 6. VERİTABANI KURULUMU
 echo "Veritabanının hazır olması bekleniyor (20 sn)..."
 sleep 20
 
@@ -92,6 +109,7 @@ echo ""
 echo "=========================================="
 echo "✅ KURULUM BİTTİ!"
 echo "👉 API: http://$(curl -s ifconfig.me 2>/dev/null || echo 'SUNUCU_IP'):3002"
+echo "👉 Backoffice: http://$(curl -s ifconfig.me 2>/dev/null || echo 'SUNUCU_IP'):3000/pos"
 echo "👉 Health: http://$(curl -s ifconfig.me 2>/dev/null || echo 'SUNUCU_IP'):3002/api/health"
 echo "👉 Loglar: docker logs -f limonpos-backend"
 echo "=========================================="

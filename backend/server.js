@@ -2494,7 +2494,7 @@ app.get("/", (req, res) => {
       <h1>LimonPOS API</h1>
       <p>API çalışıyor.</p>
       <p><a href="/api/health">/api/health</a> – sağlık kontrolü</p>
-      <p><strong>Backoffice:</strong> <a href="http://localhost:3000">http://localhost:3000</a></p>
+      <p><strong>Backoffice:</strong> <a href="http://localhost:3000/pos">http://localhost:3000/pos</a></p>
     </body>
     </html>
   `);
