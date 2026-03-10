@@ -196,6 +196,7 @@ async function main() {
     if (extraTables) console.log("  Eksik masalar oluşturuldu:", extraTables);
 
     // 8. Orders
+    for (const o of orders) {
       await prisma.order.upsert({
         where: { id: o.id },
         create: {
