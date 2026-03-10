@@ -49,7 +49,7 @@ const reportItems = [
   { href: "/reports/product-sales", label: "Product Sales", icon: ShoppingBag },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ onClose }: { onClose?: () => void }) {
   const { hasPermission } = useUser();
   const pathname = usePathname();
   const router = useRouter();
@@ -71,6 +71,7 @@ export default function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
+              onClick={onClose}
               className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
                 isActive
                   ? "bg-sky-500/20 text-sky-400 border border-sky-500/30"
@@ -91,6 +92,7 @@ export default function Sidebar() {
               <Link
                 key={item.href}
                 href={item.href}
+                onClick={onClose}
                 className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
                   isActive
                     ? "bg-sky-500/20 text-sky-400 border border-sky-500/30"
@@ -99,8 +101,8 @@ export default function Sidebar() {
               >
                 <item.icon className="w-4 h-4 flex-shrink-0" />
                 {item.label}
-            </Link>
-          );
+              </Link>
+            );
         })}
         </div>
         )}
