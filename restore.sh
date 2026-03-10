@@ -14,11 +14,11 @@ sleep 10
 
 echo ""
 echo "=== 3. Prisma schema'yı veritabanına uyguluyorum... ==="
-docker compose exec -T api npx prisma db push --schema=prisma/schema.prisma
+docker compose exec -T backend npx prisma db push --schema=prisma/schema.prisma
 
 echo ""
 echo "=== 4. Seed çalıştırıyorum (varsa)... ==="
-docker compose exec -T api npx prisma db seed --schema=prisma/schema.prisma 2>/dev/null || echo "(Seed yok - devam ediliyor)"
+docker compose exec -T backend npx prisma db seed --schema=prisma/schema.prisma 2>/dev/null || echo "(Seed yok - devam ediliyor)"
 
 echo ""
 echo "=== Tamamlandı! ==="

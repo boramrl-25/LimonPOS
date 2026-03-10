@@ -1,46 +1,64 @@
 services:
   db:
     image: postgres:16-alpine
+    container_name: postgres
+    restart: always
     environment:
-      POSTGRES_USER: posuser
+      POSTGRES_USER: postgres
       POSTGRES_PASSWORD: rv7RAingkwfq
       POSTGRES_DB: limonpos
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U posuser -d limonpos"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d limonpos"]
       interval: 5s
       timeout: 5s
       retries: 5
+    volumes:
+      - db-data:/var/lib/postgresql/data
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    container_name: limonpos-redis
+    restart: always
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 5
 
-  api:
+  backend:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    env_file:
-      - backend/.env.docker
-    environment:
-      PORT: 3002
-      NODE_ENV: production
+    container_name: limonpos-backend
+    restart: always
     ports:
       - "3002:3002"
+    environment:
+      DATABASE_URL: "postgresql://postgres:rv7RAingkwfq@db:5432/limonpos?schema=public"
+      PORT: 3002
+      NODE_ENV: production
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
 
+  frontend:
+    build:
+      context: ./pos-backoffice
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://77.42.70.162:3002/api
+    container_name: limonpos-frontend
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://77.42.70.162:3002/api
+    depends_on:
+      - backend
+
 volumes:
-  postgres_data:
+  db-data:
