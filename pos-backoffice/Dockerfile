@@ -4,7 +4,7 @@ COPY package*.json ./
 RUN npm ci
 COPY . .
 # API URL build-time (replace with your server IP or use env)
-ARG NEXT_PUBLIC_API_URL=http://77.42.70.162:3002/api
+ARG NEXT_PUBLIC_API_URL=https://api2.the-limon.com/api
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 RUN npm run build
 EXPOSE 3000

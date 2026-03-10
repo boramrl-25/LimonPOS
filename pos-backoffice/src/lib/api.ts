@@ -1,4 +1,4 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.the-limon.com/api";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api2.the-limon.com/api";
 const TOKEN_KEY = "limonpos_admin_token";
 const USER_KEY = "limonpos_admin_user";
 const FETCH_TIMEOUT_MS = 15000;

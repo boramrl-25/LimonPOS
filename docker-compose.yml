@@ -53,13 +53,13 @@ services:
       context: ./pos-backoffice
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: http://77.42.70.162:3002/api
+        NEXT_PUBLIC_API_URL: https://api2.the-limon.com/api
     container_name: limonpos-frontend
     restart: always
     ports:
       - "3000:3000"
     environment:
-      NEXT_PUBLIC_API_URL: http://77.42.70.162:3002/api
+      NEXT_PUBLIC_API_URL: https://api2.the-limon.com/api
     depends_on:
       - backend
 
