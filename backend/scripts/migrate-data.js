@@ -236,13 +236,23 @@ async function main() {
 
     // 9. OrderItems
     const orderItems = data.order_items || [];
+    const productIds = new Set((data.products || []).map((p) => p.id));
     for (const oi of orderItems) {
+      let pid = oi.product_id || "unknown";
+      if (!productIds.has(pid)) {
+        await prisma.product.upsert({
+          where: { id: pid },
+          create: { id: pid, name: oi.product_name || "Ürün", category_id: null, price: parseFloat(oi.price) || 0, printers: "[]", modifier_groups: "[]", active: 1, pos_enabled: 1, sellable: true },
+          update: {},
+        });
+        productIds.add(pid);
+      }
       await prisma.orderItem.upsert({
         where: { id: oi.id },
         create: {
           id: oi.id,
           order_id: oi.order_id,
-          product_id: oi.product_id || "unknown",
+          product_id: pid,
           product_name: oi.product_name || "Item",
           quantity: parseIntSafe(oi.quantity, 1),
           price: parseFloat(oi.price) || 0,
@@ -259,6 +269,7 @@ async function main() {
     // 10. Payments
     const payments = data.payments || [];
     for (const p of payments) {
+      const paymentUserId = p.user_id && userIds.has(p.user_id) ? p.user_id : null;
       await prisma.payment.upsert({
         where: { id: p.id },
         create: {
@@ -268,7 +279,7 @@ async function main() {
           method: p.method || "cash",
           received_amount: p.received_amount != null ? parseFloat(p.received_amount) : null,
           change_amount: p.change_amount != null ? parseFloat(p.change_amount) : 0,
-          user_id: p.user_id || null,
+          user_id: paymentUserId,
           created_at: ts(p.created_at),
         },
         update: {},
@@ -280,6 +291,7 @@ async function main() {
     const voidLogs = data.void_logs || [];
     for (const v of voidLogs) {
       try {
+        const voidUserId = v.user_id && userIds.has(v.user_id) ? v.user_id : null;
         await prisma.voidLog.upsert({
           where: { id: v.id },
           create: {
@@ -293,7 +305,7 @@ async function main() {
             amount: v.amount ?? null,
             source_table_id: v.source_table_id || null,
             source_table_number: v.source_table_number || null,
-            user_id: v.user_id || null,
+            user_id: voidUserId,
             user_name: v.user_name || null,
             details: v.details || null,
             created_at: ts(v.created_at),
