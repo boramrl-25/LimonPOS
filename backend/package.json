@@ -10,6 +10,7 @@
     "dev": "node --watch server.js",
     "dev:3002": "cross-env PORT=3002 node --watch server.js",
     "migrate-to-railway": "node scripts/migrate-to-railway.js",
+    "floor-plan-1-43": "node scripts/floor-plan-1-43.js",
     "postinstall": "prisma generate",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
