@@ -141,7 +141,7 @@ async function main() {
     }
     console.log("  Products:", products.length);
 
-    // 7. Tables
+    // 7. Tables (current_order_id=null - Orders henüz yok, FK hatası önlenir)
     const tables = data.tables || [];
     for (const t of tables) {
       const num = typeof t.number === "number" ? t.number : parseIntSafe(t.number, 1);
@@ -154,7 +154,7 @@ async function main() {
           capacity: parseIntSafe(t.capacity, 4),
           floor: t.floor || "Main",
           status: t.status || "free",
-          current_order_id: t.current_order_id || null,
+          current_order_id: null, // Orders sonra migrate edilecek
           guest_count: parseIntSafe(t.guest_count),
           waiter_id: t.waiter_id || null,
           waiter_name: t.waiter_name || null,
@@ -165,7 +165,7 @@ async function main() {
           height: parseIntSafe(t.height, 80),
           shape: t.shape || "square",
         },
-        update: { number: num, name: t.name, status: t.status, current_order_id: t.current_order_id, guest_count: parseIntSafe(t.guest_count), waiter_id: t.waiter_id, waiter_name: t.waiter_name, opened_at: ts(t.opened_at) },
+        update: { number: num, name: t.name, status: t.status, guest_count: parseIntSafe(t.guest_count), waiter_id: t.waiter_id || null, waiter_name: t.waiter_name || null, opened_at: ts(t.opened_at) },
       });
     }
     console.log("  Tables:", tables.length);
@@ -195,6 +195,18 @@ async function main() {
       });
     }
     console.log("  Orders:", orders.length);
+
+    // 8b. Tables - current_order_id güncelle (Orders artık mevcut)
+    const orderIds = new Set(orders.map((o) => o.id));
+    for (const t of tables) {
+      if (t.current_order_id && orderIds.has(t.current_order_id)) {
+        await prisma.table.update({
+          where: { id: t.id },
+          data: { current_order_id: t.current_order_id },
+        });
+      }
+    }
+    console.log("  Tables current_order_id güncellendi");
 
     // 9. OrderItems
     const orderItems = data.order_items || [];
