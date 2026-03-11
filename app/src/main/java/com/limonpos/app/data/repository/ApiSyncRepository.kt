@@ -130,20 +130,22 @@ class ApiSyncRepository @Inject constructor(
         }
     }
 
-    private suspend fun tryDeltaSync(sinceMs: Long): Boolean = try {
-        val res = apiService.getSyncDelta(sinceMs)
-        if (!res.isSuccessful) return@try false
-        val body = res.body() ?: return@try false
-        if (!body.delta) return@try false
-        val hasData = body.categories.isNotEmpty() || body.products.isNotEmpty() ||
-            body.modifierGroups.isNotEmpty() || body.printers.isNotEmpty() || body.users.isNotEmpty()
-        if (!hasData) return@try true
-        applyDeltaSync(body)
-        Log.d("ApiSync", "Delta sync: cat=${body.categories.size} prod=${body.products.size}")
-        true
-    } catch (e: Exception) {
-        Log.w("ApiSync", "Delta sync failed: ${e.message}")
-        false
+    private suspend fun tryDeltaSync(sinceMs: Long): Boolean {
+        return try {
+            val res = apiService.getSyncDelta(sinceMs)
+            if (!res.isSuccessful) return false
+            val body = res.body() ?: return false
+            if (!body.delta) return false
+            val hasData = body.categories.isNotEmpty() || body.products.isNotEmpty() ||
+                body.modifierGroups.isNotEmpty() || body.printers.isNotEmpty() || body.users.isNotEmpty()
+            if (!hasData) return true
+            applyDeltaSync(body)
+            Log.d("ApiSync", "Delta sync: cat=${body.categories.size} prod=${body.products.size}")
+            true
+        } catch (e: Exception) {
+            Log.w("ApiSync", "Delta sync failed: ${e.message}")
+            false
+        }
     }
 
     private suspend fun applyDeltaSync(delta: DeltaSyncResponse) {
