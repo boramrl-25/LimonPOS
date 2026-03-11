@@ -15,7 +15,7 @@ async function fetchWithTimeout(url: string, opts: RequestInit = {}): Promise<Re
       throw new Error(
         isLocal
           ? "Backend yanıt vermiyor. Lokal backend çalışıyor mu? (cd backend && npm run dev, port 3002)"
-          : "Backend yanıt vermiyor (timeout). Railway deploy çalışıyor mu? api.the-limon.com kontrol edin."
+          : "Backend yanıt vermiyor (timeout). api.the-limon.com veya sunucu çalışıyor mu kontrol edin."
       );
     }
     throw e;
@@ -51,7 +51,7 @@ export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
 }
 
-export type CurrentUser = { id: string; name: string; role: string; permissions: string[]; cash_drawer_permission?: boolean };
+export type CurrentUser = { id: string; name: string; role: string; permissions: string[]; cash_drawer_permission?: boolean; can_access_settings?: boolean };
 
 export function getStoredUser(): CurrentUser | null {
   if (typeof window === "undefined") return null;

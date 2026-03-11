@@ -53,6 +53,7 @@ class LoginViewModel @Inject constructor(
     fun clearPin() {
         _pin.value = ""
         _error.value = null
+        _isLoading.value = false
     }
 
     fun login() {

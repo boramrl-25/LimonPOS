@@ -14,15 +14,16 @@ datasource db {
 // ============ CORE ENTITIES ============
 
 model User {
-  id                 String   @id @default(uuid())
-  name               String
-  pin                String
-  role               String
-  active             Int      @default(1)
-  permissions        String   @default("[]")
-  cash_drawer_permission Int  @default(0)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  id                    String   @id @default(uuid())
+  name                  String
+  pin                   String
+  role                  String
+  active                Int      @default(1)
+  permissions           String   @default("[]")
+  cash_drawer_permission Int     @default(0)
+  can_access_settings   Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
   ordersAsWaiter     Order[]  @relation("OrderWaiter")
   payments           Payment[]

@@ -42,6 +42,7 @@ fun ClosedBillsScreen(
     onBack: () -> Unit,
     onNavigateToFloorPlan: () -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
+    canAccessSettings: Boolean = true,
     onSync: () -> Unit = {}
 ) {
     val paidOrders by viewModel.paidOrders.collectAsState(emptyList())
@@ -103,11 +104,13 @@ fun ClosedBillsScreen(
                                 onClick = { menuExpanded = false; onSync(); viewModel.refreshMyAccessRequest() },
                                 leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null, tint = LimonPrimary) }
                             )
-                            DropdownMenuItem(
-                                text = { Text("Settings", color = LimonText) },
-                                onClick = { menuExpanded = false; onNavigateToSettings() },
-                                leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null, tint = LimonPrimary) }
-                            )
+                            if (canAccessSettings) {
+                                DropdownMenuItem(
+                                    text = { Text("Settings", color = LimonText) },
+                                    onClick = { menuExpanded = false; onNavigateToSettings() },
+                                    leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null, tint = LimonPrimary) }
+                                )
+                            }
                         }
                     }
                 },

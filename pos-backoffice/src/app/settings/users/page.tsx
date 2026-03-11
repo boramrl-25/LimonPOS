@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { ArrowLeft, Plus, Trash2, FileSpreadsheet, FileDown, Search } from "lucide-react";
-import { getUsers, createUser, updateUser, deleteUser, importUsers, getPermissions, createRole, deleteRole, type RoleOption, type PermissionOption } from "@/lib/api";
+import { ArrowLeft, Plus, Trash2, FileSpreadsheet, FileDown, Search, BookOpen, ExternalLink } from "lucide-react";
+import { getUsers, createUser, updateUser, deleteUser, importUsers, getPermissions, createRole, deleteRole, getZohoConfig, type RoleOption, type PermissionOption } from "@/lib/api";
 import * as XLSX from "xlsx";
 
 type User = { id: string; name: string; pin: string; role: string; active?: number | boolean; permissions?: string[]; cash_drawer_permission?: boolean };
@@ -26,6 +26,7 @@ export default function UsersSettingsPage() {
   const [newRoleLabel, setNewRoleLabel] = useState("");
   const [newRoleLabelTr, setNewRoleLabelTr] = useState("");
   const [addingRole, setAddingRole] = useState(false);
+  const [zohoStatus, setZohoStatus] = useState<{ enabled: boolean; configured: boolean } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const customRoles = roles.filter((r) => r.isCustom);
@@ -44,10 +45,23 @@ export default function UsersSettingsPage() {
 
   async function load() {
     try {
-      const [usersList, permsData] = await Promise.all([getUsers(), getPermissions()]);
+      const [usersList, permsData, zohoCfg] = await Promise.all([
+        getUsers(),
+        getPermissions(),
+        getZohoConfig().catch(() => null),
+      ]);
       setUsers(usersList);
       setRoles(permsData.roles);
       setPermissions(permsData.permissions);
+      if (zohoCfg) {
+        const configured = !!(zohoCfg.organization_id && zohoCfg.customer_id && (zohoCfg.refresh_token || zohoCfg.client_id));
+        setZohoStatus({
+          enabled: zohoCfg.enabled === "true",
+          configured,
+        });
+      } else {
+        setZohoStatus(null);
+      }
     } catch {
       window.location.href = "/login";
     } finally {
@@ -245,8 +259,35 @@ export default function UsersSettingsPage() {
       </Link>
 
       <h1 className="text-2xl font-bold text-sky-400 mb-2">Users</h1>
-      <p className="text-slate-400 mb-8">Staff management. Tap row to edit. Setup PIN: 1234</p>
-      <p className="text-slate-500 text-sm mb-4">Excel or CSV: Download sample, fill, upload.</p>
+      <p className="text-slate-400 mb-4">Staff management. Tap row to edit. Setup PIN: 1234</p>
+      <p className="text-slate-500 text-sm mb-6">Excel or CSV: Download sample, fill, upload.</p>
+
+      {/* Zoho Books Integration card */}
+      <Link
+        href="/settings/zoho"
+        className="flex items-center justify-between p-4 mb-6 rounded-xl bg-slate-800/50 border border-slate-700 hover:border-sky-500/50 hover:bg-slate-800 transition-all group"
+      >
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-sky-500/20">
+            <BookOpen className="w-5 h-5 text-sky-400" />
+          </div>
+          <div>
+            <h3 className="font-medium text-white">Zoho Books Integration</h3>
+            <p className="text-sm text-slate-400">
+              {zohoStatus === null ? (
+                "Loading..."
+              ) : zohoStatus.enabled && zohoStatus.configured ? (
+                <span className="text-emerald-400">Aktif – Satışlar Zoho Books&apos;a gönderiliyor</span>
+              ) : zohoStatus.configured ? (
+                <span className="text-amber-400">Yapılandırıldı – Etkinleştirmek için tıklayın</span>
+              ) : (
+                "Satışları Zoho Books ile senkronize edin"
+              )}
+            </p>
+          </div>
+        </div>
+        <ExternalLink className="w-4 h-4 text-slate-500 group-hover:text-sky-400 transition-colors" />
+      </Link>
 
       <div className="flex flex-col sm:flex-row gap-4 mb-4">
         <div className="flex-1 flex gap-2">

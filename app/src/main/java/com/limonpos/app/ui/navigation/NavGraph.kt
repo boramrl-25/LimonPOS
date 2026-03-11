@@ -12,6 +12,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import android.content.Intent
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -101,10 +102,10 @@ private fun computeNextSyncDelayMillis(): Long {
 fun NavGraph(
     authRepository: AuthRepository,
     apiSyncRepository: ApiSyncRepository,
-    overdueWarningHolder: OverdueWarningHolder,
-    navController: NavHostController = rememberNavController()
+    overdueWarningHolder: OverdueWarningHolder
 ) {
     val scope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
     val onSync: () -> Unit = { scope.launch { if (apiSyncRepository.isOnline()) apiSyncRepository.syncFromApi() } }
     val isLoggedIn by authRepository.isLoggedIn().collectAsState(initial = false)
     val loginScreenKey by authRepository.loginScreenKey.collectAsState(initial = 0)
@@ -119,55 +120,60 @@ fun NavGraph(
         } else {
             key(loginScreenKey) {
                 LoginScreen(
-                    onLoginSuccess = { /* isLoggedIn flow will trigger recomposition */ },
+                    onLoginSuccess = {
+                        val intent = Intent(context, com.limonpos.app.MainActivity::class.java).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                        }
+                        context.startActivity(intent)
+                        (context as? android.app.Activity)?.finish()
+                    },
                     onServerSettingsAccessGranted = { showMaintenanceServerSettings = true },
                     loginScreenKey = loginScreenKey
                 )
             }
         }
     } else {
-        val context = LocalContext.current
-        LaunchedEffect(Unit) {
-            overdueWarningHolder.overdue.collect { list ->
-                if (!list.isNullOrEmpty() && overdueWarningHolder.shouldShowNotification(list)) {
-                    showOverdueNotification(context, list)
+        // Her logout+login sonrası yeni NavController: Hangi sayfadan çıkış yapılırsa yapılsın Floor Plan'a gel (1234 hariç)
+        key(loginScreenKey) {
+            val navController = rememberNavController()
+            val context = LocalContext.current
+            LaunchedEffect(Unit) {
+                overdueWarningHolder.overdue.collect { list ->
+                    if (!list.isNullOrEmpty() && overdueWarningHolder.shouldShowNotification(list)) {
+                        showOverdueNotification(context, list)
+                    }
                 }
             }
-        }
-        LaunchedEffect(Unit) {
-            val activity = context as? android.app.Activity
-            val tableId = activity?.intent?.getStringExtra("open_table_id")
-            if (!tableId.isNullOrBlank()) {
-                activity?.intent?.removeExtra("open_table_id")
-                navController.navigate(Routes.FLOOR_PLAN) {
-                    popUpTo(Routes.GATE) { inclusive = true }
-                    launchSingleTop = true
-                }
-                navController.navigate(Routes.order(tableId)) { launchSingleTop = true }
-            }
-        }
-        // Scheduled sync: only at fixed times when online (no continuous background polling)
-        LaunchedEffect(Unit) {
-            while (true) {
-                val delayMillis = computeNextSyncDelayMillis()
-                delay(delayMillis)
-                if (apiSyncRepository.isOnline()) {
-                    apiSyncRepository.syncFromApi()
+            LaunchedEffect(Unit) {
+                val activity = context as? android.app.Activity
+                val tableId = activity?.intent?.getStringExtra("open_table_id")
+                if (!tableId.isNullOrBlank()) {
+                    activity?.intent?.removeExtra("open_table_id")
+                    navController.navigate(Routes.FLOOR_PLAN) {
+                        popUpTo(Routes.GATE) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                    navController.navigate(Routes.order(tableId)) { launchSingleTop = true }
                 }
             }
-        }
-        NavHost(
-            navController = navController,
-            startDestination = Routes.GATE
-        ) {
+            // Scheduled sync: only at fixed times when online (no continuous background polling)
+            LaunchedEffect(Unit) {
+                while (true) {
+                    val delayMillis = computeNextSyncDelayMillis()
+                    delay(delayMillis)
+                    if (apiSyncRepository.isOnline()) {
+                        apiSyncRepository.syncFromApi()
+                    }
+                }
+            }
+            NavHost(
+                navController = navController,
+                startDestination = Routes.GATE
+            ) {
             composable(Routes.GATE) {
                 LaunchedEffect(Unit) {
-                    val user = authRepository.getCurrentUser()
-                    val dest = when (user?.role) {
-                        "kds" -> Routes.SETTINGS
-                        else -> Routes.FLOOR_PLAN
-                    }
-                    navController.navigate(dest) {
+                    // 1234 hariç tüm girişler Floor Plan'a (1234 = Server Settings, login yok)
+                    navController.navigate(Routes.FLOOR_PLAN) {
                         popUpTo(Routes.GATE) { inclusive = true }
                         launchSingleTop = true
                     }
@@ -197,12 +203,14 @@ fun NavGraph(
                         val scope = rememberCoroutineScope()
                         val canAccessKds by authRepository.canAccessKds().collectAsState(initial = false)
                         var canAccessClosedBillApprovals by remember { mutableStateOf(false) }
+                        val canAccessSettings by authRepository.canAccessSettingsFlow().collectAsState(initial = true)
                         LaunchedEffect(Unit) {
                             canAccessClosedBillApprovals = authRepository.hasClosedBillAccess()
                         }
                         FloorPlanScreen(
                             onNavigateToOrder = { tableId -> navController.navigate(Routes.order(tableId)) },
                             onNavigateToSettings = { navController.navigate(Routes.SETTINGS) },
+                            canAccessSettings = canAccessSettings,
                             onNavigateToClosedBills = { navController.navigate(Routes.CLOSED_BILLS) },
                             onNavigateToDailyCashEntry = { navController.navigate(Routes.DAILY_CASH_ENTRY) },
                             onNavigateToVoidApprovals = { navController.navigate(Routes.VOID_APPROVALS) },
@@ -243,34 +251,41 @@ fun NavGraph(
                     tableId.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         LaunchedEffect(Unit) { navController.popBackStack() }
                     }
-                    else -> OrderScreen(
-                        onBack = { navController.popBackStack() },
-                        onNavigateToFloorPlan = { navController.navigate(Routes.FLOOR_PLAN) { popUpTo(Routes.FLOOR_PLAN) { inclusive = true }; launchSingleTop = true } },
-                        onLogout = { scope.launch { authRepository.logout() } },
-                        onNavigateToTable = { targetTableId ->
-                            navController.popBackStack()
-                            navController.navigate(Routes.order(targetTableId))
-                        },
-                        onNavigateToPayment = { tid -> navController.navigate(Routes.payment(tid)) },
-                        onNavigateToSettings = { navController.navigate(Routes.SETTINGS) },
-                        onSync = onSync
-                    )
+                    else -> {
+                        val orderCanAccessSettings by authRepository.canAccessSettingsFlow().collectAsState(initial = true)
+                        OrderScreen(
+                            onBack = { navController.popBackStack() },
+                            onNavigateToFloorPlan = { navController.navigate(Routes.FLOOR_PLAN) { popUpTo(Routes.FLOOR_PLAN) { inclusive = true }; launchSingleTop = true } },
+                            onLogout = { scope.launch { authRepository.logout() } },
+                            onNavigateToTable = { targetTableId ->
+                                navController.popBackStack()
+                                navController.navigate(Routes.order(targetTableId))
+                            },
+                            onNavigateToPayment = { tid -> navController.navigate(Routes.payment(tid)) },
+                            onNavigateToSettings = { navController.navigate(Routes.SETTINGS) },
+                            canAccessSettings = orderCanAccessSettings,
+                            onSync = onSync
+                        )
+                    }
                 }
             }
             composable(
                 route = Routes.PAYMENT,
                 arguments = listOf(navArgument("tableId") { type = NavType.StringType })
             ) {
+                val paymentCanAccessSettings by authRepository.canAccessSettingsFlow().collectAsState(initial = true)
                 PaymentScreen(
                     onBack = { navController.popBackStack() },
                     onNavigateToFloorPlan = { navController.navigate(Routes.FLOOR_PLAN) { popUpTo(Routes.FLOOR_PLAN) { inclusive = true }; launchSingleTop = true } },
-                    onPaymentComplete = { scope.launch { authRepository.logout() } },
+                    onPaymentComplete = { navController.navigate(Routes.FLOOR_PLAN) { popUpTo(Routes.FLOOR_PLAN) { inclusive = true }; launchSingleTop = true } },
                     onNavigateToSettings = { navController.navigate(Routes.SETTINGS) },
+                    canAccessSettings = paymentCanAccessSettings,
                     onSync = onSync
                 )
             }
             composable(Routes.HOME) {
                 val canAccessKds by authRepository.canAccessKds().collectAsState(initial = false)
+                val homeCanAccessSettings by authRepository.canAccessSettingsFlow().collectAsState(initial = true)
                 HomeScreen(
                     canAccessKds = canAccessKds,
                     onNavigateToFloorPlan = { navController.navigate(Routes.FLOOR_PLAN) { popUpTo(Routes.FLOOR_PLAN) { inclusive = true }; launchSingleTop = true } },
@@ -279,7 +294,8 @@ fun NavGraph(
                     onNavigateToUsers = { navController.navigate(Routes.USERS) },
                     onNavigateToVoidReport = { navController.navigate(Routes.VOID_REPORT) },
                     onNavigateToVoidApprovals = { navController.navigate(Routes.VOID_APPROVALS) },
-                    onNavigateToSettings = { navController.navigate(Routes.SETTINGS) }
+                    onNavigateToSettings = { navController.navigate(Routes.SETTINGS) },
+                    canAccessSettings = homeCanAccessSettings
                 )
             }
             composable(Routes.KDS) {
@@ -301,49 +317,62 @@ fun NavGraph(
                 }
             }
             composable(Routes.CLOSED_BILLS) {
+                val closedBillsCanAccessSettings by authRepository.canAccessSettingsFlow().collectAsState(initial = true)
                 ClosedBillsScreen(
                     onBack = { navController.popBackStack() },
                     onNavigateToFloorPlan = { navController.navigate(Routes.FLOOR_PLAN) { popUpTo(Routes.FLOOR_PLAN) { inclusive = true }; launchSingleTop = true } },
                     onNavigateToSettings = { navController.navigate(Routes.SETTINGS) },
+                    canAccessSettings = closedBillsCanAccessSettings,
                     onSync = onSync
                 )
             }
             composable(Routes.USERS) {
+                val usersCanAccessSettings by authRepository.canAccessSettingsFlow().collectAsState(initial = true)
                 UsersScreen(
                     onBack = { navController.popBackStack() },
                     onNavigateToFloorPlan = { navController.navigate(Routes.FLOOR_PLAN) { popUpTo(Routes.FLOOR_PLAN) { inclusive = true }; launchSingleTop = true } },
                     onNavigateToSettings = { navController.navigate(Routes.SETTINGS) },
+                    canAccessSettings = usersCanAccessSettings,
                     onSync = onSync
                 )
             }
             composable(Routes.VOID_APPROVALS) {
+                val voidApprovalsCanAccessSettings by authRepository.canAccessSettingsFlow().collectAsState(initial = true)
                 VoidApprovalsScreen(
                     onBack = { navController.popBackStack() },
                     onNavigateToFloorPlan = { navController.navigate(Routes.FLOOR_PLAN) { popUpTo(Routes.FLOOR_PLAN) { inclusive = true }; launchSingleTop = true } },
-                    onNavigateToSettings = { navController.navigate(Routes.SETTINGS) }
+                    onNavigateToSettings = { navController.navigate(Routes.SETTINGS) },
+                    canAccessSettings = voidApprovalsCanAccessSettings,
+                    onSync = onSync
                 )
             }
             composable(Routes.CLOSED_BILL_ACCESS_APPROVALS) {
+                val cbaCanAccessSettings by authRepository.canAccessSettingsFlow().collectAsState(initial = true)
                 com.limonpos.app.ui.screens.closedbillaccessapprovals.ClosedBillAccessApprovalsScreen(
                     onBack = { navController.popBackStack() },
                     onNavigateToFloorPlan = { navController.navigate(Routes.FLOOR_PLAN) { popUpTo(Routes.FLOOR_PLAN) { inclusive = true }; launchSingleTop = true } },
                     onNavigateToSettings = { navController.navigate(Routes.SETTINGS) },
+                    canAccessSettings = cbaCanAccessSettings,
                     onSync = onSync
                 )
             }
             composable(Routes.VOID_REPORT) {
+                val voidReportCanAccessSettings by authRepository.canAccessSettingsFlow().collectAsState(initial = true)
                 VoidReportScreen(
                     onBack = { navController.popBackStack() },
                     onNavigateToFloorPlan = { navController.navigate(Routes.FLOOR_PLAN) { popUpTo(Routes.FLOOR_PLAN) { inclusive = true }; launchSingleTop = true } },
                     onNavigateToSettings = { navController.navigate(Routes.SETTINGS) },
+                    canAccessSettings = voidReportCanAccessSettings,
                     onSync = onSync
                 )
             }
             composable(Routes.PRINTERS) {
+                val printersCanAccessSettings by authRepository.canAccessSettingsFlow().collectAsState(initial = true)
                 PrintersScreen(
                     onBack = { navController.popBackStack() },
                     onNavigateToFloorPlan = { navController.navigate(Routes.FLOOR_PLAN) { popUpTo(Routes.FLOOR_PLAN) { inclusive = true }; launchSingleTop = true } },
                     onNavigateToSettings = { navController.navigate(Routes.SETTINGS) },
+                    canAccessSettings = printersCanAccessSettings,
                     onSync = onSync
                 )
             }
@@ -356,18 +385,22 @@ fun NavGraph(
                 )
             }
             composable(Routes.CATEGORIES) {
+                val categoriesCanAccessSettings by authRepository.canAccessSettingsFlow().collectAsState(initial = true)
                 CategoriesScreen(
                     onBack = { navController.popBackStack() },
                     onNavigateToFloorPlan = { navController.navigate(Routes.FLOOR_PLAN) { popUpTo(Routes.FLOOR_PLAN) { inclusive = true }; launchSingleTop = true } },
                     onNavigateToSettings = { navController.navigate(Routes.SETTINGS) },
+                    canAccessSettings = categoriesCanAccessSettings,
                     onSync = onSync
                 )
             }
             composable(Routes.MODIFIERS) {
+                val modifiersCanAccessSettings by authRepository.canAccessSettingsFlow().collectAsState(initial = true)
                 ModifiersScreen(
                     onBack = { navController.popBackStack() },
                     onNavigateToFloorPlan = { navController.navigate(Routes.FLOOR_PLAN) { popUpTo(Routes.FLOOR_PLAN) { inclusive = true }; launchSingleTop = true } },
                     onNavigateToSettings = { navController.navigate(Routes.SETTINGS) },
+                    canAccessSettings = modifiersCanAccessSettings,
                     onSync = onSync
                 )
             }
@@ -388,7 +421,16 @@ fun NavGraph(
                 )
             }
             composable(Routes.SETTINGS) {
-                SettingsScreen(
+                val settingsCanAccess by authRepository.canAccessSettingsFlow().collectAsState(initial = true)
+                LaunchedEffect(settingsCanAccess) {
+                    if (!settingsCanAccess) {
+                        navController.navigate(Routes.FLOOR_PLAN) {
+                            popUpTo(Routes.FLOOR_PLAN) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    }
+                }
+                if (settingsCanAccess) SettingsScreen(
                     onBack = { navController.popBackStack() },
                     onNavigateToFloorPlan = { navController.navigate(Routes.FLOOR_PLAN) { popUpTo(Routes.FLOOR_PLAN) { inclusive = true }; launchSingleTop = true } },
                     onNavigateToKds = { navController.navigate(Routes.KDS) },
@@ -397,7 +439,9 @@ fun NavGraph(
                     onNavigateToPrinters = { navController.navigate(Routes.PRINTERS) },
                     onSync = onSync,
                     onLogout = { /* handled by SettingsViewModel.logout() */ }
-                )
+                ) else Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = LimonPrimary)
+                }
             }
             composable(Routes.BACK_OFFICE_SETTINGS) {
                 DailySalesScreen(
@@ -409,6 +453,7 @@ fun NavGraph(
                     onBack = { navController.popBackStack() }
                 )
             }
+        }
         }
     }
 }

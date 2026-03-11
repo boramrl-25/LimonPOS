@@ -13,6 +13,7 @@ import com.limonpos.app.data.prefs.ReceiptItemSize
 import com.limonpos.app.data.prefs.ReceiptPreferences
 import com.limonpos.app.data.prefs.ReceiptSettingsData
 import com.limonpos.app.data.prefs.ServerPreferences
+import com.limonpos.app.data.prefs.SyncPreferences
 import com.limonpos.app.data.remote.ApiService
 import com.limonpos.app.data.remote.AuthTokenProvider
 import com.limonpos.app.data.remote.dto.*
@@ -47,6 +48,7 @@ class ApiSyncRepository @Inject constructor(
     private val currencyPreferences: CurrencyPreferences,
     private val printerPreferences: PrinterPreferences,
     private val serverPreferences: ServerPreferences,
+    private val syncPreferences: SyncPreferences,
     private val sessionManager: SessionManager,
     private val authTokenProvider: AuthTokenProvider,
     private val authRepository: AuthRepository
@@ -103,22 +105,81 @@ class ApiSyncRepository @Inject constructor(
             pushPendingPayments()
             pushPendingTableCloses()
             pushPendingVoids()
-            // Pull data from web (tables, orders, categories, products, users, printers, modifier groups)
+            val lastSync = syncPreferences.getLastSyncTimestamp()
+            val now = System.currentTimeMillis()
+            val useDelta = lastSync > 0 && (now - lastSync) <= 60_000
+            val deltaApplied = useDelta && tryDeltaSync(lastSync)
+            if (!deltaApplied) {
+                syncCategories()
+                syncModifierGroups()
+                syncProducts()
+                syncPrinters()
+                syncUsers()
+            }
             syncTables()
             syncOrdersFromApi()
-            syncCategories()
-            syncModifierGroups()
-            syncProducts()
-            syncPrinters()
-            syncUsers()
             syncVoidRequests()
             syncClosedBillAccessRequests()
             syncFloorPlanSections()
             syncSettings()
+            syncPreferences.setLastSyncTimestamp(System.currentTimeMillis())
             true
         } catch (e: Exception) {
             Log.e("ApiSync", "syncFromApi error: ${e.message}", e)
             false
+        }
+    }
+
+    private suspend fun tryDeltaSync(sinceMs: Long): Boolean = try {
+        val res = apiService.getSyncDelta(sinceMs)
+        if (!res.isSuccessful) return@try false
+        val body = res.body() ?: return@try false
+        if (!body.delta) return@try false
+        val hasData = body.categories.isNotEmpty() || body.products.isNotEmpty() ||
+            body.modifierGroups.isNotEmpty() || body.printers.isNotEmpty() || body.users.isNotEmpty()
+        if (!hasData) return@try true
+        applyDeltaSync(body)
+        Log.d("ApiSync", "Delta sync: cat=${body.categories.size} prod=${body.products.size}")
+        true
+    } catch (e: Exception) {
+        Log.w("ApiSync", "Delta sync failed: ${e.message}")
+        false
+    }
+
+    private suspend fun applyDeltaSync(delta: DeltaSyncResponse) {
+        delta.categories.forEach { dto ->
+            val active = when (dto.active) { is Boolean -> dto.active; is Number -> (dto.active as Number).toInt() != 0; else -> true }
+            val showTill = (dto.showTill ?: 1) != 0
+            categoryDao.insertCategory(CategoryEntity(dto.id, dto.name, dto.color, dto.sortOrder, active, showTill, "SYNCED", (dto.printers ?: emptyList()).let { Gson().toJson(it) }, dto.overdueUndeliveredMinutes))
+        }
+        delta.modifierGroups.forEach { dto ->
+            val required = when (dto.required) { is Boolean -> dto.required; is Number -> (dto.required as Number).toInt() != 0; else -> false }
+            modifierGroupDao.insertModifierGroup(ModifierGroupEntity(dto.id, dto.name, dto.minSelect ?: 0, dto.maxSelect ?: 1, required))
+            modifierOptionDao.deleteOptionsByGroupId(dto.id)
+            dto.options?.forEach { opt -> modifierOptionDao.insertModifierOption(ModifierOptionEntity(opt.id ?: "o_${dto.id}_${opt.name.hashCode()}", dto.id, opt.name ?: "", parseDouble(opt.price, 0.0))) }
+        }
+        if (delta.products.isNotEmpty()) {
+            ensureAllCategoryExists()
+            val categories = categoryDao.getAllCategories().first()
+            val catByName = categories.associateBy { it.name }
+            val defaultCatId = categories.firstOrNull { it.id != "all" }?.id ?: "all"
+            val entities = delta.products.map { dto ->
+                val catId = dto.categoryId?.takeIf { it.isNotEmpty() } ?: dto.categoryName?.let { catByName[it]?.id } ?: defaultCatId
+                val showInTill = when (dto.posEnabled) { is Boolean -> dto.posEnabled; is Number -> (dto.posEnabled as Number).toInt() != 0; null -> true; else -> false }
+                val active = when (dto.active) { is Boolean -> dto.active; is Number -> (dto.active as Number).toInt() != 0; else -> true }
+                ProductEntity(dto.id, dto.name, dto.nameArabic ?: "", dto.nameTurkish ?: "", catId, parseDouble(dto.price, 0.0), parseDouble(dto.taxRate, 0.0), (dto.printers ?: emptyList()).let { Gson().toJson(it) }, Gson().toJson(normalizeModifierGroupIds(dto.modifierGroups)), active, showInTill, "SYNCED", dto.overdueUndeliveredMinutes?.takeIf { it in 1..1440 })
+            }
+            productDao.insertProducts(entities)
+        }
+        delta.printers.forEach { dto ->
+            val isBk = { v: Any? -> (v is Boolean && v) || (v is Number && (v as Number).toInt() != 0) }
+            val kdsOn = { v: Any? -> v !is Number || (v as Number).toInt() != 0 }
+            printerDao.insertPrinter(PrinterEntity(dto.id, dto.name, dto.printerType ?: "receipt", dto.ipAddress, dto.port, dto.connectionType ?: "network", dto.status ?: "offline", isBk(dto.isBackup), kdsOn(dto.kdsEnabled), true, "SYNCED"))
+        }
+        delta.users.forEach { dto ->
+            val isActive = when (dto.active) { is Boolean -> dto.active; is Number -> (dto.active as Number).toInt() != 0; else -> true }
+            val perms = if (dto.permissions is List<*>) (dto.permissions as List<*>).mapNotNull { it?.toString() }.filter { it.isNotBlank() } else emptyList<String>()
+            userDao.insertUser(UserEntity(dto.id, dto.name, dto.pin, dto.role ?: "waiter", isActive, Gson().toJson(perms), dto.cashDrawerPermission ?: false, "SYNCED"))
         }
     }
 

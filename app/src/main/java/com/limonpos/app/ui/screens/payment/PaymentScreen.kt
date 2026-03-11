@@ -39,6 +39,7 @@ fun PaymentScreen(
     onNavigateToFloorPlan: () -> Unit = {},
     onPaymentComplete: () -> Unit,
     onNavigateToSettings: () -> Unit = {},
+    canAccessSettings: Boolean = true,
     onSync: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -131,11 +132,13 @@ fun PaymentScreen(
                                 onClick = { menuExpanded = false; onSync() },
                                 leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null, tint = LimonPrimary) }
                             )
-                            DropdownMenuItem(
-                                text = { Text("Settings", color = LimonText) },
-                                onClick = { menuExpanded = false; onNavigateToSettings() },
-                                leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null, tint = LimonPrimary) }
-                            )
+                            if (canAccessSettings) {
+                                DropdownMenuItem(
+                                    text = { Text("Settings", color = LimonText) },
+                                    onClick = { menuExpanded = false; onNavigateToSettings() },
+                                    leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null, tint = LimonPrimary) }
+                                )
+                            }
                         }
                     }
                 },

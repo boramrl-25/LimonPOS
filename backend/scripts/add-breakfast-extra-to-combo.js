@@ -1,49 +1,47 @@
 /**
- * 1. "Breakfast extra drink and breads" modifier: min 0, max sınırsız (99)
- * 2. BREAKFAST COMBO kategorisindeki tüm ürünlere bu modifier'ı ikinci modifier olarak ekle
+ * 1. "Breakfast extra drink and breads" modifier: min 0, max 99 (unlimited)
+ * 2. Adds this modifier as second modifier to all products in BREAKFAST COMBO category
+ *
+ * Uses Prisma (PostgreSQL) - no LowDB.
  */
-import { db } from "../db.js";
+import * as store from "../lib/store.js";
 
 async function run() {
-  await db.read();
-  db.data.products = db.data.products || [];
-  db.data.categories = db.data.categories || [];
-  db.data.modifier_groups = db.data.modifier_groups || [];
+  await store.ensurePrismaReady();
+  const modifierGroups = await store.getModifierGroups();
+  const products = await store.getAllProducts();
+  const categories = await store.getAllCategories();
 
-  const mg = db.data.modifier_groups.find(
-    (m) => (m.name || "").toLowerCase().includes("breakfast extra drink")
-  );
+  const mg = modifierGroups.find((m) => (m.name || "").toLowerCase().includes("breakfast extra drink"));
   if (!mg) {
-    console.error("Modifier 'Breakfast extra drink and breads' bulunamadı.");
+    console.error("Modifier 'Breakfast extra drink and breads' not found.");
     process.exit(1);
   }
-  mg.min_select = 0;
-  mg.max_select = 99;
-  console.log("Modifier güncellendi: min=0, max=99 (sınırsız):", mg.name);
+  await store.updateModifierGroup(mg.id, { min_select: 0, max_select: 99 });
+  console.log("Modifier updated: min=0, max=99:", mg.name);
 
-  const comboCategory = db.data.categories.find(
-    (c) => (c.name || "").toUpperCase().replace(/\s+/g, " ").trim() === "BREAKFAST COMBO"
+  const comboCategory = categories.find(
+    (c) => (c.name || "").toUpperCase().replace(/\s+/g, " ").trim() === "BREAKFAST COMBO",
   );
   if (!comboCategory) {
-    console.error("Kategori 'BREAKFAST COMBO' bulunamadı.");
+    console.error("Category 'BREAKFAST COMBO' not found.");
     process.exit(1);
   }
   const categoryId = comboCategory.id;
 
   let count = 0;
-  for (const p of db.data.products) {
+  for (const p of products) {
     if (p.category_id !== categoryId) continue;
     const arr = JSON.parse(p.modifier_groups || "[]");
     const without = arr.filter((id) => id !== mg.id);
     const at = Math.min(1, without.length);
     without.splice(at, 0, mg.id);
-    p.modifier_groups = JSON.stringify(without);
+    await store.updateProduct(p.id, { modifier_groups: JSON.stringify(without) });
     count++;
   }
 
-  await db.write();
-  console.log("BREAKFAST COMBO kategorisindeki ürün sayısı (güncellenen):", count);
-  console.log("Bitti.");
+  console.log("Updated products in BREAKFAST COMBO:", count);
+  console.log("Done.");
 }
 
 run().catch((e) => {

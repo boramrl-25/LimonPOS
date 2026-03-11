@@ -117,6 +117,20 @@ export async function getModifierGroups() {
   return prisma.modifierGroup.findMany();
 }
 
+/** Delta Sync: entities updated after sinceMs. Returns same shapes as full API responses. */
+export async function getDeltaSyncData(sinceMs) {
+  const since = new Date(sinceMs);
+  const [categories, products, tables, modifierGroups, printers, users] = await Promise.all([
+    prisma.category.findMany({ where: { updatedAt: { gt: since } }, orderBy: { sort_order: "asc" } }),
+    prisma.product.findMany({ where: { updatedAt: { gt: since } } }),
+    prisma.table.findMany({ where: { deletedAt: null, updatedAt: { gt: since } } }),
+    prisma.modifierGroup.findMany({ where: { updatedAt: { gt: since } } }),
+    prisma.printer.findMany({ where: { updatedAt: { gt: since } } }),
+    prisma.user.findMany({ where: { updatedAt: { gt: since } } }),
+  ]);
+  return { categories, products, tables, modifierGroups, printers, users };
+}
+
 export async function getTables() {
   return prisma.table.findMany({ where: { deletedAt: null } });
 }
@@ -465,6 +479,28 @@ export async function deleteVoidLogsByOrderIdsOrDateRange(orderIds, startTs, end
   });
 }
 
+/** Clear all sales data: orders, order_items, payments, void_logs, void_requests, closed_bill_access_requests. Reset tables to free. Replaces clear-sales.js db usage. */
+export async function clearSales() {
+  await prisma.$transaction(async (tx) => {
+    await tx.payment.deleteMany({});
+    await tx.voidLog.deleteMany({});
+    await tx.orderItem.updateMany({ data: { deletedAt: new Date() } });
+    await tx.order.updateMany({ data: { deletedAt: new Date() } });
+    await tx.voidRequest.deleteMany({});
+    await tx.closedBillAccessRequest.deleteMany({});
+    await tx.table.updateMany({
+      data: {
+        status: "free",
+        current_order_id: null,
+        guest_count: 0,
+        waiter_id: null,
+        waiter_name: null,
+        opened_at: null,
+      },
+    });
+  });
+}
+
 // ============ Getters for Settings JSON (used by server) ============
 export async function getEodLogs() {
   const s = await getSettings();
@@ -504,6 +540,25 @@ export async function getReconciliationWarnings() {
 export async function getReconciliationImports() {
   const s = await getSettings();
   return (s.reconciliation_imports && Array.isArray(s.reconciliation_imports) ? s.reconciliation_imports : []);
+}
+
+/** Append new reconciliation imports and optionally warnings. Used by fetchReconciliationEmails. */
+export async function appendReconciliationImportsAndWarnings(newImports, warningsToAdd = []) {
+  const s = await getSettings();
+  const imports = Array.isArray(s.reconciliation_imports) ? [...s.reconciliation_imports] : [];
+  const warnings = Array.isArray(s.reconciliation_warnings) ? [...s.reconciliation_warnings] : [];
+  if (newImports?.length) imports.push(...newImports);
+  const addWarnings = Array.isArray(warningsToAdd) ? warningsToAdd : (warningsToAdd ? [warningsToAdd] : []);
+  for (const w of addWarnings) {
+    warnings.push({ id: `warn_${Date.now()}`, ...w, created_at: Date.now() });
+  }
+  await prisma.settings.update({
+    where: { id: "default" },
+    data: {
+      reconciliation_imports: imports,
+      reconciliation_warnings: warnings,
+    },
+  });
 }
 
 export async function getPhysicalCashCountByDate() {

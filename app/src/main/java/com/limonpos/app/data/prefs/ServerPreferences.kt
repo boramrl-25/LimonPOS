@@ -36,9 +36,13 @@ class ServerPreferences @Inject constructor(
     }
 
     private fun resolveBaseUrl(stored: String?): String {
-        val url = stored ?: DEFAULT_BASE_URL
-        if (isBlockedUrl(url)) return DEFAULT_BASE_URL
-        return url
+        val raw = stored ?: DEFAULT_BASE_URL
+        if (isBlockedUrl(raw)) return DEFAULT_BASE_URL
+        // Migrate api2.the-limon.com -> api.the-limon.com (standard API domain)
+        if (raw.contains("api2.the-limon.com")) {
+            return raw.replace("api2.the-limon.com", "api.the-limon.com")
+        }
+        return raw
     }
 
     val baseUrl: Flow<String> = context.serverDataStore.data.map {
@@ -88,7 +92,7 @@ class ServerPreferences @Inject constructor(
     }
 
     companion object {
-        /** Backend API - api.the-limon.com. Lokal: http://10.0.2.2:3002/api/ */
+        /** Backend API - api.the-limon.com (Hetzner). Lokal: http://10.0.2.2:3002/api/ */
         const val DEFAULT_BASE_URL = "https://api.the-limon.com/api/"
     }
 }

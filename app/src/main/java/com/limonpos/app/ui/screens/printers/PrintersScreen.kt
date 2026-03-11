@@ -35,6 +35,7 @@ fun PrintersScreen(
     onBack: () -> Unit,
     onNavigateToFloorPlan: () -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
+    canAccessSettings: Boolean = true,
     onSync: () -> Unit = {}
 ) {
     val printers by viewModel.printers.collectAsState(emptyList())
@@ -86,11 +87,13 @@ fun PrintersScreen(
                                 onClick = { menuExpanded = false; onSync() },
                                 leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null, tint = LimonPrimary) }
                             )
-                            DropdownMenuItem(
-                                text = { Text("Settings", color = LimonText) },
-                                onClick = { menuExpanded = false; onNavigateToSettings() },
-                                leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null, tint = LimonPrimary) }
-                            )
+                            if (canAccessSettings) {
+                                DropdownMenuItem(
+                                    text = { Text("Settings", color = LimonText) },
+                                    onClick = { menuExpanded = false; onNavigateToSettings() },
+                                    leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null, tint = LimonPrimary) }
+                                )
+                            }
                         }
                     }
                 },

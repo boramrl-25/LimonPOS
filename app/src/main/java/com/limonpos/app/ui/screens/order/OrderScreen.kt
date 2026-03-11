@@ -78,6 +78,7 @@ fun OrderScreen(
     onNavigateToTable: (String) -> Unit = {},
     onNavigateToPayment: (String) -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
+    canAccessSettings: Boolean = true,
     onSync: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -203,11 +204,13 @@ fun OrderScreen(
                             Icon(Icons.Default.MoreVert, contentDescription = "Menu", tint = LimonPrimary)
                         }
                         DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-                            DropdownMenuItem(
-                                text = { Text("Settings", color = LimonText) },
-                                onClick = { menuExpanded = false; onNavigateToSettings() },
-                                leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null, tint = LimonPrimary) }
-                            )
+                            if (canAccessSettings) {
+                                DropdownMenuItem(
+                                    text = { Text("Settings", color = LimonText) },
+                                    onClick = { menuExpanded = false; onNavigateToSettings() },
+                                    leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null, tint = LimonPrimary) }
+                                )
+                            }
                         }
                     }
                     val itemCount = (uiState.orderWithItems?.items?.size ?: 0)

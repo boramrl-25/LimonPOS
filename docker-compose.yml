@@ -1,3 +1,7 @@
+# LimonPOS - Tüm servisler kendi Ubuntu sunucusunda Docker üzerinde çalışır.
+# PostgreSQL verisi db-data named volume'da saklanır - konteyner silinse bile veri kalıcıdır.
+# Volume konumu: /var/lib/docker/volumes/<project>_db-data/_data
+
 services:
   db:
     image: postgres:16-alpine
@@ -15,6 +19,7 @@ services:
       timeout: 5s
       retries: 5
     volumes:
+      # Kalıcı veri - konteyner silinse bile korunur (sunucu diskinde)
       - db-data:/var/lib/postgresql/data
 
   redis:

@@ -31,6 +31,7 @@ fun VoidReportScreen(
     onBack: () -> Unit,
     onNavigateToFloorPlan: () -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
+    canAccessSettings: Boolean = true,
     onSync: () -> Unit = {}
 ) {
     val voids by viewModel.voids.collectAsState(emptyList())
@@ -63,11 +64,13 @@ fun VoidReportScreen(
                                 onClick = { settingsMenuExpanded = false; onSync() },
                                 leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null, tint = LimonPrimary) }
                             )
-                            DropdownMenuItem(
-                                text = { Text("Settings", color = LimonText) },
-                                onClick = { settingsMenuExpanded = false; onNavigateToSettings() },
-                                leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null, tint = LimonPrimary) }
-                            )
+                            if (canAccessSettings) {
+                                DropdownMenuItem(
+                                    text = { Text("Settings", color = LimonText) },
+                                    onClick = { settingsMenuExpanded = false; onNavigateToSettings() },
+                                    leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null, tint = LimonPrimary) }
+                                )
+                            }
                         }
                     }
                     IconButton(onClick = { showFilterMenu = true }) {

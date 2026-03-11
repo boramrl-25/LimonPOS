@@ -87,7 +87,8 @@ fun LoginScreen(
             onClear = { viewModel.clearPin() },
             onBackspace = { viewModel.backspace() },
             onEnter = { viewModel.login() },
-            enabled = !isLoading
+            enabled = !isLoading,
+            clearAlwaysEnabled = true
         )
     }
 }
@@ -98,7 +99,8 @@ private fun Numpad(
     onClear: () -> Unit,
     onBackspace: () -> Unit,
     onEnter: () -> Unit,
-    enabled: Boolean
+    enabled: Boolean,
+    clearAlwaysEnabled: Boolean = false
 ) {
     val keys = listOf(
         listOf("1", "2", "3"),
@@ -117,6 +119,10 @@ private fun Numpad(
             ) {
                 row.forEach { key ->
                     val isAction = key in listOf("C", "⌫")
+                    val keyEnabled = when (key) {
+                        "C" -> if (clearAlwaysEnabled) true else enabled
+                        else -> enabled
+                    }
                     Button(
                         onClick = {
                             when (key) {
@@ -130,7 +136,7 @@ private fun Numpad(
                             containerColor = if (isAction) LimonTextSecondary else LimonPrimary,
                             contentColor = LimonText
                         ),
-                        enabled = enabled
+                        enabled = keyEnabled
                     ) {
                         Text(
                             text = key,

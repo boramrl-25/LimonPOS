@@ -9,6 +9,7 @@ import com.limonpos.app.data.remote.dto.CashDrawerVerifyRequest
 import com.limonpos.app.data.remote.dto.LoginRequest
 import com.limonpos.app.data.remote.dto.UserDto
 import com.limonpos.app.util.SessionManager
+import com.limonpos.app.data.printer.PrinterWarningHolder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -25,7 +26,8 @@ class AuthRepository @Inject constructor(
     private val userDao: UserDao,
     private val sessionManager: SessionManager,
     private val apiService: ApiService,
-    private val authTokenProvider: AuthTokenProvider
+    private val authTokenProvider: AuthTokenProvider,
+    private val printerWarningHolder: PrinterWarningHolder
 ) {
     private val _loginScreenKey = MutableStateFlow(0)
     val loginScreenKey: Flow<Int> = _loginScreenKey
@@ -49,7 +51,8 @@ class AuthRepository @Inject constructor(
                     val entity = userDtoToEntity(dto)
                     userDao.insertUser(entity)
                     val cashDrawerPermission = dto.role == "admin" || dto.role == "manager" || (dto.cashDrawerPermission == true)
-                    sessionManager.login(entity.id, entity.name, entity.role, entity.pin, cashDrawerPermission)
+                    val canAccessSettings = dto.canAccessSettings ?: (dto.role in listOf("admin", "manager", "kds"))
+                    sessionManager.login(entity.id, entity.name, entity.role, entity.pin, cashDrawerPermission, canAccessSettings)
                     authTokenProvider.setToken(body.token ?: entity.pin)
                     return Result.success(entity)
                 }
@@ -58,7 +61,8 @@ class AuthRepository @Inject constructor(
         // Fallback: local DB (sync ile güncellenmiş veya seed)
         val user = userDao.getUserByPin(pin) ?: return Result.failure(Exception("Invalid PIN"))
         val cashDrawerPermission = user.role == "admin" || user.role == "manager" || user.cashDrawerPermission
-        sessionManager.login(user.id, user.name, user.role, user.pin, cashDrawerPermission)
+        val canAccessSettings = user.role in listOf("admin", "manager", "kds")
+        sessionManager.login(user.id, user.name, user.role, user.pin, cashDrawerPermission, canAccessSettings)
         authTokenProvider.setToken(user.pin)
         scope.launch {
             try {
@@ -118,6 +122,7 @@ class AuthRepository @Inject constructor(
     }
 
     suspend fun logout() {
+        printerWarningHolder.clear()
         authTokenProvider.setToken(null)
         sessionManager.logout()
         _loginScreenKey.value = _loginScreenKey.value + 1
@@ -169,6 +174,9 @@ class AuthRepository @Inject constructor(
         val user = getCurrentUser() ?: return false
         return user.toUserPermissions().viewAllOrders
     }
+
+    /** True if current user can access Settings screen (admin, manager, or can_access_settings). */
+    fun canAccessSettingsFlow(): Flow<Boolean> = sessionManager.getCanAccessSettingsFlow()
 
     fun hasViewAllOrdersFlow(): Flow<Boolean> = sessionManager.currentUserId
         .flatMapLatest { userId ->

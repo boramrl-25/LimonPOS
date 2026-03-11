@@ -203,5 +203,9 @@ interface ApiService {
     @POST("sync-errors")
     suspend fun reportSyncError(@Body body: Map<String, Any?>): Response<Any>
 
+    /** Delta Sync: son 1 dakikada değişen varlıkları çeker. */
+    @GET("sync/delta")
+    suspend fun getSyncDelta(@Query("since") sinceMs: Long): Response<DeltaSyncResponse>
+
     /** POS cihazını web’de “çevrimiçi” göstermek için heartbeat (senkron sırasında çağrılır). */
 }

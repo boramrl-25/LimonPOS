@@ -42,9 +42,9 @@ const DC_REDIRECTS = {
 
 /** Exchange authorization code for refresh token. Returns { refresh_token } or throws. */
 export async function exchangeCodeForRefreshToken(code, client_id, client_secret, redirect_uri, forceDc) {
-  const dcKey = (forceDc || process.env.ZOHO_DC || "com").toLowerCase();
-  const { accounts: accountsUrl } = getZohoUrls(dcKey);
-  const uri = redirect_uri || DC_REDIRECTS[dcKey] || DC_REDIRECTS.com;
+  const dcKey = (forceDc || process.env.ZOHO_DC || process.env.ZOHO_REGION || "com").toString().trim().toLowerCase();
+  const { accounts: accountsUrl } = getZohoUrls(dcKey === "eu" ? "eu" : dcKey);
+  const uri = redirect_uri || process.env.ZOHO_REDIRECT_URI || DC_REDIRECTS[dcKey] || DC_REDIRECTS.com;
   // Debug: Zoho request öncesi (invalid_client araştırması)
   const cid = String(client_id || "");
   const csec = String(client_secret || "");

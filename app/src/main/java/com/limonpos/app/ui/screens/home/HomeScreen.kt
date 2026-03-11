@@ -24,6 +24,7 @@ fun HomeScreen(
     onNavigateToVoidReport: () -> Unit,
     onNavigateToVoidApprovals: () -> Unit = {},
     onNavigateToSettings: () -> Unit,
+    canAccessSettings: Boolean = true,
     onSync: () -> Unit = {}
 ) {
     Scaffold(
@@ -144,19 +145,21 @@ fun HomeScreen(
                     }
                 }
             }
-            OutlinedCard(
-                onClick = onNavigateToSettings,
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.outlinedCardColors(containerColor = LimonSurface),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Row(
-                    modifier = Modifier.padding(20.dp),
-                    verticalAlignment = Alignment.CenterVertically
+            if (canAccessSettings) {
+                OutlinedCard(
+                    onClick = onNavigateToSettings,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.outlinedCardColors(containerColor = LimonSurface),
+                    shape = RoundedCornerShape(12.dp)
                 ) {
-                    Icon(Icons.Default.Settings, contentDescription = null, tint = LimonPrimary, modifier = Modifier.size(28.dp))
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Text("Settings", color = LimonText, fontWeight = FontWeight.Medium, fontSize = 16.sp)
+                    Row(
+                        modifier = Modifier.padding(20.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Settings, contentDescription = null, tint = LimonPrimary, modifier = Modifier.size(28.dp))
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Text("Settings", color = LimonText, fontWeight = FontWeight.Medium, fontSize = 16.sp)
+                    }
                 }
             }
         }

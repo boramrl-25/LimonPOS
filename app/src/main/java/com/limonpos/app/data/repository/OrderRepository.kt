@@ -383,6 +383,13 @@ class OrderRepository @Inject constructor(
         }
     }
 
+    /** Returns item count for table's active order, 0 if no order or table. */
+    suspend fun getItemCountForTable(tableId: String): Int {
+        val order = orderDao.getActiveOrderByTable(tableId) ?: return 0
+        val items = orderItemDao.getOrderItems(order.id).first()
+        return items.sumOf { it.quantity }
+    }
+
     /** Returns error message if table cannot be closed (has items and not paid), null if close is allowed. */
     suspend fun getCloseTableBlockReason(tableId: String): String? {
         val order = orderDao.getActiveOrderByTable(tableId) ?: return null

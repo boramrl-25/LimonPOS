@@ -29,6 +29,7 @@ fun ProductsScreen(
     onBack: () -> Unit,
     onNavigateToFloorPlan: () -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
+    canAccessSettings: Boolean = true,
     onSync: () -> Unit = {}
 ) {
     val products by viewModel.products.collectAsState(emptyList())
@@ -56,8 +57,10 @@ fun ProductsScreen(
                     IconButton(onClick = onNavigateToFloorPlan) {
                         Icon(Icons.Default.Home, contentDescription = "Floor Plan", tint = LimonPrimary)
                     }
-                    IconButton(onClick = onNavigateToSettings) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings", tint = LimonPrimary)
+                    if (canAccessSettings) {
+                        IconButton(onClick = onNavigateToSettings) {
+                            Icon(Icons.Default.Settings, contentDescription = "Settings", tint = LimonPrimary)
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = LimonSurface, titleContentColor = LimonText)

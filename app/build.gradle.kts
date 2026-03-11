@@ -16,8 +16,8 @@ android {
         applicationId = "com.limonpos.app"
         minSdk = 24
         targetSdk = 35
-        versionCode = 8
-        versionName = "1.7"
+        versionCode = 12
+        versionName = "2.1"
     }
 
     val keystoreFile = rootProject.file("keystore.properties")

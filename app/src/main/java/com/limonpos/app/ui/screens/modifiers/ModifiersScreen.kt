@@ -28,6 +28,7 @@ fun ModifiersScreen(
     onBack: () -> Unit,
     onNavigateToFloorPlan: () -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
+    canAccessSettings: Boolean = true,
     onSync: () -> Unit = {}
 ) {
     val modifierGroups by viewModel.modifierGroupsWithOptions.collectAsState(emptyList())
@@ -53,8 +54,10 @@ fun ModifiersScreen(
                     IconButton(onClick = onNavigateToFloorPlan) {
                         Icon(Icons.Default.Home, contentDescription = "Floor Plan", tint = LimonPrimary)
                     }
-                    IconButton(onClick = onNavigateToSettings) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings", tint = LimonPrimary)
+                    if (canAccessSettings) {
+                        IconButton(onClick = onNavigateToSettings) {
+                            Icon(Icons.Default.Settings, contentDescription = "Settings", tint = LimonPrimary)
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = LimonSurface, titleContentColor = LimonText)

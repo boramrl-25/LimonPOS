@@ -1,10 +1,11 @@
 /**
  * Reconciliation: Auto-fetch emails (UTAP, Bank), parse CSV attachments, store for Cash & Card matching.
  * User sets up auto-forward: UTAP/Bank emails → reconciliation inbox. We poll via IMAP.
+ * Uses Prisma (PostgreSQL) via store - no LowDB/data.json.
  */
 import { ImapFlow } from "imapflow";
 import { simpleParser } from "mailparser";
-import { db } from "./db.js";
+import * as store from "./lib/store.js";
 
 /** Parse CSV buffer, return rows. Flexible: date, amount, description, type. */
 function parseCSV(buffer) {
@@ -185,7 +186,7 @@ export function aggregateReconciliationByDate(imports) {
 
 /** Fetch emails from IMAP inbox, parse attachments, store. */
 export async function fetchReconciliationEmails() {
-  const config = db.data?.reconciliation_inbox_config;
+  const config = await store.getReconciliationInboxConfig();
   if (!config || !config.host || !config.user) {
     return { ok: false, error: "Reconciliation inbox not configured" };
   }
@@ -204,8 +205,10 @@ export async function fetchReconciliationEmails() {
     await client.connect();
     const lock = await client.getMailboxLock("INBOX");
     try {
-      const processedIds = new Set((db.data.reconciliation_imports || []).map((i) => i.message_id).filter(Boolean));
+      const existingImports = await store.getReconciliationImports();
+      const processedIds = new Set((existingImports || []).map((i) => i.message_id).filter(Boolean));
       const newImports = [];
+      const warningsToAdd = [];
       const toMarkSeen = [];
 
       for await (const msg of client.fetch({ seen: false }, { source: true })) {
@@ -228,13 +231,13 @@ export async function fetchReconciliationEmails() {
 
         const bodyText = (parsed.text || "") + " " + (parsed.html || "").replace(/<[^>]+>/g, " ");
         const bankBodyResults = source === "bank" ? parseBankEmailBody(bodyText) : [];
-        const accounts = db.data.reconciliation_bank_accounts || {};
+        const accounts = (await store.getReconciliationBankAccounts()) || {};
         for (const e of bankBodyResults) {
           const accountMatch = e.source === "bank_email_card"
             ? accountMatches(accounts.card_account, e.account)
             : accountMatches(accounts.cash_account, e.account);
           const warning = !accountMatch ? { type: "account_mismatch", expected: e.source === "bank_email_card" ? accounts.card_account : accounts.cash_account, actual: e.account, amount: e.amount, date: e.date } : null;
-          newImports.push({
+            newImports.push({
             id: `rec_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
             message_id: messageId,
             date: e.date,
@@ -250,8 +253,7 @@ export async function fetchReconciliationEmails() {
             created_at: Date.now(),
           });
           if (warning) {
-            db.data.reconciliation_warnings = db.data.reconciliation_warnings || [];
-            db.data.reconciliation_warnings.push({ id: `warn_${Date.now()}`, ...warning, created_at: Date.now() });
+            warningsToAdd.push(warning);
           }
         }
 
@@ -290,9 +292,7 @@ export async function fetchReconciliationEmails() {
       }
 
       if (newImports.length > 0) {
-        db.data.reconciliation_imports = db.data.reconciliation_imports || [];
-        db.data.reconciliation_imports.push(...newImports);
-        await db.write();
+        await store.appendReconciliationImportsAndWarnings(newImports, warningsToAdd);
       }
 
       return { ok: true, imported: newImports.length };

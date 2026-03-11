@@ -36,7 +36,7 @@ function getClosedBusinessDayKeyForAutoClose(nowUtc, openingTime, closingTime, o
 }
 import { fetchReconciliationEmails, aggregateReconciliationByDate } from "./reconciliation.js";
 
-// Railway / production: yakalanmamış hatalar loglansın
+// Production: yakalanmamış hatalar loglansın
 process.on("uncaughtException", (err) => {
   console.error("[CRASH] uncaughtException:", err?.message || err);
   if (err?.stack) console.error(err.stack);
@@ -48,10 +48,10 @@ process.on("unhandledRejection", (reason, promise) => {
 });
 
 const app = express();
-// Railway sets PORT; must be number. Listen on 0.0.0.0 so external requests reach the app.
+// PORT env'den alınır; 0.0.0.0 ile dış erişime açılır.
 const PORT = Number(process.env.PORT) || 3002;
 
-// CORS: allow all origins so pos.the-limon.com and Vercel can reach this API
+// CORS: tüm origin'lere izin (pos.the-limon.com, the-limon.com vb.)
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 
@@ -76,6 +76,12 @@ async function ensurePrismaReady() {
   await store.ensurePrismaReady();
 }
 
+function userCanAccessSettings(user) {
+  if (user?.can_access_settings != null) return !!user.can_access_settings;
+  const perms = typeof user?.permissions === "string" ? JSON.parse(user.permissions || "[]") : (user?.permissions || []);
+  return user?.role === "admin" || user?.role === "manager" || perms.includes("web_settings");
+}
+
 const authMiddleware = (req, res, next) => {
   const auth = req.headers.authorization;
   if (!auth?.startsWith("Bearer ")) return res.status(401).json({ error: "Unauthorized" });
@@ -87,12 +93,84 @@ const authMiddleware = (req, res, next) => {
   }).catch(() => res.status(401).json({ error: "Unauthorized" }));
 };
 
-// Railway / load balancer health check (no auth)
+// Health check (no auth)
 app.get("/", (req, res) => {
   res.status(200).send("OK");
 });
 app.get("/api/health", (req, res) => {
   res.json({ ok: true, message: "LimonPOS API", ts: Date.now() });
+});
+
+/** Delta Sync: Son 'since' ms'den sonra güncellenen varlıkları döner. Android sadece değişenleri çeker. */
+app.get("/api/sync/delta", authMiddleware, async (req, res) => {
+  await ensurePrismaReady();
+  const sinceRaw = parseInt(req.query.since, 10);
+  if (isNaN(sinceRaw) || sinceRaw <= 0) {
+    return res.status(400).json({ error: "invalid_since", message: "Query param 'since' (ms timestamp) required" });
+  }
+  const data = await store.getDeltaSyncData(sinceRaw);
+  const cats = Object.fromEntries((await store.getAllCategories()).map((c) => [c.id, c.name]));
+  const catById = Object.fromEntries((await store.getAllCategories()).map((c) => [c.id, c]));
+  function toModifierIds(arr) {
+    if (!Array.isArray(arr)) return [];
+    return arr.map((x) => {
+      if (typeof x === "string") return x.trim() || null;
+      if (typeof x === "number") return String(x);
+      return (x?.id ?? x?.Id)?.toString?.()?.trim() || null;
+    }).filter(Boolean);
+  }
+  const products = (data.products || []).filter((p) => p.sellable !== false).map((r) => {
+    let modIds = toModifierIds(JSON.parse(r.modifier_groups || "[]"));
+    const cat = r.category_id ? catById[r.category_id] : null;
+    if (cat && cat.modifier_groups) {
+      const catIds = toModifierIds(JSON.parse(cat.modifier_groups || "[]"));
+      modIds = [...new Set([...modIds, ...catIds])];
+    }
+    return {
+      ...r,
+      tax_rate: r.tax_rate ?? 0,
+      pos_enabled: r.pos_enabled === 1 ? 1 : 0,
+      category: cats[r.category_id] || "",
+      printers: JSON.parse(r.printers || "[]"),
+      modifier_groups: modIds,
+      zoho_suggest_remove: !!r.zoho_suggest_remove,
+    };
+  });
+  const tablesMapped = [];
+  for (const r of data.tables || []) {
+    const num = typeof r.number === "string" ? parseInt(r.number, 10) || 0 : r.number ?? 0;
+    const out = {
+      ...r,
+      number: num,
+      current_order_id: r.current_order_id || null,
+      waiter_id: r.waiter_id || null,
+      waiter_name: r.waiter_name || null,
+    };
+    const isFree = !r.current_order_id;
+    const activeRes = isFree ? await getActiveReservationForTable(r.id) : null;
+    if (activeRes) {
+      out.status = "reserved";
+      out.reservation = {
+        id: activeRes.id,
+        guest_name: activeRes.guest_name || "",
+        guest_phone: activeRes.guest_phone || "",
+        from_time: activeRes.from_time,
+        to_time: activeRes.to_time,
+      };
+    }
+    tablesMapped.push(out);
+  }
+  const modifierGroups = (data.modifierGroups || []).map((r) => ({ ...r, options: JSON.parse(r.options || "[]") }));
+  res.json({
+    delta: true,
+    since: sinceRaw,
+    categories: data.categories || [],
+    products,
+    tables: tablesMapped,
+    modifier_groups: modifierGroups,
+    printers: data.printers || [],
+    users: data.users || [],
+  });
 });
 
 /** Export tüm veriyi data.json formatında döner. Sadece admin/manager. */
@@ -183,8 +261,9 @@ app.post("/api/auth/login", async (req, res) => {
   const user = await store.getUserByIdOrPin(pin);
   if (!user || !user.active) return res.status(401).json({ error: "Invalid PIN" });
   const perms = JSON.parse(user.permissions || "[]");
+  const canAccessSettings = user.can_access_settings != null ? !!user.can_access_settings : (user.role === "admin" || user.role === "manager" || perms.includes("web_settings"));
   res.json({
-    user: { id: user.id, name: user.name, pin: user.pin, role: user.role, active: !!user.active, permissions: perms, cash_drawer_permission: !!user.cash_drawer_permission },
+    user: { id: user.id, name: user.name, pin: user.pin, role: user.role, active: !!user.active, permissions: perms, cash_drawer_permission: !!user.cash_drawer_permission, can_access_settings: canAccessSettings },
     token: user.id,
   });
 });
@@ -192,12 +271,14 @@ app.post("/api/auth/login", async (req, res) => {
 app.get("/api/auth/me", authMiddleware, async (req, res) => {
   const user = req.user;
   const perms = JSON.parse(user.permissions || "[]");
+  const canAccessSettings = user.can_access_settings != null ? !!user.can_access_settings : (user.role === "admin" || user.role === "manager" || perms.includes("web_settings"));
   res.json({
     id: user.id,
     name: user.name,
     role: user.role,
     permissions: perms,
     cash_drawer_permission: !!user.cash_drawer_permission,
+    can_access_settings: canAccessSettings,
   });
 });
 
@@ -356,23 +437,30 @@ app.delete("/api/roles/:id", authMiddleware, async (req, res) => {
 app.get("/api/users", authMiddleware, async (req, res) => {
   await ensurePrismaReady();
   const users = await store.getAllUsers();
-  res.json(users.map((r) => ({
-    ...r,
-    active: !!(r.active !== 0 && r.active !== false),
-    permissions: JSON.parse(r.permissions || "[]"),
-    cash_drawer_permission: !!r.cash_drawer_permission,
-  })));
+  res.json(users.map((r) => {
+    const perms = JSON.parse(r.permissions || "[]");
+    const canAccessSettings = r.can_access_settings != null ? !!r.can_access_settings : (r.role === "admin" || r.role === "manager" || perms.includes("web_settings"));
+    return {
+      ...r,
+      active: !!(r.active !== 0 && r.active !== false),
+      permissions: perms,
+      cash_drawer_permission: !!r.cash_drawer_permission,
+      can_access_settings: canAccessSettings,
+    };
+  }));
 });
 
 app.post("/api/users", authMiddleware, async (req, res) => {
   await ensurePrismaReady();
   const id = req.body.id || uuid().slice(0, 8);
   const body = req.body;
+  const canAccessSettings = body.can_access_settings !== false;
   const user = await store.createUser({
     id, name: body.name || "User", pin: body.pin || "0000", role: body.role || "waiter",
     active: body.active !== false ? 1 : 0, permissions: JSON.stringify(body.permissions || []), cash_drawer_permission: body.cash_drawer_permission ? 1 : 0,
+    can_access_settings: canAccessSettings,
   });
-  res.json({ ...user, permissions: JSON.parse(user.permissions || "[]"), cash_drawer_permission: !!user.cash_drawer_permission });
+  res.json({ ...user, permissions: JSON.parse(user.permissions || "[]"), cash_drawer_permission: !!user.cash_drawer_permission, can_access_settings: !!user.can_access_settings });
 });
 
 app.put("/api/users/:id", authMiddleware, async (req, res) => {
@@ -380,11 +468,10 @@ app.put("/api/users/:id", authMiddleware, async (req, res) => {
   const { id } = req.params;
   const body = req.body;
   try {
-    const user = await store.updateUser(id, {
-      name: body.name, pin: body.pin, role: body.role || "waiter",
-      active: body.active !== false ? 1 : 0, permissions: JSON.stringify(body.permissions || []), cash_drawer_permission: body.cash_drawer_permission ? 1 : 0,
-    });
-    res.json({ ...user, permissions: JSON.parse(user.permissions || "[]"), cash_drawer_permission: !!user.cash_drawer_permission });
+    const updateData = { name: body.name, pin: body.pin, role: body.role || "waiter", active: body.active !== false ? 1 : 0, permissions: JSON.stringify(body.permissions || []), cash_drawer_permission: body.cash_drawer_permission ? 1 : 0 };
+    if (body.can_access_settings !== undefined) updateData.can_access_settings = !!body.can_access_settings;
+    const user = await store.updateUser(id, updateData);
+    res.json({ ...user, permissions: JSON.parse(user.permissions || "[]"), cash_drawer_permission: !!user.cash_drawer_permission, can_access_settings: !!user.can_access_settings });
   } catch (e) {
     if (e.code === "P2025") return res.status(404).json({ error: "Not found" });
     throw e;
@@ -1800,8 +1887,8 @@ app.delete("/api/tables/:id", authMiddleware, async (req, res) => {
 // ============ Data Audit & Recovery (Veri Denetim ve Kurtarma) ============
 app.get("/api/recovery/deleted", authMiddleware, async (req, res) => {
   await ensurePrismaReady();
-  if (req.user.role !== "admin" && req.user.role !== "manager") {
-    return res.status(403).json({ error: "Forbidden" });
+  if (!userCanAccessSettings(req.user)) {
+    return res.status(403).json({ error: "Forbidden", message: "Ayarlar yetkisi gerekli." });
   }
   const data = await store.getDeletedRecords();
   res.json(data);
@@ -1809,8 +1896,8 @@ app.get("/api/recovery/deleted", authMiddleware, async (req, res) => {
 
 app.post("/api/recovery/restore/table/:id", authMiddleware, async (req, res) => {
   await ensurePrismaReady();
-  if (req.user.role !== "admin" && req.user.role !== "manager") {
-    return res.status(403).json({ error: "Forbidden" });
+  if (!userCanAccessSettings(req.user)) {
+    return res.status(403).json({ error: "Forbidden", message: "Ayarlar yetkisi gerekli." });
   }
   try {
     const t = await store.restoreTable(req.params.id);
@@ -1823,8 +1910,8 @@ app.post("/api/recovery/restore/table/:id", authMiddleware, async (req, res) => 
 
 app.post("/api/recovery/restore/order/:id", authMiddleware, async (req, res) => {
   await ensurePrismaReady();
-  if (req.user.role !== "admin" && req.user.role !== "manager") {
-    return res.status(403).json({ error: "Forbidden" });
+  if (!userCanAccessSettings(req.user)) {
+    return res.status(403).json({ error: "Forbidden", message: "Ayarlar yetkisi gerekli." });
   }
   try {
     const o = await store.restoreOrder(req.params.id);
@@ -1837,8 +1924,8 @@ app.post("/api/recovery/restore/order/:id", authMiddleware, async (req, res) => 
 
 app.post("/api/recovery/restore/order-item/:id", authMiddleware, async (req, res) => {
   await ensurePrismaReady();
-  if (req.user.role !== "admin" && req.user.role !== "manager") {
-    return res.status(403).json({ error: "Forbidden" });
+  if (!userCanAccessSettings(req.user)) {
+    return res.status(403).json({ error: "Forbidden", message: "Ayarlar yetkisi gerekli." });
   }
   try {
     const i = await store.restoreOrderItem(req.params.id);
@@ -1851,8 +1938,8 @@ app.post("/api/recovery/restore/order-item/:id", authMiddleware, async (req, res
 
 app.get("/api/recovery/sync-errors", authMiddleware, async (req, res) => {
   await ensurePrismaReady();
-  if (req.user.role !== "admin" && req.user.role !== "manager") {
-    return res.status(403).json({ error: "Forbidden" });
+  if (!userCanAccessSettings(req.user)) {
+    return res.status(403).json({ error: "Forbidden", message: "Ayarlar yetkisi gerekli." });
   }
   const list = await store.getSyncErrors();
   res.json(list);
@@ -2757,7 +2844,7 @@ app.get("/", (req, res) => {
   `);
 });
 
-const HOST = process.env.HOST || "0.0.0.0"; // 0.0.0.0 required for Railway
+const HOST = process.env.HOST || "0.0.0.0"; // Dış erişim için 0.0.0.0 gerekli
 const DATA_DIR = process.env.DATA_DIR;
 
 let lastAutoCloseRunTs = 0;
@@ -2827,16 +2914,16 @@ async function runAutoCloseIfDue() {
 }
 
 async function startServer() {
-  // Listen first – Railway health check needs quick response. ensureData in background.
+  // Listen first – health check için hızlı yanıt. ensureData arka planda.
   const server = app.listen(PORT, HOST, () => {
     console.log(`LimonPOS Backend running on http://${HOST}:${PORT}`);
     if (DATA_DIR) {
       console.log(`DATA_DIR=${DATA_DIR} – veriler kalıcı (restart'ta silinmez).`);
     } else {
-      console.warn("UYARI: DATA_DIR tanımlı değil. Veriler geçici diskte; her restart/redeploy'da SİLİNİR. Railway'de Volume ekleyip DATA_DIR=/data yapın.");
+      console.warn("UYARI: DATA_DIR tanımlı değil. Veriler geçici diskte; her restart'ta SİLİNİR. Docker'da volume mount + DATA_DIR=/data kullanın.");
     }
     if (HOST === "0.0.0.0") {
-      console.log("Listening on all interfaces – Railway/dış erişim için hazır.");
+      console.log("Listening on all interfaces – dış erişim için hazır.");
     }
     ensurePrismaReady().then(() => console.log("[startup] ensurePrismaReady OK")).catch((e) => console.error("[startup] ensurePrismaReady failed:", e?.message || e));
     setInterval(() => runAutoCloseIfDue().catch((e) => console.error("[auto-close]", e?.message)), 60 * 1000);

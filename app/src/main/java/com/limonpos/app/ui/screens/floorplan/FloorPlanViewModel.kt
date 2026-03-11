@@ -98,6 +98,9 @@ class FloorPlanViewModel @Inject constructor(
     val viewAllOrders: StateFlow<Boolean> = authRepository.hasViewAllOrdersFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    private val _tableItemCounts = MutableStateFlow<Map<String, Int>>(emptyMap())
+    val tableItemCounts: StateFlow<Map<String, Int>> = _tableItemCounts.asStateFlow()
+
     val pendingVoidRequestCount: StateFlow<Int> = voidRequestRepository.getPendingRequests()
         .map { it.size }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
@@ -188,6 +191,10 @@ class FloorPlanViewModel @Inject constructor(
                         occupiedCount = occupied
                     )
                 }
+                val counts = allTables
+                    .filter { it.currentOrderId != null }
+                    .associate { it.id to orderRepository.getItemCountForTable(it.id) }
+                _tableItemCounts.value = counts
             }
         }
     }

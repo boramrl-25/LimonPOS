@@ -2,33 +2,12 @@
  * Tüm satış verilerini siler: orders, order_items, payments, void_logs, void_requests
  * Masaları da sıfırlar (status: free, current_order_id: null)
  *
+ * PostgreSQL (Prisma) kullanır - LowDB/data.json değil.
  * Kullanım: node clear-sales.js
  */
 
-import { db } from "./db.js";
+import * as store from "./lib/store.js";
 
-await db.read();
-
-// Satış verilerini temizle
-db.data.orders = [];
-db.data.order_items = [];
-db.data.payments = [];
-db.data.void_logs = [];
-db.data.void_requests = [];
-db.data.closed_bill_access_requests = [];
-
-// Masaları sıfırla
-if (db.data.tables && Array.isArray(db.data.tables)) {
-  db.data.tables = db.data.tables.map((t) => ({
-    ...t,
-    status: "free",
-    current_order_id: null,
-    guest_count: 0,
-    waiter_id: null,
-    waiter_name: null,
-    opened_at: null,
-  }));
-}
-
-await db.write();
+await store.ensurePrismaReady();
+await store.clearSales();
 console.log("Tüm satış verileri silindi. Masalar sıfırlandı.");

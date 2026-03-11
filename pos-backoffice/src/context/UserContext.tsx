@@ -46,6 +46,8 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const hasPermission = (perm: string): boolean => {
     if (loading) return true;
     if (!user) return false;
+    // web_settings requires can_access_settings
+    if (perm === "web_settings" && user.can_access_settings === false) return false;
     if (FULL_ACCESS_ROLES.includes(user.role)) return true;
     return Array.isArray(user.permissions) && user.permissions.includes(perm);
   };
@@ -53,6 +55,10 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const canAccessPage = (path: string): boolean => {
     if (loading) return true;
     if (!user) return false;
+    // Settings & Recovery require can_access_settings
+    if (path === "/settings" || path.startsWith("/settings/")) {
+      if (user.can_access_settings === false) return false;
+    }
     if (FULL_ACCESS_ROLES.includes(user.role)) return true;
     const perm = getPermissionForPath(path);
     return perm ? hasPermission(perm) : true;

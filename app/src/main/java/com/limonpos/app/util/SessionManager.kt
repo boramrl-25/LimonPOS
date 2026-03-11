@@ -23,6 +23,7 @@ class SessionManager @Inject constructor(
         val USER_ROLE = stringPreferencesKey("user_role")
         val USER_PIN = stringPreferencesKey("user_pin")
         val CASH_DRAWER_PERMISSION = stringPreferencesKey("cash_drawer_permission")
+        val CAN_ACCESS_SETTINGS = stringPreferencesKey("can_access_settings")
     }
 
     val currentUserId: Flow<String?> = context.dataStore.data.map { prefs ->
@@ -37,13 +38,14 @@ class SessionManager @Inject constructor(
         prefs[Keys.USER_ID] != null
     }
 
-    suspend fun login(userId: String, userName: String, userRole: String, userPin: String, cashDrawerPermission: Boolean) {
+    suspend fun login(userId: String, userName: String, userRole: String, userPin: String, cashDrawerPermission: Boolean, canAccessSettings: Boolean = true) {
         context.dataStore.edit { prefs ->
             prefs[Keys.USER_ID] = userId
             prefs[Keys.USER_NAME] = userName
             prefs[Keys.USER_ROLE] = userRole
             prefs[Keys.USER_PIN] = userPin
             prefs[Keys.CASH_DRAWER_PERMISSION] = cashDrawerPermission.toString()
+            prefs[Keys.CAN_ACCESS_SETTINGS] = canAccessSettings.toString()
         }
     }
 
@@ -54,6 +56,7 @@ class SessionManager @Inject constructor(
             prefs.remove(Keys.USER_ROLE)
             prefs.remove(Keys.USER_PIN)
             prefs.remove(Keys.CASH_DRAWER_PERMISSION)
+            prefs.remove(Keys.CAN_ACCESS_SETTINGS)
         }
     }
 
@@ -68,5 +71,9 @@ class SessionManager @Inject constructor(
     fun getUserRoleFlow(): Flow<String?> = context.dataStore.data.map { it[Keys.USER_ROLE] }
     fun getCashDrawerPermissionFlow(): Flow<Boolean> = context.dataStore.data.map {
         it[Keys.CASH_DRAWER_PERMISSION] == "true"
+    }
+
+    fun getCanAccessSettingsFlow(): Flow<Boolean> = context.dataStore.data.map {
+        it[Keys.CAN_ACCESS_SETTINGS] != "false"
     }
 }

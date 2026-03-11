@@ -54,6 +54,7 @@ fun FloorPlanScreen(
     viewModel: FloorPlanViewModel = hiltViewModel(),
     onNavigateToOrder: (tableId: String) -> Unit,
     onNavigateToSettings: () -> Unit,
+    canAccessSettings: Boolean = true,
     onNavigateToClosedBills: () -> Unit,
     onNavigateToDailyCashEntry: () -> Unit = {},
     onNavigateToVoidApprovals: () -> Unit = {},
@@ -215,6 +216,7 @@ fun FloorPlanScreen(
     val sections by viewModel.floorPlanSections.collectAsState(initial = emptyMap())
     val currentUserId by viewModel.currentUserId.collectAsState(initial = null)
     val viewAllOrders by viewModel.viewAllOrders.collectAsState(initial = false)
+    val tableItemCounts by viewModel.tableItemCounts.collectAsState(initial = emptyMap())
     var tablesRaw = uiState.tablesByFloor[uiState.selectedFloor].orEmpty()
     val section = uiState.selectedSection
     if (section != "Main" && sections.isNotEmpty()) {
@@ -320,14 +322,16 @@ fun FloorPlanScreen(
                                     leadingIcon = { Icon(Icons.Default.Receipt, contentDescription = null, tint = LimonPrimary) }
                                 )
                             }
-                            DropdownMenuItem(
-                                text = { Text("Settings", color = LimonText) },
-                                onClick = {
-                                    viewModel.dismissMenu()
-                                    onNavigateToSettings()
-                                },
-                                leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null, tint = LimonPrimary) }
-                            )
+                            if (canAccessSettings) {
+                                DropdownMenuItem(
+                                    text = { Text("Settings", color = LimonText) },
+                                    onClick = {
+                                        viewModel.dismissMenu()
+                                        onNavigateToSettings()
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null, tint = LimonPrimary) }
+                                )
+                            }
                             DropdownMenuItem(
                                 text = { Text("Logout", color = LimonError) },
                                 onClick = {
@@ -475,12 +479,15 @@ fun FloorPlanScreen(
                         ReservationStatusHelper.isReservationUpcoming(table, now, 30)
                     val isOtherUsersTable = viewAllOrders && currentUserId != null &&
                         table.waiterId != null && table.waiterId != currentUserId
+                    val itemCount = tableItemCounts[table.id] ?: 0
+                    val canCloseOwnTable = (table.status == "occupied" || table.status == "bill") && !isOtherUsersTable
+                    val canCloseOthersEmptyTable = isOtherUsersTable && (table.status == "occupied" || table.status == "bill") && itemCount == 0
                     TableCard(
                         table = table,
                         isOccupiedWithUpcomingReservation = isOccupiedWithUpcoming,
                         isOtherUsersTable = isOtherUsersTable,
                         onClick = { viewModel.onTableClick(table, onNavigateToOrder) },
-                        onCloseTable = if ((table.status == "occupied" || table.status == "bill") && !isOtherUsersTable) {
+                        onCloseTable = if (canCloseOwnTable || canCloseOthersEmptyTable) {
                             { tableToClose = table }
                         } else null
                     )
