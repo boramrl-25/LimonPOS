@@ -6,10 +6,13 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface TableDao {
-    @Query("SELECT * FROM tables ORDER BY floor, CAST(number AS INTEGER)")
+    @Query("SELECT * FROM tables WHERE (isOrphaned = 0 OR isOrphaned IS NULL) ORDER BY floor, CAST(number AS INTEGER)")
     fun getAllTables(): Flow<List<TableEntity>>
 
-    @Query("SELECT * FROM tables WHERE floor = :floor ORDER BY CAST(number AS INTEGER)")
+    @Query("SELECT * FROM tables ORDER BY floor, CAST(number AS INTEGER)")
+    suspend fun getAllTablesIncludingOrphaned(): List<TableEntity>
+
+    @Query("SELECT * FROM tables WHERE floor = :floor AND (isOrphaned = 0 OR isOrphaned IS NULL) ORDER BY CAST(number AS INTEGER)")
     fun getTablesByFloor(floor: String): Flow<List<TableEntity>>
 
     @Query("SELECT * FROM tables WHERE id = :id")
@@ -62,8 +65,8 @@ interface TableDao {
     @Query("UPDATE tables SET waiterId = :waiterId, waiterName = :waiterName, syncStatus = 'PENDING' WHERE id = :tableId")
     suspend fun updateTableWaiter(tableId: String, waiterId: String, waiterName: String)
 
-    @Query("DELETE FROM tables")
-    suspend fun deleteAll()
+    @Query("UPDATE tables SET isOrphaned = 1 WHERE id = :tableId")
+    suspend fun markOrphaned(tableId: String)
 
     @Query("UPDATE tables SET status = 'free', guestCount = 0, waiterId = NULL, waiterName = NULL, currentOrderId = NULL, openedAt = NULL, syncStatus = 'PENDING'")
     suspend fun resetAllTables()

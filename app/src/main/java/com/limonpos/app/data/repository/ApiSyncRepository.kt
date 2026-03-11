@@ -589,53 +589,68 @@ class ApiSyncRepository @Inject constructor(
             Log.w("ApiSync", "syncTables: API returned empty tables, keeping local tables to avoid data loss")
             return
         }
-        val localOccupied = tableDao.getAllTables().first().filter { it.currentOrderId != null }
-            .associateBy { it.id }
+        val localAll = tableDao.getAllTablesIncludingOrphaned()
+        val localOccupied = localAll.filter { it.currentOrderId != null }.associateBy { it.id }
+        val apiIds = dtos.map { it.id }.toSet()
         val orderIdsClosedByApi = mutableSetOf<String>()
         for (dto in dtos) {
             if (dto.status == "free" && dto.currentOrderId.isNullOrBlank()) {
                 localOccupied[dto.id]?.currentOrderId?.let { id -> orderIdsClosedByApi.add(id) }
             }
         }
-        tableDao.deleteAll()
         val entities = dtos.map { dto ->
-                val local = localOccupied[dto.id]
-                val res = dto.reservation
-                // Server says reserved → always use reserved (web and app must show same state).
-                // Server says free → trust it (B may have taken payment; fixes race where A sees table open after B paid).
-                // Only use local status when preserving local occupied order (server has no order yet).
-                val isReservedFromApi = dto.status == "reserved" || res != null
-                val apiSaysFree = dto.status == "free"
-                val useLocalOccupied = !isReservedFromApi && !apiSaysFree && local != null && dto.currentOrderId.isNullOrBlank() && local.currentOrderId != null
-                TableEntity(
-                    id = dto.id,
-                    number = dto.number.toString(),
-                    name = dto.name,
-                    capacity = dto.capacity,
-                    floor = dto.floor,
-                    status = when {
-                        isReservedFromApi -> "reserved"
-                        useLocalOccupied -> local!!.status
-                        else -> dto.status
-                    },
-                    currentOrderId = if (useLocalOccupied) local!!.currentOrderId else dto.currentOrderId,
-                    guestCount = if (useLocalOccupied) local!!.guestCount else dto.guestCount,
-                    waiterId = if (useLocalOccupied) local!!.waiterId else dto.waiterId,
-                    waiterName = if (useLocalOccupied) local!!.waiterName else dto.waiterName,
-                    openedAt = if (useLocalOccupied) local!!.openedAt else dto.openedAt?.let { parseIsoDate(it) },
-                    syncStatus = "SYNCED",
-                    x = dto.x,
-                    y = dto.y,
-                    width = dto.width,
-                    height = dto.height,
-                    shape = dto.shape,
-                    reservationGuestName = res?.guestName,
-                    reservationGuestPhone = res?.guestPhone,
-                    reservationFrom = res?.fromTime,
-                    reservationTo = res?.toTime
-                )
+            val local = localOccupied[dto.id]
+            val res = dto.reservation
+            val isReservedFromApi = dto.status == "reserved" || res != null
+            val apiSaysFree = dto.status == "free"
+            val useLocalOccupied = !isReservedFromApi && !apiSaysFree && local != null && dto.currentOrderId.isNullOrBlank() && local.currentOrderId != null
+            TableEntity(
+                id = dto.id,
+                number = dto.number.toString(),
+                name = dto.name,
+                capacity = dto.capacity,
+                floor = dto.floor,
+                status = when {
+                    isReservedFromApi -> "reserved"
+                    useLocalOccupied -> local!!.status
+                    else -> dto.status
+                },
+                currentOrderId = if (useLocalOccupied) local!!.currentOrderId else dto.currentOrderId,
+                guestCount = if (useLocalOccupied) local!!.guestCount else dto.guestCount,
+                waiterId = if (useLocalOccupied) local!!.waiterId else dto.waiterId,
+                waiterName = if (useLocalOccupied) local!!.waiterName else dto.waiterName,
+                openedAt = if (useLocalOccupied) local!!.openedAt else dto.openedAt?.let { parseIsoDate(it) },
+                syncStatus = "SYNCED",
+                x = dto.x,
+                y = dto.y,
+                width = dto.width,
+                height = dto.height,
+                shape = dto.shape,
+                reservationGuestName = res?.guestName,
+                reservationGuestPhone = res?.guestPhone,
+                reservationFrom = res?.fromTime,
+                reservationTo = res?.toTime,
+                isOrphaned = false
+            )
+        }
+        for (e in entities) tableDao.insertTable(e)
+        for (local in localAll) {
+            if (local.id !in apiIds) {
+                tableDao.markOrphaned(local.id)
+                try {
+                    apiService.reportSyncError(
+                        mapOf(
+                            "source" to "android",
+                            "entity_type" to "table",
+                            "entity_id" to local.id,
+                            "message" to "Table ${local.number} (${local.name}) exists locally but not in API - marked as orphaned"
+                        )
+                    )
+                } catch (e: Exception) {
+                    Log.e("ApiSync", "reportSyncError for table ${local.id} failed: ${e.message}")
+                }
             }
-        tableDao.insertTables(entities)
+        }
         for (orderId in orderIdsClosedByApi) {
             try {
                 val resp = apiService.getOrder(orderId)

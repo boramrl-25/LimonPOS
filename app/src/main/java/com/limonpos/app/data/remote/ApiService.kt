@@ -200,5 +200,8 @@ interface ApiService {
     @POST("daily-cash-entry")
     suspend fun postDailyCashEntry(@Body body: DailyCashEntryRequest): Response<DailyCashEntryDto>
 
+    @POST("sync-errors")
+    suspend fun reportSyncError(@Body body: Map<String, Any?>): Response<Any>
+
     /** POS cihazını web’de “çevrimiçi” göstermek için heartbeat (senkron sırasında çağrılır). */
 }

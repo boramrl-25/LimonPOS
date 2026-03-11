@@ -22,6 +22,7 @@ import {
   BarChart2,
   ShoppingBag,
   SlidersHorizontal,
+  ShieldCheck,
 } from "lucide-react";
 import { logout } from "@/lib/api";
 import { useUser } from "@/context/UserContext";
@@ -38,6 +39,7 @@ const navItems: { href: string; label: string; icon: typeof LayoutDashboard; per
   { href: "/modifiers", label: "Modifiers", icon: SlidersHorizontal, permission: "web_modifiers" },
   { href: "/categories", label: "Categories", icon: FolderOpen, permission: "web_categories" },
   { href: "/printers", label: "Printers", icon: Printer, permission: "web_printers" },
+  { href: "/settings/recovery", label: "Veri Denetim ve Kurtarma", icon: ShieldCheck, permission: "web_settings" },
 ];
 
 const reportItems = [

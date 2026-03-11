@@ -79,6 +79,12 @@ val MIGRATION_17_18 = object : Migration(17, 18) {
     }
 }
 
+val MIGRATION_18_19 = object : Migration(18, 19) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE tables ADD COLUMN isOrphaned INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
 val MIGRATION_16_17 = object : Migration(16, 17) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL(
@@ -111,7 +117,7 @@ val MIGRATION_16_17 = object : Migration(16, 17) {
         AppliedClientActionEntity::class,
         PendingOrderItemDeleteEntity::class
     ],
-    version = 18,
+    version = 19,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

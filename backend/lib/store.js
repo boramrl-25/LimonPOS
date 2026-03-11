@@ -116,26 +116,27 @@ export async function getModifierGroups() {
 }
 
 export async function getTables() {
-  return prisma.table.findMany();
+  return prisma.table.findMany({ where: { deletedAt: null } });
 }
 
 export async function getOrders() {
-  return prisma.order.findMany();
+  return prisma.order.findMany({ where: { deletedAt: null } });
 }
 
 export async function getOrderById(id) {
-  return prisma.order.findUnique({
+  const order = await prisma.order.findUnique({
     where: { id },
-    include: { orderItems: true, payments: true },
+    include: { orderItems: { where: { deletedAt: null } }, payments: true },
   });
+  return order?.deletedAt ? null : order;
 }
 
 export async function getOrderItems(orderId) {
-  return prisma.orderItem.findMany({ where: { order_id: orderId } });
+  return prisma.orderItem.findMany({ where: { order_id: orderId, deletedAt: null } });
 }
 
 export async function getAllOrderItems() {
-  return prisma.orderItem.findMany();
+  return prisma.orderItem.findMany({ where: { deletedAt: null } });
 }
 
 export async function getPayments() {
@@ -338,7 +339,7 @@ export async function updateTable(id, data) {
 }
 
 export async function deleteTable(id) {
-  return prisma.table.delete({ where: { id } });
+  return prisma.table.update({ where: { id }, data: { deletedAt: new Date() } });
 }
 
 export async function upsertTables(tables) {
@@ -370,7 +371,7 @@ export async function updateOrderItem(id, data) {
 }
 
 export async function deleteOrderItem(id) {
-  return prisma.orderItem.delete({ where: { id } });
+  return prisma.orderItem.update({ where: { id }, data: { deletedAt: new Date() } });
 }
 
 // ============ Payment ============
@@ -423,12 +424,30 @@ export async function completePaymentTransaction({ orderId, paymentPayloads, use
 
 // ============ VoidLog ============
 export async function createVoidLog(data) {
-  return prisma.voidLog.create({ data });
+  const createData = {
+    id: data.id,
+    type: data.type,
+    product_name: data.product_name ?? null,
+    quantity: data.quantity ?? null,
+    price: data.price ?? null,
+    amount: data.amount ?? null,
+    source_table_id: data.source_table_id ?? null,
+    source_table_number: data.source_table_number ?? null,
+    target_table_id: data.target_table_id ?? null,
+    target_table_number: data.target_table_number ?? null,
+    user_name: data.user_name ?? null,
+    details: data.details ?? null,
+    created_at: data.created_at ?? null,
+  };
+  if (data.order_id) createData.order = { connect: { id: data.order_id } };
+  if (data.order_item_id) createData.orderItem = { connect: { id: data.order_item_id } };
+  if (data.user_id) createData.user = { connect: { id: data.user_id } };
+  return prisma.voidLog.create({ data: createData });
 }
 
 export async function deleteManyOrders(ids) {
   if (ids.length === 0) return;
-  await prisma.order.deleteMany({ where: { id: { in: ids } } });
+  await prisma.order.updateMany({ where: { id: { in: ids } }, data: { deletedAt: new Date() } });
 }
 
 export async function deleteVoidLogsByOrderIdsOrDateRange(orderIds, startTs, endTs) {
@@ -558,6 +577,100 @@ export async function createTableReservation(payload) {
 export async function updateTableReservation(id, payload) {
   const r = await prisma.tableReservation.update({ where: { id }, data: { payload } });
   return { ...(r.payload && typeof r.payload === "object" ? r.payload : {}), id: r.id };
+}
+
+// ============ Soft Delete Recovery & SyncErrors ============
+export async function getDeletedRecords() {
+  const [tables, orders, orderItems] = await Promise.all([
+    prisma.table.findMany({ where: { deletedAt: { not: null } }, orderBy: { deletedAt: "desc" } }),
+    prisma.order.findMany({ where: { deletedAt: { not: null } }, orderBy: { deletedAt: "desc" } }),
+    prisma.orderItem.findMany({ where: { deletedAt: { not: null } }, orderBy: { deletedAt: "desc" } }),
+  ]);
+  return { tables, orders, orderItems };
+}
+
+export async function restoreTable(id) {
+  return prisma.table.update({ where: { id }, data: { deletedAt: null } });
+}
+
+export async function restoreOrder(id) {
+  return prisma.order.update({ where: { id }, data: { deletedAt: null } });
+}
+
+export async function restoreOrderItem(id) {
+  return prisma.orderItem.update({ where: { id }, data: { deletedAt: null } });
+}
+
+export async function getSyncErrors() {
+  return prisma.syncError.findMany({ orderBy: { createdAt: "desc" }, take: 200 });
+}
+
+export async function createSyncError(data) {
+  return prisma.syncError.create({ data });
+}
+
+/** Clear sales by date range - all operations in single transaction for data integrity */
+export async function clearSalesByDateRangeTransaction({ startTs, endTs }) {
+  return prisma.$transaction(async (tx) => {
+    const orders = await tx.order.findMany({ where: { deletedAt: null } });
+    const orderIdsArr = orders.filter((o) => {
+      const created = ts(o.created_at) ?? ts(o.updatedAt) ?? 0;
+      return created >= startTs && created <= endTs;
+    }).map((o) => o.id);
+    const orderIdsInRange = new Set(orderIdsArr);
+
+    const now = new Date();
+    if (orderIdsArr.length > 0) {
+      await tx.order.updateMany({ where: { id: { in: orderIdsArr } }, data: { deletedAt: now } });
+    }
+
+    const startDate = new Date(startTs);
+    const endDate = new Date(endTs);
+    const voidDeleteResult = await tx.voidLog.deleteMany({
+      where: {
+        OR: [
+          { order_id: { in: Array.from(orderIdsInRange) } },
+          { created_at: { gte: startDate, lt: endDate } },
+        ],
+      },
+    });
+
+    const discountReqs = await tx.discountRequest.findMany();
+    const toDeleteDiscount = discountReqs.filter((r) => {
+      const p = r.payload && typeof r.payload === "object" ? r.payload : {};
+      if (orderIdsInRange.has(p.order_id)) return true;
+      const t = p.requested_at ?? p.approved_at ?? 0;
+      return t >= startTs && t <= endTs;
+    });
+    for (const r of toDeleteDiscount) {
+      await tx.discountRequest.delete({ where: { id: r.id } });
+    }
+
+    const s = await tx.settings.findUnique({ where: { id: "default" } });
+    const cashOpens = Array.isArray(s?.cash_drawer_opens) ? s.cash_drawer_opens : [];
+    const filteredCash = cashOpens.filter((e) => {
+      const t = e?.opened_at ?? 0;
+      return t < startTs || t > endTs;
+    });
+    await tx.settings.update({ where: { id: "default" }, data: { cash_drawer_opens: filteredCash } });
+
+    const tables = await tx.table.findMany({ where: { deletedAt: null } });
+    for (const t of tables) {
+      if (t.current_order_id && orderIdsInRange.has(t.current_order_id)) {
+        await tx.table.update({
+          where: { id: t.id },
+          data: { status: "free", current_order_id: null, guest_count: 0, waiter_id: null, waiter_name: null, opened_at: null },
+        });
+      }
+    }
+
+    return {
+      deletedOrders: orderIdsArr.length,
+      deletedVoids: voidDeleteResult.count,
+      deletedDiscounts: toDeleteDiscount.length,
+      deletedCashDrawer: cashOpens.length - filteredCash.length,
+    };
+  });
 }
 
 // ============ Helpers: offsetMin, getTodayRange, getDayBounds, getSalesSummaryForRange ============

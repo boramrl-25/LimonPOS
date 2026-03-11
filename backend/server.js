@@ -1761,7 +1761,7 @@ app.put("/api/tables/:id", authMiddleware, async (req, res) => {
   const body = req.body || {};
   const updates = {};
   if (body.status != null) updates.status = body.status;
-  if (body.current_order_id != null) updates.current_order_id = body.current_order_id;
+  if (Object.prototype.hasOwnProperty.call(body, "current_order_id")) updates.current_order_id = body.current_order_id;
   if (body.waiter_id != null) updates.waiter_id = body.waiter_id;
   if (body.waiter_name != null) updates.waiter_name = body.waiter_name;
   if (body.guest_count != null) updates.guest_count = body.guest_count;
@@ -1795,6 +1795,76 @@ app.delete("/api/tables/:id", authMiddleware, async (req, res) => {
     if (e.code === "P2025") return res.status(404).json({ error: "Not found" });
     throw e;
   }
+});
+
+// ============ Data Audit & Recovery (Veri Denetim ve Kurtarma) ============
+app.get("/api/recovery/deleted", authMiddleware, async (req, res) => {
+  await ensurePrismaReady();
+  if (req.user.role !== "admin" && req.user.role !== "manager") {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  const data = await store.getDeletedRecords();
+  res.json(data);
+});
+
+app.post("/api/recovery/restore/table/:id", authMiddleware, async (req, res) => {
+  await ensurePrismaReady();
+  if (req.user.role !== "admin" && req.user.role !== "manager") {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  try {
+    const t = await store.restoreTable(req.params.id);
+    res.json({ ok: true, table: t });
+  } catch (e) {
+    if (e.code === "P2025") return res.status(404).json({ error: "Not found" });
+    throw e;
+  }
+});
+
+app.post("/api/recovery/restore/order/:id", authMiddleware, async (req, res) => {
+  await ensurePrismaReady();
+  if (req.user.role !== "admin" && req.user.role !== "manager") {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  try {
+    const o = await store.restoreOrder(req.params.id);
+    res.json({ ok: true, order: o });
+  } catch (e) {
+    if (e.code === "P2025") return res.status(404).json({ error: "Not found" });
+    throw e;
+  }
+});
+
+app.post("/api/recovery/restore/order-item/:id", authMiddleware, async (req, res) => {
+  await ensurePrismaReady();
+  if (req.user.role !== "admin" && req.user.role !== "manager") {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  try {
+    const i = await store.restoreOrderItem(req.params.id);
+    res.json({ ok: true, orderItem: i });
+  } catch (e) {
+    if (e.code === "P2025") return res.status(404).json({ error: "Not found" });
+    throw e;
+  }
+});
+
+app.get("/api/recovery/sync-errors", authMiddleware, async (req, res) => {
+  await ensurePrismaReady();
+  if (req.user.role !== "admin" && req.user.role !== "manager") {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  const list = await store.getSyncErrors();
+  res.json(list);
+});
+
+app.post("/api/sync-errors", authMiddleware, async (req, res) => {
+  await ensurePrismaReady();
+  const body = req.body || {};
+  const { source = "android", entity_type, entity_id, message, payload } = body;
+  if (!entity_type) return res.status(400).json({ error: "entity_type required" });
+  await store.createSyncError({ source, entity_type, entity_id: entity_id || null, message: message || null, payload: payload || null });
+  res.json({ ok: true });
 });
 
 // Reserve table: guest name + time range. Reservation auto-expires 10 min after end time.
@@ -2484,48 +2554,23 @@ app.post("/api/settings/clear-sales-by-date-range", authMiddleware, async (req, 
   if (startTs > endTs) {
     return res.status(400).json({ error: "dateFrom must be before or equal to dateTo" });
   }
-  const orders = await store.getOrders();
-  const orderIdsArr = orders.filter((o) => {
-    const created = o.created_at ? (typeof o.created_at === "number" ? o.created_at : new Date(o.created_at).getTime()) : (o.updatedAt ? new Date(o.updatedAt).getTime() : 0);
-    return created >= startTs && created <= endTs;
-  }).map((o) => o.id);
-  const orderIdsInRange = new Set(orderIdsArr);
-
-  await store.deleteManyOrders(orderIdsArr);
-  const voidLogsBefore = (await store.getVoidLogs()).length;
-  await store.deleteVoidLogsByOrderIdsOrDateRange(Array.from(orderIdsInRange), startTs, endTs);
-  const deletedVoids = voidLogsBefore - (await store.getVoidLogs()).length;
-
-  const discountReqs = await store.getDiscountRequests();
-  const toDeleteDiscount = discountReqs.filter((r) => {
-    if (orderIdsInRange.has(r.order_id)) return true;
-    const t = r.requested_at ?? r.approved_at ?? 0;
-    return t >= startTs && t <= endTs;
-  });
-  for (const r of toDeleteDiscount) await store.deleteDiscountRequest(r.id);
-  const deletedDiscounts = toDeleteDiscount.length;
-
-  const cashOpens = await store.getCashDrawerOpens();
-  const filteredCash = cashOpens.filter((e) => {
-    const t = e.opened_at ?? 0;
-    return t < startTs || t > endTs;
-  });
-  await store.updateSettings({ cash_drawer_opens: filteredCash });
-  const deletedCashDrawer = cashOpens.length - filteredCash.length;
-
-  const tables = await store.getTables();
-  for (const t of tables) {
-    if (t.current_order_id && orderIdsInRange.has(t.current_order_id)) {
-      await store.updateTable(t.id, { status: "free", current_order_id: null, guest_count: 0, waiter_id: null, waiter_name: null, opened_at: null });
-    }
-  }
+  const result = await store.clearSalesByDateRangeTransaction({ startTs, endTs });
+  const { deletedOrders, deletedVoids, deletedDiscounts, deletedCashDrawer } = result;
   const msg = [
-    orderIdsInRange.size > 0 && `Deleted ${orderIdsInRange.size} order(s) and related data`,
+    deletedOrders > 0 && `Deleted ${deletedOrders} order(s) and related data`,
     deletedVoids > 0 && `Deleted ${deletedVoids} void log(s) in date range`,
     deletedDiscounts > 0 && `Deleted ${deletedDiscounts} discount request(s)`,
     deletedCashDrawer > 0 && `Deleted ${deletedCashDrawer} cash drawer open(s)`,
   ].filter(Boolean).join(". ") || "No orders, voids, discounts or cash drawer entries in date range";
-  res.json({ deletedOrders: orderIdsInRange.size, deletedVoids, deletedDiscounts, deletedCashDrawer, message: msg });
+  res.json({ deletedOrders, deletedVoids, deletedDiscounts, deletedCashDrawer, message: msg });
+});
+
+// Zoho callback: Zoho OAuth buraya yönlendirir (?code=xxx). Frontend'e code ile yönlendir.
+app.get("/api/zoho/callback", (req, res) => {
+  const code = req.query?.code;
+  const frontendUrl = process.env.FRONTEND_URL || "https://pos.the-limon.com";
+  const target = `${frontendUrl.replace(/\/$/, "")}/pos/settings/zoho${code ? `?code=${encodeURIComponent(String(code))}` : ""}`;
+  res.redirect(302, target);
 });
 
 // Zoho config
@@ -2536,24 +2581,21 @@ app.post("/api/zoho/exchange-code", authMiddleware, async (req, res) => {
     if (!code || !client_id || !client_secret) {
       return res.status(400).json({ error: "code, client_id, client_secret gerekli" });
     }
-    // Debug: exchange-code request değerleri (source: REQUEST BODY – UI'dan)
-    const dcVal = (dc || process.env.ZOHO_DC || "").toString().trim().toLowerCase();
-    console.log("[Zoho] exchange-code RECEIVED from request:", {
-      source: "request_body",
+    const effectiveRedirectUri = process.env.ZOHO_REDIRECT_URI || redirect_uri;
+    const dcVal = (dc || process.env.ZOHO_DC || process.env.ZOHO_REGION || "").toString().trim().toLowerCase();
+    console.log("[Zoho] exchange-code RECEIVED:", {
       dc: dcVal,
       client_id_prefix: String(client_id).slice(0, 12) + "...",
-      client_secret_length: String(client_secret || "").length,
-      redirect_uri_sent: redirect_uri || "(backend will choose)",
+      redirect_uri: effectiveRedirectUri || "(backend default)",
     });
     let rt;
     try {
-      const r = await exchangeCodeForRefreshToken(code, client_id, client_secret, redirect_uri, dc || process.env.ZOHO_DC);
+      const r = await exchangeCodeForRefreshToken(code, client_id, client_secret, effectiveRedirectUri, dc || process.env.ZOHO_DC || process.env.ZOHO_REGION);
       rt = r.refresh_token;
     } catch (e1) {
-      // Try opposite DC if user client may be in other region
-      const alt = dc === "eu" || process.env.ZOHO_DC === "eu" ? "com" : "eu";
+      const alt = dcVal === "eu" || process.env.ZOHO_DC === "eu" ? "com" : "eu";
       try {
-        const r = await exchangeCodeForRefreshToken(code, client_id, client_secret, redirect_uri, alt);
+        const r = await exchangeCodeForRefreshToken(code, client_id, client_secret, effectiveRedirectUri, alt);
         rt = r.refresh_token;
       } catch (e2) {
         throw e1;

@@ -798,6 +798,37 @@ export async function clearSalesByDateRange(dateFrom: string, dateTo: string): P
   return data;
 }
 
+/** Veri Denetim ve Kurtarma - Soft delete ile silinmiş kayıtlar */
+export async function getDeletedRecords(): Promise<{ tables: Array<Record<string, unknown>>; orders: Array<Record<string, unknown>>; orderItems: Array<Record<string, unknown>> }> {
+  const res = await fetchWithTimeout(`${API_URL}/recovery/deleted`, { headers: headers() });
+  if (!res.ok) throw new Error("Failed to fetch deleted records");
+  return res.json();
+}
+
+export async function restoreTable(id: string): Promise<{ ok: boolean; table: Record<string, unknown> }> {
+  const res = await fetchWithTimeout(`${API_URL}/recovery/restore/table/${id}`, { method: "POST", headers: headers() });
+  if (!res.ok) throw new Error("Failed to restore table");
+  return res.json();
+}
+
+export async function restoreOrder(id: string): Promise<{ ok: boolean; order: Record<string, unknown> }> {
+  const res = await fetchWithTimeout(`${API_URL}/recovery/restore/order/${id}`, { method: "POST", headers: headers() });
+  if (!res.ok) throw new Error("Failed to restore order");
+  return res.json();
+}
+
+export async function restoreOrderItem(id: string): Promise<{ ok: boolean; orderItem: Record<string, unknown> }> {
+  const res = await fetchWithTimeout(`${API_URL}/recovery/restore/order-item/${id}`, { method: "POST", headers: headers() });
+  if (!res.ok) throw new Error("Failed to restore order item");
+  return res.json();
+}
+
+export async function getSyncErrors(): Promise<Array<{ id: string; source: string; entity_type: string; entity_id: string | null; message: string | null; createdAt: string }>> {
+  const res = await fetchWithTimeout(`${API_URL}/recovery/sync-errors`, { headers: headers() });
+  if (!res.ok) throw new Error("Failed to fetch sync errors");
+  return res.json();
+}
+
 export type TableReservation = { id: string; guest_name: string; guest_phone?: string; from_time: number; to_time: number };
 
 export async function getTables(): Promise<Array<{

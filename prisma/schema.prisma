@@ -123,6 +123,7 @@ model Table {
   shape            String    @default("square")
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
 
   orders           Order[]   @relation("TableOrders")
   currentOrder     Order?    @relation("TableCurrentOrder", fields: [current_order_id], references: [id], onDelete: SetNull)
@@ -145,6 +146,7 @@ model Order {
   zoho_receipt_id  String?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
 
   table            Table     @relation("TableOrders", fields: [table_id], references: [id], onDelete: Cascade)
   tablesAsCurrent  Table[]   @relation("TableCurrentOrder")
@@ -168,6 +170,7 @@ model OrderItem {
   delivered_at  DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
 
   order        Order     @relation(fields: [order_id], references: [id], onDelete: Cascade)
   product      Product   @relation(fields: [product_id], references: [id], onDelete: Restrict)
@@ -191,22 +194,24 @@ model Payment {
 }
 
 model VoidLog {
-  id                  String   @id @default(uuid())
-  type                String
-  order_id            String?
-  order_item_id       String?
-  product_name        String?
-  quantity            Int?     @default(1)
-  price               Float?
-  amount              Float?
-  source_table_id     String?
-  source_table_number String?
-  user_id             String?
-  user_name           String?
-  details             String?
-  created_at          DateTime?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  id                    String   @id @default(uuid())
+  type                  String
+  order_id              String?
+  order_item_id         String?
+  product_name          String?
+  quantity              Int?     @default(1)
+  price                 Float?
+  amount                Float?
+  source_table_id       String?
+  source_table_number   String?
+  target_table_id       String?
+  target_table_number   String?
+  user_id               String?
+  user_name             String?
+  details               String?
+  created_at            DateTime?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
   order               Order?   @relation(fields: [order_id], references: [id], onDelete: SetNull)
   orderItem           OrderItem? @relation(fields: [order_item_id], references: [id], onDelete: SetNull)
@@ -255,6 +260,16 @@ model AuditLog {
   ts        BigInt?
   action    String?
   createdAt DateTime @default(now())
+}
+
+model SyncError {
+  id          String   @id @default(uuid())
+  source      String   // "android" | "web"
+  entity_type String   // "table" | "order" | "order_item"
+  entity_id   String?
+  message     String?
+  payload     Json?    // extra context (table_number, device_id, etc.)
+  createdAt   DateTime @default(now())
 }
 
 // ============ SINGLETON / CONFIG TABLES ============

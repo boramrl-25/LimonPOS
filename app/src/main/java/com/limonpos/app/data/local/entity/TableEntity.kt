@@ -30,5 +30,6 @@ data class TableEntity(
     val reservationGuestName: String? = null,
     val reservationGuestPhone: String? = null,
     val reservationFrom: Long? = null,
-    val reservationTo: Long? = null
+    val reservationTo: Long? = null,
+    val isOrphaned: Boolean = false
 )
