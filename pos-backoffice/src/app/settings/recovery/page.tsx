@@ -142,11 +142,11 @@ export default function RecoveryPage() {
                     >
                       <div>
                         <span className="font-medium text-white">
-                          Masa {t.number} – {String(t.name)}
+                          Masa {String(t.number ?? "")} – {String(t.name ?? "")}
                         </span>
                         <span className="text-slate-400 text-sm ml-2">
-                          ({t.floor})
-                          {t.deletedAt && (
+                          ({String(t.floor ?? "")})
+                          {t.deletedAt != null && (
                             <> · {new Date(String(t.deletedAt)).toLocaleString("tr-TR")}</>
                           )}
                         </span>
@@ -184,7 +184,7 @@ export default function RecoveryPage() {
                           Sipariş {String(o.id).slice(0, 12)}…
                         </span>
                         <span className="text-slate-400 text-sm ml-2">
-                          Masa {o.table_number} · {String(o.total ?? 0)} {o.deletedAt && `· ${new Date(String(o.deletedAt)).toLocaleString("tr-TR")}`}
+                          Masa {String(o.table_number ?? "")} · {String(o.total ?? 0)} {o.deletedAt != null && `· ${new Date(String(o.deletedAt)).toLocaleString("tr-TR")}`}
                         </span>
                       </div>
                       <button
@@ -216,10 +216,10 @@ export default function RecoveryPage() {
                       className="flex items-center justify-between gap-4 p-3 rounded-lg bg-slate-900 border border-slate-600"
                     >
                       <div>
-                        <span className="font-medium text-white">{String(i.product_name)}</span>
+                        <span className="font-medium text-white">{String(i.product_name ?? "")}</span>
                         <span className="text-slate-400 text-sm ml-2">
-                          {i.quantity}× {i.price}
-                          {i.deletedAt && ` · ${new Date(String(i.deletedAt)).toLocaleString("tr-TR")}`}
+                          {Number(i.quantity ?? 0)}× {Number(i.price ?? 0)}
+                          {i.deletedAt != null && ` · ${new Date(String(i.deletedAt)).toLocaleString("tr-TR")}`}
                         </span>
                       </div>
                       <button
