@@ -40,6 +40,12 @@ services:
       PORT: 3002
       NODE_ENV: production
       DATA_DIR: /data
+      ZOHO_CLIENT_ID: "1000.ITFHSTJOKYHUKO14TZLXNULR3IT4OO"
+      ZOHO_REDIRECT_URI: "https://api.the-limon.com/api/zoho/callback"
+      ZOHO_REGION: "EU"
+      ZOHO_DC: "eu"
+      ZOHO_CASH_ACCOUNT_ID: "864689000000493032"
+      ZOHO_CARD_ACCOUNT_ID: "864689000000493048"
     volumes:
       - limonpos_data:/data
     depends_on:
@@ -53,13 +59,13 @@ services:
       context: ./pos-backoffice
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: https://api2.the-limon.com/api
+        NEXT_PUBLIC_API_URL: https://api.the-limon.com/api
     container_name: limonpos-frontend
     restart: always
     ports:
       - "3000:3000"
     environment:
-      NEXT_PUBLIC_API_URL: https://api2.the-limon.com/api
+      NEXT_PUBLIC_API_URL: https://api.the-limon.com/api
     depends_on:
       - backend
 
