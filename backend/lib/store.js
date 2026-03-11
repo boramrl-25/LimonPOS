@@ -54,6 +54,8 @@ export async function getZohoConfig() {
     refresh_token: z.refresh_token ?? "",
     organization_id: z.organization_id ?? "",
     customer_id: z.customer_id ?? "",
+    cash_account_id: z.cash_account_id ?? "",
+    card_account_id: z.card_account_id ?? "",
     dc: z.dc ?? "",
   };
 }

@@ -315,14 +315,16 @@ model Settings {
 }
 
 model ZohoConfig {
-  id               String   @id @default("default")
-  enabled          String?  @default("false")
-  client_id        String?
-  client_secret    String?
-  refresh_token    String?
-  organization_id  String?
-  customer_id      String?
-  dc               String?  // "eu" | "com" | "in" | "au"
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id                String   @id @default("default")
+  enabled           String?  @default("false")
+  client_id         String?
+  client_secret     String?
+  refresh_token     String?
+  organization_id   String?
+  customer_id       String?
+  cash_account_id   String?
+  card_account_id   String?
+  dc                String?  // "eu" | "com" | "in" | "au"
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 }
