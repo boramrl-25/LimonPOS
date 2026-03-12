@@ -369,8 +369,31 @@ export async function upsertTables(tables) {
 }
 
 // ============ Order ============
+/** Safety layer: normalize Android/any input to Prisma types; fill required defaults. */
+function normalizeOrderData(data) {
+  const num = (v) => (v === null || v === undefined) ? 0 : (typeof v === "number" && !Number.isNaN(v) ? v : Number(v) || 0);
+  const str = (v, def = "") => (v == null ? def : String(v));
+  return {
+    id: str(data.id, undefined),
+    table_id: str(data.table_id),
+    table_number: str(data.table_number, "1"),
+    waiter_id: data.waiter_id != null ? str(data.waiter_id) : null,
+    waiter_name: data.waiter_name != null ? str(data.waiter_name) : "Waiter",
+    status: str(data.status, "open"),
+    subtotal: num(data.subtotal),
+    tax_amount: num(data.tax_amount),
+    discount_percent: num(data.discount_percent),
+    discount_amount: num(data.discount_amount),
+    total: num(data.total),
+    created_at: data.created_at instanceof Date ? data.created_at : (data.created_at ? new Date(data.created_at) : new Date()),
+    paid_at: data.paid_at instanceof Date ? data.paid_at : (data.paid_at ? new Date(data.paid_at) : null),
+    zoho_receipt_id: data.zoho_receipt_id != null ? str(data.zoho_receipt_id) : null,
+  };
+}
+
 export async function createOrder(data) {
-  return prisma.order.create({ data });
+  const safe = normalizeOrderData(data);
+  return prisma.order.create({ data: safe });
 }
 
 export async function updateOrder(id, data) {
@@ -378,8 +401,26 @@ export async function updateOrder(id, data) {
 }
 
 // ============ OrderItem ============
+function normalizeOrderItemData(data) {
+  const num = (v, def = 0) => (v === null || v === undefined ? def : (typeof v === "number" && !Number.isNaN(v) ? v : Number(v) || def));
+  const str = (v, def = "") => (v == null ? def : String(v));
+  return {
+    id: str(data.id, undefined),
+    order_id: str(data.order_id),
+    product_id: str(data.product_id),
+    product_name: str(data.product_name, "Item"),
+    quantity: Math.max(0, Math.floor(num(data.quantity, 1))),
+    price: num(data.price),
+    notes: str(data.notes, ""),
+    status: str(data.status, "pending"),
+    sent_at: data.sent_at instanceof Date ? data.sent_at : (data.sent_at ? new Date(data.sent_at) : null),
+    client_line_id: data.client_line_id != null ? str(data.client_line_id) : null,
+  };
+}
+
 export async function createOrderItem(data) {
-  return prisma.orderItem.create({ data });
+  const safe = normalizeOrderItemData(data);
+  return prisma.orderItem.create({ data: safe });
 }
 
 export async function updateOrderItem(id, data) {
@@ -391,8 +432,25 @@ export async function deleteOrderItem(id) {
 }
 
 // ============ Payment ============
+function normalizePaymentData(data) {
+  const num = (v, def = 0) => (v === null || v === undefined ? def : (typeof v === "number" && !Number.isNaN(v) ? v : Number(v) || def));
+  const str = (v, def = "") => (v == null ? def : String(v));
+  const method = str(data.method, "cash").toLowerCase();
+  return {
+    id: str(data.id, undefined),
+    order_id: str(data.order_id),
+    amount: num(data.amount),
+    method: method === "card" ? "card" : "cash",
+    received_amount: data.received_amount != null ? num(data.received_amount, data.amount) : num(data.amount),
+    change_amount: num(data.change_amount, 0),
+    user_id: data.user_id != null ? str(data.user_id) : null,
+    created_at: data.created_at instanceof Date ? data.created_at : (data.created_at ? new Date(data.created_at) : new Date()),
+  };
+}
+
 export async function createPayment(data) {
-  return prisma.payment.create({ data });
+  const safe = normalizePaymentData(data);
+  return prisma.payment.create({ data: safe });
 }
 
 /**
@@ -407,15 +465,16 @@ export async function createPayment(data) {
 export async function completePaymentTransaction({ orderId, paymentPayloads, userId, now }) {
   return prisma.$transaction(async (tx) => {
     for (const p of paymentPayloads) {
+      const amount = Number(p.amount) || 0;
       await tx.payment.create({
         data: {
           id: p.id,
           order_id: orderId,
-          amount: p.amount,
-          method: p.method || "cash",
-          received_amount: p.received_amount ?? p.amount,
-          change_amount: p.change_amount ?? 0,
-          user_id: userId,
+          amount,
+          method: String(p.method || "cash").toLowerCase() === "card" ? "card" : "cash",
+          received_amount: Number(p.received_amount ?? p.amount) || amount,
+          change_amount: Number(p.change_amount ?? 0) || 0,
+          user_id: userId || null,
           created_at: new Date(now),
         },
       });
@@ -744,6 +803,12 @@ export async function offsetMin() {
 }
 
 export async function getTodayRange() {
+  const wideDays = parseInt(process.env.DASHBOARD_LAST_DAYS || "0", 10);
+  if (wideDays > 0) {
+    const now = Date.now();
+    const dayMs = 24 * 60 * 60 * 1000;
+    return { startTs: now - wideDays * dayMs, endTs: now + dayMs };
+  }
   const s = await getSettings();
   const opening = s.opening_time ?? "07:00";
   const closing = s.closing_time ?? "01:30";

@@ -2623,24 +2623,33 @@ app.post("/api/payments", authMiddleware, async (req, res) => {
   if (!hasItems) console.log("[Zoho] Skip: 0 items for order", orderId, "- App must sync items before payment (includeAllItems=true in ensureOrderExistsOnApi)");
   if (!notSentYet) console.log("[Zoho] Skip: already sent (zoho_receipt_id:", order.zoho_receipt_id, ")");
 
-  if (order && totalMatch && paymentPayloads.length > 0) {
-    await store.completePaymentTransaction({
-      orderId,
-      paymentPayloads,
-      userId,
-      now,
-    });
-  } else if (order && paymentPayloads.length > 0) {
-    for (const p of paymentPayloads) {
-      await store.createPayment({
-        id: p.id,
-        order_id: orderId,
-        amount: p.amount,
-        method: p.method || "cash",
-        received_amount: p.received_amount ?? p.amount,
-        change_amount: p.change_amount ?? 0,
-        user_id: userId,
-        created_at: new Date(now),
+  if (order && paymentPayloads.length > 0) {
+    if (totalMatch) {
+      await store.completePaymentTransaction({
+        orderId,
+        paymentPayloads,
+        userId,
+        now,
+      });
+    } else {
+      for (const p of paymentPayloads) {
+        await store.createPayment({
+          id: p.id,
+          order_id: orderId,
+          amount: Number(p.amount) || 0,
+          method: String(p.method || "cash").toLowerCase() === "card" ? "card" : "cash",
+          received_amount: Number(p.received_amount ?? p.amount) || p.amount,
+          change_amount: Number(p.change_amount ?? 0) || 0,
+          user_id: userId || null,
+          created_at: new Date(now),
+        });
+      }
+      const totalPaidSum = paymentPayloads.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+      await store.updateOrder(orderId, {
+        status: "paid",
+        paid_at: new Date(now),
+        total: totalPaidSum,
+        subtotal: order.subtotal || totalPaidSum,
       });
     }
   }

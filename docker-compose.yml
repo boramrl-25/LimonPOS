@@ -45,6 +45,7 @@ services:
       PORT: 3002
       NODE_ENV: production
       DATA_DIR: /data
+      DASHBOARD_LAST_DAYS: "7"
       ZOHO_CLIENT_ID: "1000.ITFHSTJOKYHUKO14TZLXNULR3IT4OO"
       ZOHO_REDIRECT_URI: "https://api.the-limon.com/api/zoho/callback"
       ZOHO_REGION: "EU"
