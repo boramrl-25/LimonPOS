@@ -1133,6 +1133,7 @@ app.get("/api/dashboard/open-tables-not-closed", authMiddleware, async (req, res
   await ensurePrismaReady();
   const orders = await store.getOrders();
   const orderItems = await store.getAllOrderItems();
+  const tables = await store.getTables();
   const s = await store.getSettings();
   const key = getBusinessDayKey(Date.now(), s.opening_time ?? "07:00", s.closing_time ?? "01:30", await store.offsetMin());
   const orderIdsLinkedToTable = new Set(tables.filter((t) => t.current_order_id).map((t) => t.current_order_id));

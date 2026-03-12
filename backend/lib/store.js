@@ -456,7 +456,10 @@ export async function createVoidLog(data) {
     created_at: data.created_at ?? null,
   };
   if (data.order_id) createData.order = { connect: { id: data.order_id } };
-  if (data.order_item_id) createData.orderItem = { connect: { id: data.order_item_id } };
+  if (data.order_item_id) {
+    const itemExists = await prisma.orderItem.findUnique({ where: { id: data.order_item_id } });
+    if (itemExists) createData.orderItem = { connect: { id: data.order_item_id } };
+  }
   if (data.user_id) createData.user = { connect: { id: data.user_id } };
   return prisma.voidLog.create({ data: createData });
 }
@@ -731,16 +734,20 @@ export async function clearSalesByDateRangeTransaction({ startTs, endTs }) {
 }
 
 // ============ Helpers: offsetMin, getTodayRange, getDayBounds, getSalesSummaryForRange ============
+// Dubai GMT+4 = 240 dk. Sunucu saati kullanılmaz; sadece Settings.timezone_offset_minutes baz alınır.
+const DEFAULT_TIMEZONE_OFFSET_MINUTES = 240;
+
 export async function offsetMin() {
   const s = await getSettings();
-  return (s?.timezone_offset_minutes ?? 0) | 0;
+  const v = s?.timezone_offset_minutes;
+  return (v != null ? v : DEFAULT_TIMEZONE_OFFSET_MINUTES) | 0;
 }
 
 export async function getTodayRange() {
   const s = await getSettings();
   const opening = s.opening_time ?? "07:00";
   const closing = s.closing_time ?? "01:30";
-  const off = (s.timezone_offset_minutes ?? 0) | 0;
+  const off = (s?.timezone_offset_minutes != null ? s.timezone_offset_minutes : DEFAULT_TIMEZONE_OFFSET_MINUTES) | 0;
   const now = Date.now();
   if (opening && closing && !isNaN(parseTimeToMinutes(opening)) && !isNaN(parseTimeToMinutes(closing))) {
     const r = getBusinessDayRange(now, opening, closing, off);
@@ -756,7 +763,7 @@ export async function getDayBounds(dateStr) {
   const s = await getSettings();
   const opening = s.opening_time ?? "07:00";
   const closing = s.closing_time ?? "01:30";
-  const off = (s.timezone_offset_minutes ?? 0) | 0;
+  const off = (s?.timezone_offset_minutes != null ? s.timezone_offset_minutes : DEFAULT_TIMEZONE_OFFSET_MINUTES) | 0;
   if (opening && closing && !isNaN(parseTimeToMinutes(opening)) && !isNaN(parseTimeToMinutes(closing))) {
     const r = getBusinessDayRangeForDate(dateStr, opening, closing, off);
     if (r) return r;
