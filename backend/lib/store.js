@@ -751,12 +751,17 @@ export async function getTodayRange() {
   const now = Date.now();
   if (opening && closing && !isNaN(parseTimeToMinutes(opening)) && !isNaN(parseTimeToMinutes(closing))) {
     const r = getBusinessDayRange(now, opening, closing, off);
-    if (r) return r;
+    if (r) {
+      console.log("DEBUG_RANGE:", { startTs: r.startTs, endTs: r.endTs, now: Date.now() });
+      return r;
+    }
   }
   const dayMs = 24 * 60 * 60 * 1000;
   const localNow = now + off * 60 * 1000;
   const startTs = Math.floor(localNow / dayMs) * dayMs - off * 60 * 1000;
-  return { startTs, endTs: startTs + dayMs };
+  const endTs = startTs + dayMs;
+  console.log("DEBUG_RANGE:", { startTs, endTs, now: Date.now() });
+  return { startTs, endTs };
 }
 
 export async function getDayBounds(dateStr) {
