@@ -906,10 +906,15 @@ app.get("/api/settings", authMiddleware, async (req, res) => {
 });
 
 function validateTimeHHMM(str) {
-  if (typeof str !== "string" || !/^\d{1,2}:\d{2}$/.test(str.trim())) return null;
-  const [h, m] = str.trim().split(":").map(Number);
-  if (h < 0 || h > 23 || m < 0 || m > 59) return null;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  if (str == null || (typeof str !== "string" && typeof str !== "number")) return null;
+  const s = String(str).trim();
+  if (!s) return null;
+  const m = /^(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?$/.exec(s);
+  if (!m) return null;
+  const h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  if (h < 0 || h > 23 || min < 0 || min > 59) return null;
+  return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
 }
 
 app.patch("/api/settings", authMiddleware, async (req, res) => {
@@ -940,12 +945,21 @@ app.patch("/api/settings", authMiddleware, async (req, res) => {
   }
   const validCurrencyCodes = ["AED", "TRY", "USD", "EUR", "GBP"];
   if (typeof req.body.currency_code === "string" && validCurrencyCodes.includes(req.body.currency_code)) updates.currency_code = req.body.currency_code;
-  const ot = validateTimeHHMM(req.body.opening_time);
-  if (ot) updates.opening_time = ot;
-  const ct = validateTimeHHMM(req.body.closing_time);
-  if (ct) updates.closing_time = ct;
-  const wt = validateTimeHHMM(req.body.open_tables_warning_time);
-  if (wt) updates.open_tables_warning_time = wt;
+  if (req.body.opening_time != null) {
+    const ot = validateTimeHHMM(req.body.opening_time);
+    if (ot) updates.opening_time = ot;
+    else return res.status(400).json({ error: "Invalid opening_time format. Use HH:mm (e.g. 07:00, 06:59)" });
+  }
+  if (req.body.closing_time != null) {
+    const ct = validateTimeHHMM(req.body.closing_time);
+    if (ct) updates.closing_time = ct;
+    else return res.status(400).json({ error: "Invalid closing_time format. Use HH:mm (e.g. 06:59, 01:30)" });
+  }
+  if (req.body.open_tables_warning_time != null) {
+    const wt = validateTimeHHMM(req.body.open_tables_warning_time);
+    if (wt) updates.open_tables_warning_time = wt;
+    else return res.status(400).json({ error: "Invalid open_tables_warning_time format. Use HH:mm" });
+  }
   if (typeof req.body.auto_close_open_tables === "boolean") updates.auto_close_open_tables = req.body.auto_close_open_tables;
   if (typeof req.body.auto_close_payment_method === "string") updates.auto_close_payment_method = req.body.auto_close_payment_method.slice(0, 50) || "cash";
   if (typeof req.body.grace_minutes === "number") updates.grace_minutes = Math.min(60, Math.max(0, Math.round(req.body.grace_minutes)));
@@ -1799,10 +1813,13 @@ app.post("/api/tables/import", authMiddleware, async (req, res) => {
 });
 
 app.post("/api/tables/:id/open", authMiddleware, async (req, res) => {
-  await ensurePrismaReady();
-  const { id } = req.params;
-  const guestCount = parseInt(req.query.guest_count) || 1;
-  const waiterId = req.query.waiter_id || req.user?.id;
+  try {
+    await ensurePrismaReady();
+    const body = req.body || {};
+    console.log("ANDROID_RAW_DATA [POST /api/tables/:id/open]:", JSON.stringify({ ...body, params: req.params, query: req.query }));
+    const { id } = req.params;
+    const guestCount = Number(req.query.guest_count ?? body.guest_count ?? body.guestCount ?? 1) || 1;
+    const waiterId = req.query.waiter_id ?? req.user?.id ?? body.waiter_id ?? body.waiterId;
   const users = await store.getAllUsers();
   const waiter = users.find((u) => u.id === waiterId);
   const tables = await store.getTables();
@@ -1831,6 +1848,11 @@ app.post("/api/tables/:id/open", authMiddleware, async (req, res) => {
     waiter_name: waiter?.name || "Waiter", opened_at: new Date(now),
   });
   res.json(updated);
+  } catch (e) {
+    console.error("[ANDROID_TABLE_OPEN_ERR]", req.params?.id, e?.message || e);
+    if (e?.stack) console.error(e.stack);
+    res.status(500).json({ error: "Table open failed", message: String(e?.message || e) });
+  }
 });
 
 app.post("/api/tables/:id/close", authMiddleware, async (req, res) => {
@@ -2108,40 +2130,101 @@ app.patch("/api/orders/:id", authMiddleware, async (req, res) => {
 });
 
 app.post("/api/orders", authMiddleware, async (req, res) => {
-  await ensurePrismaReady();
-  const body = req.body;
-  const waiterId = req.query.waiter_id || req.user?.id;
-  const users = await store.getAllUsers();
-  const waiter = users.find((u) => u.id === waiterId);
-  const tables = await store.getTables();
-  const tbl = tables.find((t) => t.id === body.table_id);
-  if (tbl?.current_order_id) {
-    const orders = await store.getOrders();
-    const existingOrder = orders.find((o) => o.id === tbl.current_order_id);
-    if (existingOrder && existingOrder.status !== "paid") {
-      const items = await store.getOrderItems(existingOrder.id);
-      return res.status(409).json({
-        error: "table_already_occupied",
-        message: "Bu masada zaten açık sipariş var.",
-        current_order_id: existingOrder.id,
-        order: { ...existingOrder, items },
+  try {
+    await ensurePrismaReady();
+    const body = req.body || {};
+    console.log("ANDROID_RAW_DATA [POST /api/orders]:", JSON.stringify(body));
+
+    const tableId = body.table_id || body.tableId;
+    if (!tableId) {
+      return res.status(400).json({ error: "table_id or tableId required" });
+    }
+    const waiterId = req.query.waiter_id || req.user?.id || body.waiter_id || body.waiterId;
+    const users = await store.getAllUsers();
+    const waiter = waiterId ? users.find((u) => u.id === waiterId) : null;
+    const tables = await store.getTables();
+    const tbl = tables.find((t) => t.id === tableId);
+    if (tbl?.current_order_id) {
+      const orders = await store.getOrders();
+      const existingOrder = orders.find((o) => o.id === tbl.current_order_id);
+      if (existingOrder && existingOrder.status !== "paid") {
+        const items = await store.getOrderItems(existingOrder.id);
+        return res.status(409).json({
+          error: "table_already_occupied",
+          message: "Bu masada zaten açık sipariş var.",
+          current_order_id: existingOrder.id,
+          order: { ...existingOrder, items },
+        });
+      }
+    }
+    const subtotal = Number(body.subtotal ?? body.sub_total ?? 0) || 0;
+    const taxAmount = Number(body.tax_amount ?? body.taxAmount ?? body.tax ?? 0) || 0;
+    const discountPercent = Number(body.discount_percent ?? body.discountPercent ?? 0) || 0;
+    const discountAmount = Number(body.discount_amount ?? body.discountAmount ?? 0) || 0;
+    const total = Number(body.total ?? body.total_price ?? body.totalAmount ?? body.totalPrice ?? 0) || 0;
+
+    const orderId = body.id || body.order_id || `ord_${uuid().slice(0, 12)}`;
+    const order = await store.createOrder({
+      id: orderId,
+      table_id: tableId,
+      table_number: String(tbl?.number ?? body.table_number ?? body.tableNumber ?? "1"),
+      waiter_id: waiterId || null,
+      waiter_name: waiter?.name ?? body.waiter_name ?? body.waiterName ?? "Waiter",
+      status: body.status || "open",
+      subtotal,
+      tax_amount: taxAmount,
+      discount_percent: discountPercent,
+      discount_amount: discountAmount,
+      total,
+      created_at: body.created_at ? new Date(body.created_at) : new Date(),
+      paid_at: body.paid_at ? new Date(body.paid_at) : null,
+      zoho_receipt_id: body.zoho_receipt_id ?? null,
+    });
+    if (tbl) {
+      await store.updateTable(tableId, {
+        status: "occupied",
+        current_order_id: orderId,
+        waiter_id: waiterId,
+        waiter_name: waiter?.name ?? "Waiter",
+        guest_count: body.guest_count ?? body.guestCount ?? 1,
+        opened_at: new Date(),
       });
     }
+    const itemsArray = body.items ?? body.orderItems ?? body.order_items ?? [];
+    const products = await store.getAllProducts();
+    const fallbackProductId = products[0]?.id || "p_unknown";
+    for (let i = 0; i < itemsArray.length; i++) {
+      const it = itemsArray[i] || {};
+      const prodId = it.product_id ?? it.productId ?? fallbackProductId;
+      const prodName = it.product_name ?? it.productName ?? it.name ?? "Item";
+      const qty = Number(it.quantity ?? 1) || 1;
+      const price = Number(it.price ?? it.unit_price ?? it.unitPrice ?? 0) || 0;
+      try {
+        await store.createOrderItem({
+          id: it.id || `item_${uuid().slice(0, 8)}`,
+          order_id: orderId,
+          product_id: prodId,
+          product_name: prodName,
+          quantity: qty,
+          price,
+          notes: it.notes ?? "",
+          status: it.status ?? "pending",
+          sent_at: it.sent_at ? new Date(it.sent_at) : null,
+          client_line_id: it.client_line_id ?? it.clientLineId ?? null,
+        });
+      } catch (itemErr) {
+        console.error("[ANDROID_ORDER_ITEM_ERR]", orderId, it, itemErr?.message || itemErr);
+      }
+    }
+    const items = await store.getOrderItems(orderId);
+    if (items.length > 0 && (subtotal === 0 || total === 0)) await recalcOrderTotal(orderId);
+    const finalOrder = await store.getOrderById(orderId);
+    res.json({ ...(finalOrder || order), items });
+  } catch (e) {
+    console.error("[ANDROID_ORDER_SAVE_ERR]", e?.message || e);
+    if (e?.stack) console.error(e.stack);
+    res.status(500).json({ error: "Order save failed", message: String(e?.message || e) });
   }
-  const orderId = body.id || `ord_${uuid().slice(0, 12)}`;
-  const order = await store.createOrder({
-    id: orderId, table_id: body.table_id, table_number: tbl?.number?.toString() || "1", waiter_id: waiterId, waiter_name: waiter?.name || "Waiter",
-    status: "open", subtotal: 0, tax_amount: 0, discount_percent: 0, discount_amount: 0, total: 0,
-    created_at: new Date(), paid_at: null, zoho_receipt_id: null,
-  });
-  if (tbl) {
-    await store.updateTable(body.table_id, {
-      status: "occupied", current_order_id: orderId, waiter_id: waiterId, waiter_name: waiter?.name || "Waiter",
-      guest_count: body.guest_count ?? 1, opened_at: new Date(),
-    });
-  }
-  const items = await store.getOrderItems(orderId);
-  res.json({ ...order, items });
 });
 
 async function recalcOrderTotal(orderId) {
@@ -2161,35 +2244,56 @@ async function recalcOrderTotal(orderId) {
 }
 
 app.post("/api/orders/:id/items", authMiddleware, async (req, res) => {
-  await ensurePrismaReady();
-  const orderId = req.params.id;
-  const body = req.body;
-  const clientLineId = body.client_line_id || null;
-  const orderItems = await store.getOrderItems(orderId);
+  try {
+    await ensurePrismaReady();
+    const orderId = req.params.id;
+    const body = req.body || {};
+    console.log("ANDROID_RAW_DATA [POST /api/orders/:id/items]:", JSON.stringify(body));
 
-  // Idempotency: if client_line_id provided, find existing line in same order and update instead of create
-  if (clientLineId) {
-    const existing = orderItems.find((i) => i.client_line_id === clientLineId);
-    if (existing) {
-      const updated = await store.updateOrderItem(existing.id, {
-        product_id: body.product_id ?? existing.product_id,
-        product_name: body.product_name ?? existing.product_name,
-        quantity: body.quantity ?? existing.quantity ?? 1,
-        price: body.price ?? existing.price ?? 0,
-        notes: body.notes ?? existing.notes ?? "",
-      });
-      await recalcOrderTotal(orderId);
-      return res.json({ ...updated, order_id: orderId });
+    const products = await store.getAllProducts();
+    const fallbackProductId = products[0]?.id || "p_unknown";
+    const clientLineId = body.client_line_id ?? body.clientLineId ?? null;
+    const productId = body.product_id ?? body.productId ?? fallbackProductId;
+    const productName = body.product_name ?? body.productName ?? body.name ?? "Item";
+    const quantity = Number(body.quantity ?? 1) || 1;
+    const price = Number(body.price ?? body.unit_price ?? body.unitPrice ?? 0) || 0;
+
+    const orderItems = await store.getOrderItems(orderId);
+    if (clientLineId) {
+      const existing = orderItems.find((i) => i.client_line_id === clientLineId);
+      if (existing) {
+        const updated = await store.updateOrderItem(existing.id, {
+          product_id: productId,
+          product_name: productName,
+          quantity,
+          price,
+          notes: body.notes ?? existing.notes ?? "",
+        });
+        await recalcOrderTotal(orderId);
+        return res.json({ ...updated, order_id: orderId });
+      }
     }
-  }
 
-  const itemId = `item_${uuid().slice(0, 8)}`;
-  const newItem = await store.createOrderItem({
-    id: itemId, order_id: orderId, product_id: body.product_id || null, product_name: body.product_name || "Item",
-    quantity: body.quantity ?? 1, price: body.price ?? 0, notes: body.notes || "", status: "pending", sent_at: null, client_line_id: clientLineId,
-  });
-  await recalcOrderTotal(orderId);
-  res.json({ ...newItem, order_id: orderId });
+    const itemId = body.id ?? body.item_id ?? `item_${uuid().slice(0, 8)}`;
+    const newItem = await store.createOrderItem({
+      id: itemId,
+      order_id: orderId,
+      product_id: productId,
+      product_name: productName,
+      quantity,
+      price,
+      notes: body.notes ?? "",
+      status: body.status ?? "pending",
+      sent_at: body.sent_at ? new Date(body.sent_at) : null,
+      client_line_id: clientLineId,
+    });
+    await recalcOrderTotal(orderId);
+    res.json({ ...newItem, order_id: orderId });
+  } catch (e) {
+    console.error("[ANDROID_ORDER_ITEM_SAVE_ERR]", req.params.id, e?.message || e);
+    if (e?.stack) console.error(e.stack);
+    res.status(500).json({ error: "Item save failed", message: String(e?.message || e) });
+  }
 });
 
 app.put("/api/orders/:orderId/items/:itemId", authMiddleware, async (req, res) => {
@@ -2380,17 +2484,23 @@ app.put("/api/orders/:orderId/items/:itemId/status", authMiddleware, async (req,
 
 // Payments
 app.post("/api/payments", authMiddleware, async (req, res) => {
-  await ensurePrismaReady();
-  const userId = req.query.user_id || req.user?.id;
-  const { order_id, payments } = req.body;
-  console.log("[Zoho] POST /api/payments received:", order_id, "payments:", payments?.length, "total:", payments?.reduce((s, p) => s + (p.amount || 0), 0));
+  try {
+    await ensurePrismaReady();
+    const body = req.body || {};
+    console.log("ANDROID_RAW_DATA [POST /api/payments]:", JSON.stringify(body));
+
+    const userId = req.query.user_id ?? req.user?.id ?? body.user_id ?? body.userId;
+    const orderId = body.order_id ?? body.orderId;
+    const paymentsRaw = body.payments ?? body.payment ?? body.payment_methods ?? [];
+    const payments = Array.isArray(paymentsRaw) ? paymentsRaw : [paymentsRaw].filter(Boolean);
+    console.log("[Zoho] POST /api/payments received:", orderId, "payments:", payments?.length, "total:", payments?.reduce((s, p) => s + (Number(p.amount) || 0), 0));
   const now = Date.now();
 
-  const order = await store.getOrderById(order_id);
-  const items = await store.getOrderItems(order_id);
+  const order = await store.getOrderById(orderId);
+  const items = await store.getOrderItems(orderId);
   const existingPayments = await store.getPayments();
-  const totalExisting = existingPayments.filter((p) => p.order_id === order_id).reduce((s, p) => s + p.amount, 0);
-  const totalNew = (payments || []).reduce((s, p) => s + (p.amount || 0), 0);
+  const totalExisting = existingPayments.filter((p) => p.order_id === orderId).reduce((s, p) => s + p.amount, 0);
+  const totalNew = (payments || []).reduce((s, p) => s + (Number(p.amount) || 0), 0);
   const totalPaid = totalExisting + totalNew;
   const totalMatch = order && Math.abs(totalPaid - (order.total || 0)) < 0.01;
   const hasItems = items.length > 0;
@@ -2398,7 +2508,7 @@ app.post("/api/payments", authMiddleware, async (req, res) => {
   const willPushZoho = order && totalMatch && hasItems && notSentYet;
 
   console.log("[Zoho] POST /api/payments check:", {
-    order_id,
+    order_id: orderId,
     order_found: !!order,
     items_count: items.length,
     totalPaid,
@@ -2408,22 +2518,114 @@ app.post("/api/payments", authMiddleware, async (req, res) => {
     willPushZoho,
   });
 
-  if (!order) console.log("[Zoho] Skip: order", order_id, "NOT FOUND - App must sync order first (ensureOrderExistsOnApi). Check: Server URL = api.the-limon.com ?");
-  else if (!totalMatch) console.log("[Zoho] Skip: totalPaid", totalPaid, "!= order.total", order.total, "- wait for all split payments?");
-  else if (!hasItems) console.log("[Zoho] Skip: 0 items for order", order_id, "- App must sync items before payment (includeAllItems=true in ensureOrderExistsOnApi)");
-  else if (!notSentYet) console.log("[Zoho] Skip: already sent (zoho_receipt_id:", order.zoho_receipt_id, ")");
+  const paymentPayloads = (payments || []).map((p) => {
+    const amt = Number(p.amount ?? p.total ?? p.value ?? 0) || 0;
+    const meth = p.method ?? p.payment_method ?? p.type ?? "cash";
+    return {
+      id: p.id ?? `pay_${uuid().slice(0, 8)}`,
+      amount: amt,
+      method: String(meth).toLowerCase() === "card" ? "card" : "cash",
+      received_amount: Number(p.received_amount ?? p.receivedAmount ?? p.amount ?? amt) || amt,
+      change_amount: Number(p.change_amount ?? p.changeAmount ?? 0) || 0,
+    };
+  });
 
-  const paymentPayloads = (payments || []).map((p) => ({
-    id: `pay_${uuid().slice(0, 8)}`,
-    amount: p.amount,
-    method: p.method || "cash",
-    received_amount: p.received_amount ?? p.amount,
-    change_amount: p.change_amount ?? 0,
-  }));
+  if (!order) {
+    console.log("[Zoho] Order", orderId, "NOT FOUND - attempting create from payload");
+    const orderData = body.order ?? body.orderData ?? {};
+    const tableId = orderData.table_id ?? orderData.tableId ?? body.table_id ?? body.tableId;
+    if (tableId && (orderData.items?.length || payments?.length)) {
+      try {
+        const tables = await store.getTables();
+        const tbl = tables.find((t) => t.id === tableId);
+        const orderPayload = {
+          id: orderId,
+          table_id: tableId,
+          table_number: String(tbl?.number ?? orderData.table_number ?? "1"),
+          waiter_id: userId,
+          waiter_name: orderData.waiter_name ?? "Waiter",
+          status: "paid",
+          subtotal: Number(orderData.subtotal ?? orderData.sub_total ?? 0) || 0,
+          tax_amount: Number(orderData.tax_amount ?? orderData.taxAmount ?? 0) || 0,
+          discount_percent: Number(orderData.discount_percent ?? 0) || 0,
+          discount_amount: Number(orderData.discount_amount ?? orderData.discountAmount ?? 0) || 0,
+          total: (totalNew > 0 ? totalNew : 0) || Number(orderData.total ?? orderData.total_price ?? orderData.totalAmount ?? 0) || 0,
+          created_at: new Date(),
+          paid_at: new Date(now),
+          zoho_receipt_id: null,
+        };
+        await store.createOrder(orderPayload);
+        await store.updateTable(tableId, {
+          status: "occupied",
+          current_order_id: orderId,
+          waiter_id: userId,
+          waiter_name: orderPayload.waiter_name,
+          guest_count: 1,
+          opened_at: new Date(now),
+        });
+        const itemsArray = orderData.items ?? orderData.orderItems ?? [];
+        const products = await store.getAllProducts();
+        const fallbackPid = products[0]?.id || "p_unknown";
+        for (const it of itemsArray) {
+          const pid = it.product_id ?? it.productId ?? fallbackPid;
+          const pname = it.product_name ?? it.productName ?? it.name ?? "Item";
+          const qty = Number(it.quantity ?? 1) || 1;
+          const pr = Number(it.price ?? it.unit_price ?? it.unitPrice ?? 0) || 0;
+          try {
+            await store.createOrderItem({
+              id: it.id || `item_${uuid().slice(0, 8)}`,
+              order_id: orderId,
+              product_id: pid,
+              product_name: pname,
+              quantity: qty,
+              price: pr,
+              notes: it.notes ?? "",
+              status: "delivered",
+              sent_at: new Date(now),
+              client_line_id: it.client_line_id ?? it.clientLineId ?? null,
+            });
+          } catch (ie) {
+            console.error("[ANDROID_PAYMENT_ORDER_ITEM_ERR]", ie?.message || ie);
+          }
+        }
+        const order2 = await store.getOrderById(orderId);
+        const items2 = await store.getOrderItems(orderId);
+        if (order2 && paymentPayloads.length > 0) {
+          const totPaid = paymentPayloads.reduce((s, p) => s + p.amount, 0);
+          const totOrd = order2.total || 0;
+          if (Math.abs(totPaid - totOrd) < 0.01) {
+            await store.completePaymentTransaction({ orderId, paymentPayloads, userId, now });
+          } else {
+            for (const p of paymentPayloads) {
+              await store.createPayment({
+                id: p.id,
+                order_id: orderId,
+                amount: p.amount,
+                method: p.method || "cash",
+                received_amount: p.received_amount ?? p.amount,
+                change_amount: p.change_amount ?? 0,
+                user_id: userId,
+                created_at: new Date(now),
+              });
+            }
+            await store.updateOrder(orderId, { status: "paid", paid_at: new Date(now) });
+          }
+        }
+        return res.json({ success: true, created: true });
+      } catch (createErr) {
+        console.error("[ANDROID_PAYMENT_ORDER_CREATE_ERR]", createErr?.message || createErr);
+      }
+    }
+    console.log("[Zoho] Skip: order", orderId, "NOT FOUND - App must sync order first. Server URL = api.the-limon.com ?");
+    return res.status(404).json({ error: "Order not found", order_id: orderId });
+  }
+  if (!totalMatch) console.log("[Zoho] Skip: totalPaid", totalPaid, "!= order.total", order.total, "- wait for all split payments?");
+  if (!hasItems) console.log("[Zoho] Skip: 0 items for order", orderId, "- App must sync items before payment (includeAllItems=true in ensureOrderExistsOnApi)");
+  if (!notSentYet) console.log("[Zoho] Skip: already sent (zoho_receipt_id:", order.zoho_receipt_id, ")");
 
   if (order && totalMatch && paymentPayloads.length > 0) {
     await store.completePaymentTransaction({
-      orderId: order_id,
+      orderId,
       paymentPayloads,
       userId,
       now,
@@ -2432,7 +2634,7 @@ app.post("/api/payments", authMiddleware, async (req, res) => {
     for (const p of paymentPayloads) {
       await store.createPayment({
         id: p.id,
-        order_id,
+        order_id: orderId,
         amount: p.amount,
         method: p.method || "cash",
         received_amount: p.received_amount ?? p.amount,
@@ -2444,13 +2646,18 @@ app.post("/api/payments", authMiddleware, async (req, res) => {
   }
 
   if (order && willPushZoho) {
-    console.log("[Zoho] Pushing order", order_id, "to Zoho Books...");
-    const orderPayments = (await store.getPayments()).filter((p) => p.order_id === order_id);
+    console.log("[Zoho] Pushing order", orderId, "to Zoho Books...");
+    const orderPayments = (await store.getPayments()).filter((p) => p.order_id === orderId);
     const products = await store.getAllProducts();
     const ok = await pushToZohoBooks(order, items, orderPayments.map((p) => ({ amount: p.amount, method: p.method })), products);
     console.log("[Zoho] Result:", ok ? "OK" : "FAILED");
   }
   res.json({ success: true });
+  } catch (e) {
+    console.error("[ANDROID_PAYMENT_SAVE_ERR]", e?.message || e);
+    if (e?.stack) console.error(e.stack);
+    res.status(500).json({ error: "Payment save failed", message: String(e?.message || e) });
+  }
 });
 
 // Voids

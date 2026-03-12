@@ -749,18 +749,19 @@ export async function getTodayRange() {
   const closing = s.closing_time ?? "01:30";
   const off = (s?.timezone_offset_minutes != null ? s.timezone_offset_minutes : DEFAULT_TIMEZONE_OFFSET_MINUTES) | 0;
   const now = Date.now();
-  if (opening && closing && !isNaN(parseTimeToMinutes(opening)) && !isNaN(parseTimeToMinutes(closing))) {
+  const openOk = !isNaN(parseTimeToMinutes(opening));
+  const closeOk = !isNaN(parseTimeToMinutes(closing));
+  if (opening && closing && openOk && closeOk) {
     const r = getBusinessDayRange(now, opening, closing, off);
-    if (r) {
-      console.log("DEBUG_RANGE:", { startTs: r.startTs, endTs: r.endTs, now: Date.now() });
-      return r;
-    }
+    if (r) return r;
+    console.error("ORDER_REJECTED_DUE_TO_TIME: getBusinessDayRange returned null", { opening, closing, off });
+  } else if (!openOk || !closeOk) {
+    console.error("ORDER_REJECTED_DUE_TO_TIME: invalid opening/closing times", { opening, closing });
   }
   const dayMs = 24 * 60 * 60 * 1000;
   const localNow = now + off * 60 * 1000;
   const startTs = Math.floor(localNow / dayMs) * dayMs - off * 60 * 1000;
   const endTs = startTs + dayMs;
-  console.log("DEBUG_RANGE:", { startTs, endTs, now: Date.now() });
   return { startTs, endTs };
 }
 

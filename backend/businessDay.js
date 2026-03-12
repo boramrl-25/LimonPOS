@@ -7,11 +7,15 @@
 const MINUTES_PER_DAY = 24 * 60;
 
 /**
- * Parse "HH:mm" to minutes since midnight (0..1439). Returns NaN if invalid.
+ * Parse "HH:mm" (or "H:m", "HH:mm:ss") to minutes since midnight (0..1439). Returns NaN if invalid.
+ * Accepts: 07:00, 7:00, 06:59, 07:00:00
  */
 function parseTimeToMinutes(str) {
-  if (typeof str !== "string" || !str.trim()) return NaN;
-  const m = /^(\d{1,2}):(\d{2})$/.exec(str.trim());
+  if (str == null || (typeof str !== "string" && typeof str !== "number")) return NaN;
+  const s = String(str).trim();
+  if (!s) return NaN;
+  // Accept HH:mm or HH:mm:ss
+  const m = /^(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?$/.exec(s);
   if (!m) return NaN;
   const h = parseInt(m[1], 10);
   const min = parseInt(m[2], 10);
@@ -48,7 +52,18 @@ function getLocalMidnightFor(utcTs, offsetMinutes) {
 function getBusinessDayRange(nowUtc, openingTime, closingTime, offsetMinutes = 0) {
   const openMin = parseTimeToMinutes(openingTime);
   const closeMin = parseTimeToMinutes(closingTime);
-  if (isNaN(openMin) || isNaN(closeMin)) return null;
+  if (isNaN(openMin) || isNaN(closeMin)) {
+    console.error("ORDER_REJECTED_DUE_TO_TIME: parse failed", { openingTime, closingTime, openMin, closeMin });
+    return null;
+  }
+  // Same or very close (within 1 min): treat as full 24h period (opening to next-day opening)
+  const diff = Math.abs(closeMin - openMin);
+  if (diff <= 1 || (closeMin === openMin)) {
+    const dayMs = 24 * 60 * 60 * 1000;
+    const localMidnight = getLocalMidnightFor(nowUtc, offsetMinutes);
+    const startTs = localMidnight + openMin * 60 * 1000;
+    return { startTs, endTs: startTs + dayMs };
+  }
 
   const localMidnight = getLocalMidnightFor(nowUtc, offsetMinutes);
   const dayMs = 24 * 60 * 60 * 1000;

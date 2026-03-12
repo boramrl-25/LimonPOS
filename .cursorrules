@@ -1,0 +1,33 @@
+# LimonPOS Proje Standartları
+
+Bu kurallar proje genelinde uygulanır; kod önerileri ve değişikliklerde dikkate alınmalıdır.
+
+---
+
+## 1. Veri ve Tarih Yönetimi (KRİTİK)
+
+- Backend API'den gelen tarihler belirsizdir: Hem `Long (ms)` hem `ISO 8601 String` (örn: 2026-03-12T...) gelebilir.
+- **Kural:** Asla `dto.createdAt.toLong()` gibi doğrudan dönüşüm yapma.
+- **Çözüm:** Her zaman `ApiSyncRepository.kt` içindeki `parseTimestamp` veya `parseTimestampOrDefault` yardımcı fonksiyonlarını kullan.
+
+---
+
+## 2. Sunucu ve Deployment (Hetzner)
+
+- Sunucu ortamı Dockerized yapıdadır.
+- **Prisma:** Veritabanı işlemleri için `docker compose exec backend npx prisma ...` komutunu kullan.
+- **Dizin:** Sunucu ana dizini `/root/LimonPOS` olarak belirlenmiştir.
+
+---
+
+## 3. Git ve Dosya Güvenliği
+
+- `.gitignore` dosyasını kutsal bil. `node_modules`, `.gradle`, `build/`, `.idea` gibi klasörlerin repoya sızmasına izin verme.
+- Büyük dosya değişikliklerinde her zaman kullanıcıyı uyar.
+
+---
+
+## 4. Android Kodlama Standartları
+
+- DTO sınıflarında tarih alanlarını `Any?` olarak tanımla ki parser esnek çalışabilsin.
+- Hata yönetiminde `NumberFormatException` riskini her zaman önceden hesapla.
