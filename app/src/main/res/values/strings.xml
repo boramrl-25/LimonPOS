@@ -5,4 +5,7 @@
     <string name="notification_channel_overdue_desc">Alert when items sent to kitchen have not been marked as delivered for too long</string>
     <string name="notification_overdue_title">Products not delivered to table</string>
     <string name="notification_overdue_text">Items not delivered. Tables: %1$s. Tap to open.</string>
+    <string name="notification_channel_printer">Printer error</string>
+    <string name="notification_channel_printer_desc">Alert when kitchen printer could not print products</string>
+    <string name="notification_printer_title">Kitchen printer error</string>
 </resources>

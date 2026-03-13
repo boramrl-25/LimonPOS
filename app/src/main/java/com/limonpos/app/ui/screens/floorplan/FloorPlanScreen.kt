@@ -38,6 +38,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.limonpos.app.data.local.entity.TableEntity
@@ -154,11 +155,13 @@ fun FloorPlanScreen(
         )
     }
 
+    val context = LocalContext.current
     LaunchedEffect(printerWarningState) {
-        if (printerWarningState == null) return@LaunchedEffect
+        val warning = printerWarningState ?: return@LaunchedEffect
+        com.limonpos.app.util.showPrinterWarningNotification(context, warning)
         val tg = ToneGenerator(AudioManager.STREAM_ALARM, 80)
         try {
-            while (true) {
+            repeat(3) {
                 tg.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 400)
                 delay(1500)
             }
