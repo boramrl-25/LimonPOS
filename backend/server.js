@@ -1084,8 +1084,9 @@ app.get("/api/dashboard/stats", authMiddleware, async (req, res) => {
   const dateToStr = (req.query.dateTo || "").toString().trim();
   let summary;
   if (dateFromStr && dateToStr) {
-    const fromBounds = await store.getDayBounds(dateFromStr);
-    const toBounds = await store.getDayBounds(dateToStr);
+    const off = await store.offsetMin();
+    const fromBounds = store.getCalendarDayBounds(dateFromStr, off);
+    const toBounds = store.getCalendarDayBounds(dateToStr, off);
     if (fromBounds && toBounds && fromBounds.startTs <= toBounds.endTs) {
       summary = await store.getSalesSummaryForRange(fromBounds.startTs, toBounds.endTs);
     } else {
@@ -1249,8 +1250,9 @@ app.get("/api/dashboard/daily-sales", authMiddleware, async (req, res) => {
   let dayStartTs;
   let dayEndTs;
   if (dateFromStr && dateToStr) {
-    const fromBounds = await store.getDayBounds(dateFromStr);
-    const toBounds = await store.getDayBounds(dateToStr);
+    const off = await store.offsetMin();
+    const fromBounds = store.getCalendarDayBounds(dateFromStr, off);
+    const toBounds = store.getCalendarDayBounds(dateToStr, off);
     if (!fromBounds || !toBounds) return res.status(400).json({ error: "invalid_date", message: "dateFrom and dateTo must be YYYY-MM-DD" });
     dayStartTs = fromBounds.startTs;
     dayEndTs = toBounds.endTs;
@@ -2114,21 +2116,35 @@ app.get("/api/orders/discount-requests", authMiddleware, async (req, res) => {
   res.json({ requests: list });
 });
 
-// Orders (full ticket detail: order, items, payments, voids). Items enriched with product overdue_undelivered_minutes for web floor.
+// Orders (full ticket detail: order, items, payments, voids). Items from DB, shape for web floor.
 app.get("/api/orders/:id", authMiddleware, async (req, res) => {
   await ensurePrismaReady();
   const order = await store.getOrderById(req.params.id);
   if (!order) return res.status(404).json({ error: "Not found" });
-  const rawItems = Array.isArray(order.orderItems) ? order.orderItems : await store.getOrderItems(order.id);
+  const rawItems = await store.getOrderItems(order.id);
   const products = await store.getAllProducts();
   const s = await store.getSettings();
   const defaultOverdue = Math.min(1440, Math.max(1, (s?.overdue_undelivered_minutes ?? 10) | 0));
+  const toTs = (v) => (v == null ? null : v instanceof Date ? v.getTime() : Number(v));
   const items = rawItems.map((i) => {
     const product = i.product_id ? products.find((p) => p.id === i.product_id) : null;
     const overdue_undelivered_minutes = product?.overdue_undelivered_minutes != null ? product.overdue_undelivered_minutes : defaultOverdue;
-    return { ...i, overdue_undelivered_minutes };
+    return {
+      id: i.id,
+      order_id: i.order_id,
+      product_id: i.product_id,
+      product_name: i.product_name ?? "",
+      quantity: Number(i.quantity) || 0,
+      price: Number(i.price) || 0,
+      notes: i.notes ?? "",
+      status: i.status ?? "pending",
+      sent_at: toTs(i.sent_at),
+      delivered_at: toTs(i.delivered_at),
+      client_line_id: i.client_line_id ?? null,
+      overdue_undelivered_minutes,
+    };
   });
-  const payments = order.payments || (await store.getPayments()).filter((p) => p.order_id === order.id);
+  const payments = Array.isArray(order.payments) ? order.payments : (await store.getPayments()).filter((p) => p.order_id === order.id);
   const allVoids = await store.getVoidLogs();
   const voids = allVoids.filter((v) => v.order_id === order.id);
   const { orderItems, ...orderRest } = order;

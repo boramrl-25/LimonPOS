@@ -832,6 +832,19 @@ export async function getTodayRange() {
   return { startTs, endTs };
 }
 
+/** Calendar day bounds (00:00–24:00 local). Used for date-range dashboard so totals match selected days. */
+export function getCalendarDayBounds(dateStr, offsetMinutes = DEFAULT_TIMEZONE_OFFSET_MINUTES) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+  if (!match) return null;
+  const y = parseInt(match[1], 10);
+  const m = parseInt(match[2], 10) - 1;
+  const d = parseInt(match[3], 10);
+  const dayMs = 24 * 60 * 60 * 1000;
+  const off = (offsetMinutes != null ? offsetMinutes : DEFAULT_TIMEZONE_OFFSET_MINUTES) | 0;
+  const startTs = Date.UTC(y, m, d) - off * 60 * 1000;
+  return { startTs, endTs: startTs + dayMs };
+}
+
 export async function getDayBounds(dateStr) {
   const s = await getSettings();
   const opening = s.opening_time ?? "07:00";
