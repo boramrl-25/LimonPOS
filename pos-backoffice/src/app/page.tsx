@@ -180,13 +180,13 @@ export default function Home() {
           </Link>
 
           <Link
-            href="/reports/user-shifts"
+            href="/employees"
             className="flex items-center gap-4 p-6 rounded-xl bg-slate-800/50 border border-slate-700 hover:border-sky-500/50 hover:bg-slate-800 transition-colors"
           >
             <Users className="w-10 h-10 text-emerald-400" />
             <div>
-              <h2 className="font-semibold">User Shifts</h2>
-              <p className="text-slate-400 text-sm">Sign-in / sign-out history</p>
+              <h2 className="font-semibold">Employees</h2>
+              <p className="text-slate-400 text-sm">Shift in / shift out activity</p>
             </div>
           </Link>
 

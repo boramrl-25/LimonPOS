@@ -121,17 +121,20 @@ class AuthRepository @Inject constructor(
         }
     }
 
+    /** Full logout: backend sign-out (shift out) + clear local session. Use for "End of shift". */
     suspend fun logout() {
         try {
-            // Backend'e sign-out bildirimi: açık masa kontrolü ve vardiya kapanışı burada yapılır.
-            val response = apiService.logout()
-            if (!response.isSuccessful) {
-                // Eğer backend "OPEN_TABLES" vb. bir hata dönerse, mesajı log olarak bırakıp yine de lokalden çık.
-                // (Garson zaten masaları kapatmadan çıkmaya çalışıyordur; backend bu durumda engel koyar)
-            }
-        } catch (_: Exception) {
-            // Backend'e ulaşamazsa da (offline), en azından lokal oturumu temizleyelim.
-        }
+            apiService.logout()
+        } catch (_: Exception) { }
+        clearSessionAndBumpKey()
+    }
+
+    /** Local-only logout: leave app without calling backend. Use for "Logout" (no shift-out recorded). */
+    suspend fun logoutLocalOnly() {
+        clearSessionAndBumpKey()
+    }
+
+    private suspend fun clearSessionAndBumpKey() {
         printerWarningHolder.clear()
         authTokenProvider.setToken(null)
         sessionManager.logout()

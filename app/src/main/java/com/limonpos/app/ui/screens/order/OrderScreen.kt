@@ -18,7 +18,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Payment
@@ -154,19 +155,6 @@ fun OrderScreen(
                                 )
                             }
                         }
-                        if (uiState.table != null && uiState.table?.status != "free") {
-                            IconButton(
-                                onClick = { viewModel.openTransferTable() },
-                                modifier = Modifier.size(44.dp)
-                            ) {
-                                Icon(
-                                    Icons.Default.SwapHoriz,
-                                    contentDescription = "Transfer Table",
-                                    tint = LimonPrimary,
-                                    modifier = Modifier.size(28.dp)
-                                )
-                            }
-                        }
                     }
                 },
                 navigationIcon = {
@@ -175,42 +163,50 @@ fun OrderScreen(
                     }
                 },
                 actions = {
+                    IconButton(
+                        onClick = { if (!uiState.syncInProgress) viewModel.refreshProductsFromApi() },
+                        enabled = !uiState.syncInProgress
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = LimonPrimary,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                                if (uiState.syncInProgress) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(16.dp),
+                                        strokeWidth = 2.dp,
+                                        color = Color.Black
+                                    )
+                                } else {
+                                    Icon(
+                                        Icons.Default.Refresh,
+                                        contentDescription = "Sync",
+                                        tint = Color.Black,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    IconButton(onClick = onLogout) {
+                        Icon(Icons.Default.Lock, contentDescription = "Logout", tint = LimonPrimary)
+                    }
                     IconButton(onClick = onNavigateToFloorPlan) {
                         Icon(Icons.Default.Home, contentDescription = "Floor Plan", tint = LimonPrimary)
                     }
-                    Button(
-                        onClick = { if (!uiState.syncInProgress) viewModel.refreshProductsFromApi() },
-                        enabled = !uiState.syncInProgress,
-                        colors = ButtonDefaults.buttonColors(containerColor = LimonPrimary),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                        modifier = Modifier.height(36.dp)
-                    ) {
-                        if (uiState.syncInProgress) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                strokeWidth = 2.dp,
-                                color = Color.Black
+                    if (uiState.table != null && uiState.table?.status != "free") {
+                        IconButton(
+                            onClick = { viewModel.openTransferTable() },
+                            modifier = Modifier.size(44.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.SwapHoriz,
+                                contentDescription = "Transfer Table",
+                                tint = LimonPrimary,
+                                modifier = Modifier.size(28.dp)
                             )
-                            Spacer(Modifier.width(6.dp))
-                        } else {
-                            Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.Black, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                        }
-                        Text("Sync", color = Color.Black, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                    }
-                    var menuExpanded by remember { mutableStateOf(false) }
-                    Box {
-                        IconButton(onClick = { menuExpanded = true }) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "Menu", tint = LimonPrimary)
-                        }
-                        DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-                            if (canAccessSettings) {
-                                DropdownMenuItem(
-                                    text = { Text("Settings", color = LimonText) },
-                                    onClick = { menuExpanded = false; onNavigateToSettings() },
-                                    leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null, tint = LimonPrimary) }
-                                )
-                            }
                         }
                     }
                     val itemCount = (uiState.orderWithItems?.items?.size ?: 0)
@@ -222,7 +218,12 @@ fun OrderScreen(
                                 }
                             }
                         ) {
-                            Icon(Icons.Default.ShoppingCart, contentDescription = "Cart", tint = LimonPrimary)
+                            Icon(
+                                Icons.Default.ShoppingCart,
+                                contentDescription = "Cart",
+                                tint = LimonPrimary,
+                                modifier = Modifier.size(31.dp)
+                            )
                         }
                     }
                 },

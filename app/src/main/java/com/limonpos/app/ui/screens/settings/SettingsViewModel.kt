@@ -17,6 +17,11 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+data class SettingsUiState(
+    val showEndOfShiftPinDialog: Boolean = false,
+    val endOfShiftPinError: String? = null
+)
+
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val authRepository: AuthRepository,
@@ -50,9 +55,34 @@ class SettingsViewModel @Inject constructor(
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
 
+    private val _settingsUiState = MutableStateFlow(SettingsUiState())
+    val settingsUiState: StateFlow<SettingsUiState> = _settingsUiState.asStateFlow()
+
     fun clearMessage() { _message.value = null }
 
+    /** Logout: leave app only (no PIN, no backend sign-out). */
     fun logout() {
-        viewModelScope.launch { authRepository.logout() }
+        viewModelScope.launch { authRepository.logoutLocalOnly() }
+    }
+
+    fun requestEndOfShift() {
+        _settingsUiState.value = SettingsUiState(showEndOfShiftPinDialog = true, endOfShiftPinError = null)
+    }
+
+    fun dismissEndOfShiftPinDialog() {
+        _settingsUiState.value = SettingsUiState(showEndOfShiftPinDialog = false, endOfShiftPinError = null)
+    }
+
+    fun submitEndOfShiftPin(pin: String) {
+        viewModelScope.launch {
+            val r = authRepository.verifyPin(pin)
+            if (r.isSuccess) {
+                authRepository.logout()
+            } else {
+                _settingsUiState.value = _settingsUiState.value.copy(
+                    endOfShiftPinError = r.exceptionOrNull()?.message ?: "Invalid PIN"
+                )
+            }
+        }
     }
 }

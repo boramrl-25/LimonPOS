@@ -65,7 +65,9 @@ data class FloorPlanUiState(
     val showOtherTablePinDialog: Boolean = false,
     val pendingOtherTableId: String? = null,
     val otherTablePinError: String? = null,
-    val navigateToTableId: String? = null
+    val navigateToTableId: String? = null,
+    val showEndOfShiftPinDialog: Boolean = false,
+    val endOfShiftPinError: String? = null
 )
 
 @HiltViewModel
@@ -273,6 +275,31 @@ class FloorPlanViewModel @Inject constructor(
                 pendingOtherTableId = null,
                 otherTablePinError = null
             )
+        }
+    }
+
+    fun requestEndOfShift() {
+        _uiState.update {
+            it.copy(showEndOfShiftPinDialog = true, endOfShiftPinError = null)
+        }
+    }
+
+    fun dismissEndOfShiftPinDialog() {
+        _uiState.update {
+            it.copy(showEndOfShiftPinDialog = false, endOfShiftPinError = null)
+        }
+    }
+
+    fun submitEndOfShiftPin(pin: String) {
+        viewModelScope.launch {
+            val r = authRepository.verifyPin(pin)
+            if (r.isSuccess) {
+                authRepository.logout()
+            } else {
+                _uiState.update {
+                    it.copy(endOfShiftPinError = r.exceptionOrNull()?.message ?: "Invalid PIN")
+                }
+            }
         }
     }
 

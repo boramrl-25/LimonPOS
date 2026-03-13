@@ -243,17 +243,27 @@ fun FloorPlanScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        "Floor Plan",
-                        fontWeight = FontWeight.Bold,
-                        color = LimonText,
-                        fontSize = 20.sp
-                    )
+                    Column(modifier = Modifier.padding(vertical = 2.dp)) {
+                        Text(
+                            "Floor",
+                            fontWeight = FontWeight.Bold,
+                            color = LimonText,
+                            fontSize = 18.sp,
+                            maxLines = 1
+                        )
+                        Text(
+                            "Plan",
+                            fontWeight = FontWeight.Bold,
+                            color = LimonText,
+                            fontSize = 18.sp,
+                            maxLines = 1
+                        )
+                    }
                 },
                 actions = {
                     if (!uiState.isLocked) {
-                        IconButton(onClick = { viewModel.lockFloor() }) {
-                            Icon(Icons.Default.Lock, contentDescription = "Lock", tint = LimonPrimary)
+                        IconButton(onClick = { onLogout() }) {
+                            Icon(Icons.Default.Lock, contentDescription = "Logout", tint = LimonPrimary)
                         }
                     }
                     IconButton(
@@ -286,6 +296,16 @@ fun FloorPlanScreen(
                             expanded = uiState.showMenu,
                             onDismissRequest = { viewModel.dismissMenu() }
                         ) {
+                            if (canAccessSettings) {
+                                DropdownMenuItem(
+                                    text = { Text("Settings", color = LimonText) },
+                                    onClick = {
+                                        viewModel.dismissMenu()
+                                        onNavigateToSettings()
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null, tint = LimonPrimary) }
+                                )
+                            }
                             DropdownMenuItem(
                                 text = { Text("Sync Data", color = LimonText) },
                                 onClick = {
@@ -312,31 +332,11 @@ fun FloorPlanScreen(
                                     leadingIcon = { Icon(Icons.Default.Check, contentDescription = null, tint = LimonPrimary) }
                                 )
                             }
-                            if (canAccessClosedBillAccessApprovals) {
-                                DropdownMenuItem(
-                                    text = { Text("Closed Bill Access Requests", color = LimonText) },
-                                    onClick = {
-                                        viewModel.dismissMenu()
-                                        onNavigateToClosedBillAccessApprovals()
-                                    },
-                                    leadingIcon = { Icon(Icons.Default.Receipt, contentDescription = null, tint = LimonPrimary) }
-                                )
-                            }
-                            if (canAccessSettings) {
-                                DropdownMenuItem(
-                                    text = { Text("Settings", color = LimonText) },
-                                    onClick = {
-                                        viewModel.dismissMenu()
-                                        onNavigateToSettings()
-                                    },
-                                    leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null, tint = LimonPrimary) }
-                                )
-                            }
                             DropdownMenuItem(
-                                text = { Text("Logout", color = LimonError) },
+                                text = { Text("End of shift", color = LimonError) },
                                 onClick = {
                                     viewModel.dismissMenu()
-                                    onLogout()
+                                    viewModel.requestEndOfShift()
                                 },
                                 leadingIcon = { Icon(Icons.Default.Logout, contentDescription = null, tint = LimonError) }
                             )
@@ -567,6 +567,14 @@ fun FloorPlanScreen(
             error = uiState.otherTablePinError,
             onDismiss = { viewModel.dismissOtherTablePinDialog() },
             onVerify = { pin -> viewModel.verifyOtherTableAccess(pin) }
+        )
+    }
+
+    if (uiState.showEndOfShiftPinDialog) {
+        EndOfShiftPinDialog(
+            error = uiState.endOfShiftPinError,
+            onDismiss = { viewModel.dismissEndOfShiftPinDialog() },
+            onVerify = { pin -> viewModel.submitEndOfShiftPin(pin) }
         )
     }
 
@@ -953,6 +961,37 @@ private fun LockFloorDialog(
             }
         },
         confirmButton = { Button(onClick = { onVerify(pin) }) { Text("Unlock") } },
+        containerColor = LimonSurface
+    )
+}
+
+@Composable
+private fun EndOfShiftPinDialog(
+    error: String?,
+    onDismiss: () -> Unit,
+    onVerify: (String) -> Unit
+) {
+    var pin by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("End of shift", color = LimonText) },
+        text = {
+            Column {
+                Text("Enter your PIN to sign out and end your shift.", color = LimonTextSecondary, fontSize = 14.sp)
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = pin,
+                    onValueChange = { if (it.length <= 4 && it.all { c -> c.isDigit() }) pin = it },
+                    label = { Text("PIN") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                error?.let { Text(it, color = LimonError, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp)) }
+            }
+        },
+        confirmButton = { Button(onClick = { onVerify(pin) }) { Text("Sign out") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = LimonTextSecondary) } },
         containerColor = LimonSurface
     )
 }

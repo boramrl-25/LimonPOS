@@ -57,6 +57,7 @@ fun SettingsScreen(
     val isKdsOnly = userRole == "kds"
     val message by viewModel.message.collectAsState()
     val receiptItemSize by viewModel.receiptItemSize.collectAsState(ReceiptItemSize.NORMAL)
+    val settingsUiState by viewModel.settingsUiState.collectAsState()
     val needsNotificationPermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
         ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
     var menuExpanded by remember { mutableStateOf(false) }
@@ -117,6 +118,14 @@ fun SettingsScreen(
                             leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null, tint = LimonPrimary) }
                         )
                         Divider(color = LimonTextSecondary.copy(alpha = 0.3f))
+                        DropdownMenuItem(
+                            text = { Text("End of shift", color = LimonText) },
+                            onClick = {
+                                menuExpanded = false
+                                viewModel.requestEndOfShift()
+                            },
+                            leadingIcon = { Icon(Icons.Default.Logout, contentDescription = null, tint = LimonPrimary) }
+                        )
                         DropdownMenuItem(
                             text = { Text("Logout", color = LimonError) },
                             onClick = {
@@ -191,13 +200,23 @@ fun SettingsScreen(
                 }
                 Spacer(modifier = Modifier.height(24.dp))
                 Button(
-                    onClick = { viewModel.logout() },
+                    onClick = { viewModel.requestEndOfShift() },
                     modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = LimonError)
+                    colors = ButtonDefaults.buttonColors(containerColor = LimonPrimary)
                 ) {
                     Icon(Icons.Default.Logout, contentDescription = null, modifier = Modifier.size(20.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Logout", color = LimonText)
+                    Text("End of shift", color = LimonText)
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = { viewModel.logout() },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = LimonError)
+                ) {
+                    Icon(Icons.Default.Logout, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Logout", color = LimonError)
                 }
             } else {
                 Text("POS Actions", fontWeight = FontWeight.Bold, color = LimonText, fontSize = 16.sp, modifier = Modifier.padding(bottom = 12.dp))
@@ -238,17 +257,65 @@ fun SettingsScreen(
                 }
                 Spacer(modifier = Modifier.height(24.dp))
                 Button(
-                    onClick = { viewModel.logout() },
+                    onClick = { viewModel.requestEndOfShift() },
                     modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = LimonError)
+                    colors = ButtonDefaults.buttonColors(containerColor = LimonPrimary)
                 ) {
                     Icon(Icons.Default.Logout, contentDescription = null, modifier = Modifier.size(20.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Logout", color = LimonText)
+                    Text("End of shift", color = LimonText)
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = { viewModel.logout() },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = LimonError)
+                ) {
+                    Icon(Icons.Default.Logout, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Logout", color = LimonError)
                 }
             }
         }
     }
 
+    if (settingsUiState.showEndOfShiftPinDialog) {
+        EndOfShiftPinDialog(
+            error = settingsUiState.endOfShiftPinError,
+            onDismiss = { viewModel.dismissEndOfShiftPinDialog() },
+            onVerify = { pin -> viewModel.submitEndOfShiftPin(pin) }
+        )
+    }
+}
+
+@Composable
+private fun EndOfShiftPinDialog(
+    error: String?,
+    onDismiss: () -> Unit,
+    onVerify: (String) -> Unit
+) {
+    var pin by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("End of shift", color = LimonText) },
+        text = {
+            Column {
+                Text("Enter your PIN to sign out and end your shift.", color = LimonTextSecondary, fontSize = 14.sp)
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = pin,
+                    onValueChange = { if (it.length <= 4 && it.all { c -> c.isDigit() }) pin = it },
+                    label = { Text("PIN") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                error?.let { Text(it, color = LimonError, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp)) }
+            }
+        },
+        confirmButton = { Button(onClick = { onVerify(pin) }) { Text("Sign out") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = LimonTextSecondary) } },
+        containerColor = LimonSurface
+    )
 }
 
