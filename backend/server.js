@@ -35,6 +35,7 @@ function getClosedBusinessDayKeyForAutoClose(nowUtc, openingTime, closingTime, o
   return `${y}-${m}-${day}`;
 }
 import { fetchReconciliationEmails, aggregateReconciliationByDate } from "./reconciliation.js";
+import { WebSocketServer } from "ws";
 
 // Production: yakalanmamış hatalar loglansın
 process.on("uncaughtException", (err) => {
@@ -2864,6 +2865,20 @@ app.post("/api/payments", authMiddleware, async (req, res) => {
     const ok = await pushToZohoBooks(order, items, orderPayments.map((p) => ({ amount: p.amount, method: p.method })), products);
     console.log("[Zoho] Result:", ok ? "OK" : "FAILED");
   }
+  try {
+    const todaySummary = await store.getTodaySalesSummary();
+    broadcastRealtimeEvent({
+      type: "payment_update",
+      ts: Date.now(),
+      data: {
+        totalCash: todaySummary.totalCash ?? 0,
+        totalCard: todaySummary.totalCard ?? 0,
+        totalSales: todaySummary.totalSales ?? 0,
+      },
+    });
+  } catch (e) {
+    console.error("[realtime] broadcast payment_update failed:", e?.message || e);
+  }
   res.json({ success: true });
   } catch (e) {
     console.error("[ANDROID_PAYMENT_SAVE_ERR]", e?.message || e);
@@ -3353,6 +3368,21 @@ async function runAutoCloseIfDue() {
   }
 }
 
+const WS_CLIENTS = new Set();
+
+function broadcastRealtimeEvent(event) {
+  const payload = JSON.stringify(event);
+  for (const ws of WS_CLIENTS) {
+    if (ws.readyState === ws.OPEN) {
+      try {
+        ws.send(payload);
+      } catch {
+        // ignore send errors
+      }
+    }
+  }
+}
+
 async function startServer() {
   // Listen first – health check için hızlı yanıt. ensureData arka planda.
   const server = app.listen(PORT, HOST, () => {
@@ -3368,6 +3398,16 @@ async function startServer() {
     ensurePrismaReady().then(() => console.log("[startup] ensurePrismaReady OK")).catch((e) => console.error("[startup] ensurePrismaReady failed:", e?.message || e));
     setInterval(() => runAutoCloseIfDue().catch((e) => console.error("[auto-close]", e?.message)), 60 * 1000);
     setInterval(() => fetchReconciliationEmails().catch((e) => console.error("[reconciliation]", e?.message)), 5 * 60 * 1000);
+  });
+  const wss = new WebSocketServer({ server, path: "/ws" });
+  wss.on("connection", (ws) => {
+    WS_CLIENTS.add(ws);
+    ws.on("close", () => {
+      WS_CLIENTS.delete(ws);
+    });
+    ws.on("error", () => {
+      WS_CLIENTS.delete(ws);
+    });
   });
   process.on("SIGTERM", () => {
     console.log("[SIGTERM] Graceful shutdown...");

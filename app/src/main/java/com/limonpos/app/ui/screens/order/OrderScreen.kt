@@ -1310,7 +1310,7 @@ private fun CategoryChipsRow(
         FilterChip(
             selected = selectedCategoryId == "all",
             onClick = { onSelectCategory("all") },
-            label = { Text("All", fontSize = 15.sp, maxLines = 2) },
+            label = { Text("All", fontSize = 24.sp, maxLines = 2) },
             modifier = Modifier.heightIn(min = 44.dp),
             colors = FilterChipDefaults.filterChipColors(
                 selectedContainerColor = LimonPrimary,
@@ -1323,7 +1323,7 @@ private fun CategoryChipsRow(
             FilterChip(
                 selected = selectedCategoryId != "all",
                 onClick = { categoriesMenuExpanded = true },
-                label = { Text("Categories", fontSize = 15.sp, maxLines = 2) },
+                label = { Text("Categories", fontSize = 24.sp, maxLines = 2) },
                 modifier = Modifier.heightIn(min = 44.dp),
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = LimonPrimary,
@@ -1360,7 +1360,7 @@ private fun CategoryChipsRow(
                                 Text(
                                     category.name,
                                     color = LimonText,
-                                    fontSize = 18.sp,
+                                    fontSize = 26.sp,
                                     maxLines = 2
                                 )
                             }
@@ -1421,7 +1421,7 @@ private fun ProductsByCategoryList(
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                             fontWeight = FontWeight.Bold,
                             color = LimonText,
-                            fontSize = 16.sp
+                            fontSize = 26.sp
                         )
                     }
                     Spacer(modifier = Modifier.height(4.dp))
@@ -1453,7 +1453,7 @@ private fun ProductListRow(
             product.name,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
             color = LimonText,
-            fontSize = 16.sp
+            fontSize = 18.sp
         )
     }
 }

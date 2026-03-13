@@ -87,7 +87,6 @@ fun DailyCashEntryScreen(
             ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("Cash", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = LimonText)
-                    Text("System cash: ${CurrencyUtils.format(uiState.systemCash)}", fontSize = 13.sp, color = LimonTextSecondary)
                     OutlinedTextField(
                         value = uiState.cashInput,
                         onValueChange = { viewModel.setCashInput(it) },
@@ -127,7 +126,6 @@ fun DailyCashEntryScreen(
             ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("Card", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = LimonText)
-                    Text("System card: ${CurrencyUtils.format(uiState.systemCard)}", fontSize = 13.sp, color = LimonTextSecondary)
                     OutlinedTextField(
                         value = uiState.cardRefInput,
                         onValueChange = { viewModel.setCardRefInput(it) },

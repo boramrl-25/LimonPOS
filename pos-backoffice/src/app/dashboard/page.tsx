@@ -11,6 +11,7 @@ import {
 import { getDashboardStats, getDailySales, getOpenOrders, getClosedBillChanges, getCashDrawerOpens, getDiscountsToday, getDiscountRequestsPending, getBusinessDayStatus, markWarningShown, getOpenTablesNotClosed, getReconciliationSummary, setReconciliationPhysicalCount } from "@/lib/api";
 import type { DiscountTodayRow, OpenTableNotClosed } from "@/lib/api";
 import { useUser } from "@/context/UserContext";
+import { connectRealtime } from "@/lib/realtime";
 
 type PaidTicket = { order_id: string; receipt_no?: string; table_number: string; total: number; paid_at: number; waiter_name?: string; cash_amount: number; card_amount: number; discount_amount?: number };
 type OpenOrderRow = { order_id: string; receipt_no: string; table_number: string; total: number; waiter_name: string; created_at: number; status: string };
@@ -189,6 +190,17 @@ export default function DashboardPage() {
     const id = setInterval(fetchData, POLL_INTERVAL_MS);
     return () => clearInterval(id);
   }, [fetchData]);
+
+  useEffect(() => {
+    connectRealtime(() => {
+      const singleDate = selectedDateFrom || selectedDateTo || toYYYYMMDD(new Date());
+      getDailySales(singleDate).then((res) => {
+        setDailySales(res);
+      }).catch(() => {
+        // ignore websocket-triggered errors
+      });
+    });
+  }, [selectedDateFrom, selectedDateTo]);
 
   useEffect(() => {
     if (selectedDateFrom != null && selectedDateTo != null) {
