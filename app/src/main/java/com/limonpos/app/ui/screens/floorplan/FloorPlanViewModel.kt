@@ -67,7 +67,8 @@ data class FloorPlanUiState(
     val otherTablePinError: String? = null,
     val navigateToTableId: String? = null,
     val showEndOfShiftPinDialog: Boolean = false,
-    val endOfShiftPinError: String? = null
+    val endOfShiftPinError: String? = null,
+    val transferError: String? = null
 )
 
 @HiltViewModel
@@ -293,11 +294,18 @@ class FloorPlanViewModel @Inject constructor(
     fun submitEndOfShiftPin(pin: String) {
         viewModelScope.launch {
             val r = authRepository.verifyPin(pin)
-            if (r.isSuccess) {
-                authRepository.logout()
-            } else {
+            if (!r.isSuccess) {
                 _uiState.update {
                     it.copy(endOfShiftPinError = r.exceptionOrNull()?.message ?: "Invalid PIN")
+                }
+                return@launch
+            }
+            val result = authRepository.logout()
+            if (result.isFailure) {
+                val msg = result.exceptionOrNull()?.message
+                    ?: "Shift out failed. Please close or transfer all tables before ending your shift."
+                _uiState.update {
+                    it.copy(endOfShiftPinError = msg)
                 }
             }
         }
@@ -459,24 +467,35 @@ class FloorPlanViewModel @Inject constructor(
 
     fun transferTable(sourceTableId: String, targetTableId: String) {
         viewModelScope.launch {
+            _uiState.update { it.copy(transferError = null) }
             val mid = authRepository.getCurrentUserIdSync() ?: return@launch
             val mname = authRepository.getCurrentUserNameSync() ?: "Manager"
             tableRepository.transferTable(sourceTableId, targetTableId, mid, mname)
                 .onSuccess { _ ->
                     val targetTable = tableRepository.getTableById(targetTableId)
                     val orderId = targetTable?.currentOrderId
-                    if (orderId != null && targetTable != null) {
-                        apiSyncRepository.pushTableTransfer(
+                    if (orderId != null && targetTable != null && apiSyncRepository.isOnline()) {
+                        val pushResult = apiSyncRepository.pushTableTransfer(
                             sourceTableId,
                             targetTableId,
                             orderId,
                             targetTable.number
                         )
+                        if (pushResult.isFailure) {
+                            _uiState.update {
+                                it.copy(transferError = pushResult.exceptionOrNull()?.message ?: "Kapanış saatinde devir yapılamaz.")
+                            }
+                            return@launch
+                        }
                     }
                     closeTransferTableDialog()
                 }
                 .onFailure { /* ignore */ }
         }
+    }
+
+    fun clearTransferError() {
+        _uiState.update { it.copy(transferError = null) }
     }
 
     fun closeTable(tableId: String) {

@@ -392,10 +392,10 @@ class ApiSyncRepository @Inject constructor(
         }
     }
 
-    /** Push table transfer to API so sync does not overwrite local state. Source must be free, target occupied, order table_id updated. */
-    suspend fun pushTableTransfer(sourceTableId: String, targetTableId: String, orderId: String, targetTableNumber: String) {
-        if (!isOnline()) return
-        try {
+    /** Push table transfer to API. Returns failure with server message e.g. "Kapanış saatinde devir yapılamaz" on 403. */
+    suspend fun pushTableTransfer(sourceTableId: String, targetTableId: String, orderId: String, targetTableNumber: String): Result<Unit> {
+        if (!isOnline()) return Result.success(Unit)
+        return try {
             restoreAuthTokenIfNeeded()
             val sourceBody = mapOf<String, Any?>(
                 "status" to "free",
@@ -406,18 +406,43 @@ class ApiSyncRepository @Inject constructor(
                 "opened_at" to null
             )
             val srcRes = apiService.updateTable(sourceTableId, sourceBody)
-            if (!srcRes.isSuccessful) Log.e("ApiSync", "pushTableTransfer source ${sourceTableId} failed: ${srcRes.code()}")
+            if (!srcRes.isSuccessful) {
+                if (srcRes.code() == 403) {
+                    val msg = srcRes.errorBody()?.string()?.let { parseApiErrorMessage(it) } ?: "Transfer not allowed"
+                    return Result.failure(Exception(msg))
+                }
+                Log.e("ApiSync", "pushTableTransfer source ${sourceTableId} failed: ${srcRes.code()}")
+            }
             val targetTable = tableDao.getTableById(targetTableId)
             if (targetTable != null) {
-                pushTableState(targetTable)
+                val targetBody = mutableMapOf<String, Any?>(
+                    "status" to targetTable.status,
+                    "current_order_id" to targetTable.currentOrderId,
+                    "waiter_id" to targetTable.waiterId,
+                    "waiter_name" to targetTable.waiterName,
+                    "guest_count" to targetTable.guestCount
+                )
+                targetTable.openedAt?.let { ms ->
+                    targetBody["opened_at"] = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US).apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }.format(java.util.Date(ms))
+                }
+                val tgtRes = apiService.updateTable(targetTableId, targetBody)
+                if (!tgtRes.isSuccessful) {
+                    if (tgtRes.code() == 403) {
+                        val msg = tgtRes.errorBody()?.string()?.let { parseApiErrorMessage(it) } ?: "Kapanış saatinde devir yapılamaz."
+                        return Result.failure(Exception(msg))
+                    }
+                    Log.e("ApiSync", "pushTableTransfer target $targetTableId failed: ${tgtRes.code()}")
+                }
             }
             val orderRes = apiService.updateOrderTable(
                 orderId,
                 mapOf("table_id" to targetTableId, "table_number" to targetTableNumber)
             )
             if (!orderRes.isSuccessful) Log.e("ApiSync", "pushTableTransfer order $orderId failed: ${orderRes.code()}")
+            Result.success(Unit)
         } catch (e: Exception) {
             Log.e("ApiSync", "pushTableTransfer error: ${e.message}", e)
+            Result.failure(e)
         }
     }
 
@@ -1583,9 +1608,10 @@ class ApiSyncRepository @Inject constructor(
         } catch (_: Exception) { false }
     }
 
-    suspend fun pushPayment(orderId: String, amount: Double, method: String, receivedAmount: Double, changeAmount: Double, userId: String): Boolean {
-        if (!isOnline()) return false
-        if (ensureOrderExistsOnApi(orderId, includeAllItems = true) == null) return false
+    /** Pushes payment to API. Returns Result; on 403 NOT_SIGNED_IN_FOR_SHIFT etc. returns failure with server message. */
+    suspend fun pushPayment(orderId: String, amount: Double, method: String, receivedAmount: Double, changeAmount: Double, userId: String): Result<Unit> {
+        if (!isOnline()) return Result.success(Unit)
+        if (ensureOrderExistsOnApi(orderId, includeAllItems = true) == null) return Result.failure(Exception("Order could not be synced"))
         return try {
             val req = CreatePaymentRequest(
                 orderId = orderId,
@@ -1600,12 +1626,23 @@ class ApiSyncRepository @Inject constructor(
             )
             val response = apiService.createPayment(userId, req)
             if (!response.isSuccessful) {
-                Log.e("ApiSync", "pushPayment failed: ${response.code()} ${response.errorBody()?.string()}")
+                val msg = response.errorBody()?.string()?.let { parseApiErrorMessage(it) }
+                    ?: "Payment could not be sent to server (${response.code()})"
+                Log.e("ApiSync", "pushPayment failed: ${response.code()} $msg")
+                return Result.failure(Exception(msg))
             }
-            response.isSuccessful
+            Result.success(Unit)
         } catch (e: Exception) {
             Log.e("ApiSync", "pushPayment error: ${e.message}", e)
-            false
+            Result.failure(e)
         }
+    }
+
+    private fun parseApiErrorMessage(json: String): String? {
+        return try {
+            @Suppress("UNCHECKED_CAST")
+            val obj = Gson().fromJson(json, Map::class.java) as? Map<*, *>
+            (obj?.get("message") as? String)?.takeIf { it.isNotBlank() }
+        } catch (_: Exception) { null }
     }
 }

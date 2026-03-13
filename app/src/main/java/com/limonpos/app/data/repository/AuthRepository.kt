@@ -122,11 +122,27 @@ class AuthRepository @Inject constructor(
     }
 
     /** Full logout: backend sign-out (shift out) + clear local session. Use for "End of shift". */
-    suspend fun logout() {
-        try {
-            apiService.logout()
-        } catch (_: Exception) { }
-        clearSessionAndBumpKey()
+    suspend fun logout(): Result<Unit> {
+        return try {
+            val res = apiService.logout()
+            if (res.isSuccessful) {
+                clearSessionAndBumpKey()
+                Result.success(Unit)
+            } else {
+                val msg = res.errorBody()?.string()?.let { parseApiErrorMessage(it) }
+                    ?: "Shift out failed. Please close or transfer all tables before ending your shift."
+                Result.failure(Exception(msg))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    private fun parseApiErrorMessage(json: String): String? {
+        return try {
+            val obj = Gson().fromJson(json, Map::class.java) as? Map<*, *>
+            (obj?.get("message") as? String)?.takeIf { it.isNotBlank() }
+        } catch (_: Exception) { null }
     }
 
     /** Local-only logout: leave app without calling backend. Use for "Logout" (no shift-out recorded). */

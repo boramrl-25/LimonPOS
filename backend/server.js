@@ -118,6 +118,27 @@ function getUserShiftStateFromLog(logArr, userId) {
   return { lastSignIn, lastSignOut };
 }
 
+/** True if we are in the auto-close window (after closing+grace, before opening). Used for: no handover, sign-out allowed. */
+async function getIsInAutoCloseWindow() {
+  const s = await store.getSettings();
+  const opening = s.opening_time ?? "07:00";
+  const closing = s.closing_time ?? "01:30";
+  const grace = Math.min(60, Math.max(0, (s.grace_minutes ?? 0) | 0));
+  const off = await store.offsetMin();
+  return isInAutoCloseWindow(Date.now(), closing, opening, grace, off);
+}
+
+/** True if this user has signed in for the current business day and has not signed out (shift active). */
+async function isUserSignedInForCurrentShift(userId) {
+  const s = await store.getSettings();
+  const logArr = Array.isArray(s.business_operation_log) ? s.business_operation_log : [];
+  const businessDayKeyNow = await getBusinessDayKeyForNow();
+  const { lastSignIn, lastSignOut } = getUserShiftStateFromLog(logArr, userId);
+  if (!lastSignIn || lastSignIn.business_day_key !== businessDayKeyNow) return false;
+  if (lastSignOut && (lastSignOut.ts || 0) >= (lastSignIn.ts || 0)) return false;
+  return true;
+}
+
 const authMiddleware = (req, res, next) => {
   const auth = req.headers.authorization;
   if (!auth?.startsWith("Bearer ")) return res.status(401).json({ error: "Unauthorized" });
@@ -406,9 +427,19 @@ app.get("/api/auth/me", authMiddleware, async (req, res) => {
 });
 
 // Kullanıcı sign-out: satış kullanıcıları için açık masa kontrolü ve iş günü bazlı vardiya kapanışı.
+// Vardiya bitmeden Sign-Out yapılamaz: kapanış saatine (auto-close penceresine) girilmeden sign-out reddedilir.
 app.post("/api/auth/logout", authMiddleware, async (req, res) => {
   await ensurePrismaReady();
   const user = req.user;
+  if (isSalesRole(user)) {
+    const inCloseWindow = await getIsInAutoCloseWindow();
+    if (!inCloseWindow) {
+      return res.status(403).json({
+        error: "SIGN_OUT_ONLY_AFTER_SHIFT_END",
+        message: "Vardiya bitmeden Sign-Out yapılamaz. Kapanış saatinden sonra çıkış yapabilirsiniz.",
+      });
+    }
+  }
   const businessDayKeyNow = await getBusinessDayKeyForNow();
   let openTablesForUser = [];
   if (isSalesRole(user)) {
@@ -2317,6 +2348,13 @@ app.post("/api/tables/import", authMiddleware, async (req, res) => {
 app.post("/api/tables/:id/open", authMiddleware, async (req, res) => {
   try {
     await ensurePrismaReady();
+    const user = req.user;
+    if (user && isSalesRole(user) && !(await isUserSignedInForCurrentShift(user.id))) {
+      return res.status(403).json({
+        error: "NOT_SIGNED_IN_FOR_SHIFT",
+        message: "Sign-In olmadan satış yapılamaz. Lütfen önce vardiya girişi (Sign-In) yapın.",
+      });
+    }
     const body = req.body || {};
     console.log("ANDROID_RAW_DATA [POST /api/tables/:id/open]:", JSON.stringify({ ...body, params: req.params, query: req.query }));
     const { id } = req.params;
@@ -2371,6 +2409,16 @@ app.post("/api/tables/:id/close", authMiddleware, async (req, res) => {
 app.put("/api/tables/:id", authMiddleware, async (req, res) => {
   await ensurePrismaReady();
   const body = req.body || {};
+  // Kapanış saatinde devir yapılamaz: masa/garson devri (waiter_id değişikliği) auto-close penceresinde engellenir.
+  if (body.waiter_id != null) {
+    const inCloseWindow = await getIsInAutoCloseWindow();
+    if (inCloseWindow) {
+      return res.status(403).json({
+        error: "HANDOVER_DISALLOWED_AT_CLOSING",
+        message: "Kapanış saatinde devir yapılamaz.",
+      });
+    }
+  }
   const updates = {};
   if (body.status != null) updates.status = body.status;
   if (Object.prototype.hasOwnProperty.call(body, "current_order_id")) updates.current_order_id = body.current_order_id;
@@ -2649,6 +2697,13 @@ app.patch("/api/orders/:id", authMiddleware, async (req, res) => {
 app.post("/api/orders", authMiddleware, async (req, res) => {
   try {
     await ensurePrismaReady();
+    const user = req.user;
+    if (user && isSalesRole(user) && !(await isUserSignedInForCurrentShift(user.id))) {
+      return res.status(403).json({
+        error: "NOT_SIGNED_IN_FOR_SHIFT",
+        message: "Sign-In olmadan satış yapılamaz. Lütfen önce vardiya girişi (Sign-In) yapın.",
+      });
+    }
     const body = req.body || {};
     console.log("ANDROID_RAW_DATA [POST /api/orders]:", JSON.stringify(body));
 
@@ -3007,6 +3062,14 @@ app.put("/api/orders/:orderId/items/:itemId/status", authMiddleware, async (req,
 app.post("/api/payments", authMiddleware, async (req, res) => {
   try {
     await ensurePrismaReady();
+    const user = req.user;
+    // Sign-In olmadan satış yapılamaz: satış rolündeki kullanıcı bu iş günü için sign-in yapmış olmalı.
+    if (user && isSalesRole(user) && !(await isUserSignedInForCurrentShift(user.id))) {
+      return res.status(403).json({
+        error: "NOT_SIGNED_IN_FOR_SHIFT",
+        message: "Sign-In olmadan satış yapılamaz. Lütfen önce vardiya girişi (Sign-In) yapın.",
+      });
+    }
     const body = req.body || {};
     console.log("ANDROID_RAW_DATA [POST /api/payments]:", JSON.stringify(body));
 

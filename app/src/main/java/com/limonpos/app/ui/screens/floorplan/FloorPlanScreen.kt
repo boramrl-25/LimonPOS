@@ -373,6 +373,26 @@ fun FloorPlanScreen(
                     }
                 }
             }
+            uiState.transferError?.let { err ->
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = LimonError.copy(alpha = 0.15f),
+                    shadowElevation = 2.dp
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(err, color = LimonError, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { viewModel.clearTransferError() }) {
+                            Text("OK", color = LimonTextSecondary)
+                        }
+                    }
+                }
+            }
             OutlinedTextField(
                 value = uiState.tableSearchQuery,
                 onValueChange = { viewModel.setTableSearchQuery(it) },

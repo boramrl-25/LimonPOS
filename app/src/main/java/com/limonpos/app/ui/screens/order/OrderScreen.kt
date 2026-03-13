@@ -305,6 +305,27 @@ fun OrderScreen(
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                 }
+                uiState.transferError?.let { err ->
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = LimonError.copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(err, color = LimonError, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                            TextButton(onClick = { viewModel.clearTransferError() }) {
+                                Text("OK", color = LimonTextSecondary)
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
                 OutlinedTextField(
                     value = uiState.searchQuery,
                     onValueChange = { viewModel.setSearchQuery(it) },

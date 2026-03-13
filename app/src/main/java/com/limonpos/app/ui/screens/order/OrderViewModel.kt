@@ -72,7 +72,8 @@ data class OrderUiState(
     /** After one successful post-void PIN check, allow multiple voids without re-entering PIN. */
     val postVoidAuthorized: Boolean = false,
     val syncInProgress: Boolean = false,
-    val syncError: String? = null
+    val syncError: String? = null,
+    val transferError: String? = null
 )
 
 data class ModifierGroupWithOptions(
@@ -873,24 +874,35 @@ class OrderViewModel @Inject constructor(
 
     fun transferTable(sourceTableId: String, targetTableId: String, onSuccess: () -> Unit) {
         viewModelScope.launch {
+            _uiState.update { it.copy(transferError = null) }
             val mid = authRepository.getCurrentUserIdSync() ?: return@launch
             val mname = authRepository.getCurrentUserNameSync() ?: "Manager"
             tableRepository.transferTable(sourceTableId, targetTableId, mid, mname)
                 .onSuccess { _ ->
                     val targetTable = tableRepository.getTableById(targetTableId)
                     val orderId = targetTable?.currentOrderId
-                    if (orderId != null && targetTable != null) {
-                        apiSyncRepository.pushTableTransfer(
+                    if (orderId != null && targetTable != null && apiSyncRepository.isOnline()) {
+                        val pushResult = apiSyncRepository.pushTableTransfer(
                             sourceTableId,
                             targetTableId,
                             orderId,
                             targetTable.number
                         )
+                        if (pushResult.isFailure) {
+                            _uiState.update {
+                                it.copy(transferError = pushResult.exceptionOrNull()?.message ?: "Kapanış saatinde devir yapılamaz.")
+                            }
+                            return@launch
+                        }
                     }
                     closeTransferTableDialog()
                     onSuccess()
                 }
                 .onFailure { /* ignore */ }
         }
+    }
+
+    fun clearTransferError() {
+        _uiState.update { it.copy(transferError = null) }
     }
 }

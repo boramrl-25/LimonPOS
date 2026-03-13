@@ -52,8 +52,9 @@ class PaymentRepository @Inject constructor(
             )
             paymentDao.insertPayment(payment)
             if (apiSyncRepository.isOnline()) {
-                val pushed = apiSyncRepository.pushPayment(orderId, amount, method, receivedAmount, changeAmount, userId)
-                if (pushed) paymentDao.updatePayment(payment.copy(syncStatus = "SYNCED"))
+                val pushResult = apiSyncRepository.pushPayment(orderId, amount, method, receivedAmount, changeAmount, userId)
+                if (pushResult.isSuccess) paymentDao.updatePayment(payment.copy(syncStatus = "SYNCED"))
+                else pushResult.exceptionOrNull()?.let { throw it }
             }
         }
     }
