@@ -95,35 +95,7 @@ function userCanAccessAppSettings(user) {
   return user?.role === "admin" || user?.role === "manager" || user?.role === "kds";
 }
 
-function isSalesRole(user) {
-  if (!user) return false;
-  const role = String(user.role || "").toLowerCase();
-  // Setup/admin/manager genellikle web yönetimi için; garson/kasa gibi roller satış rolü kabul edilir.
-  return role !== "admin" && role !== "manager" && role !== "setup";
-}
-
-async function getBusinessDayKeyForNow() {
-  const s = await store.getSettings();
-  const opening = s.opening_time ?? "07:00";
-  const closing = s.closing_time ?? "01:30";
-  const off = await store.offsetMin();
-  return getBusinessDayKey(Date.now(), opening, closing, off);
-}
-
-function getUserShiftStateFromLog(logArr, userId) {
-  const events = (logArr || []).filter((e) => e && e.user_id === userId && (e.action === "user_sign_in" || e.action === "user_sign_out"));
-  if (!events.length) return { lastSignIn: null, lastSignOut: null };
-  const sorted = [...events].sort((a, b) => (a.ts || 0) - (b.ts || 0));
-  let lastSignIn = null;
-  let lastSignOut = null;
-  for (const ev of sorted) {
-    if (ev.action === "user_sign_in") lastSignIn = ev;
-    if (ev.action === "user_sign_out") lastSignOut = ev;
-  }
-  return { lastSignIn, lastSignOut };
-}
-
-/** True if we are in the auto-close window (after closing+grace, before opening). Used for: no handover, sign-out allowed. */
+/** True if we are in the auto-close window (after closing+grace, before opening). Used for: no handover at closing time. */
 async function getIsInAutoCloseWindow() {
   const s = await store.getSettings();
   const opening = s.opening_time ?? "07:00";
@@ -131,17 +103,6 @@ async function getIsInAutoCloseWindow() {
   const grace = Math.min(60, Math.max(0, (s.grace_minutes ?? 0) | 0));
   const off = await store.offsetMin();
   return isInAutoCloseWindow(Date.now(), closing, opening, grace, off);
-}
-
-/** True if this user has signed in for the current business day and has not signed out (shift active). */
-async function isUserSignedInForCurrentShift(userId) {
-  const s = await store.getSettings();
-  const logArr = Array.isArray(s.business_operation_log) ? s.business_operation_log : [];
-  const businessDayKeyNow = await getBusinessDayKeyForNow();
-  const { lastSignIn, lastSignOut } = getUserShiftStateFromLog(logArr, userId);
-  if (!lastSignIn || lastSignIn.business_day_key !== businessDayKeyNow) return false;
-  if (lastSignOut && (lastSignOut.ts || 0) >= (lastSignIn.ts || 0)) return false;
-  return true;
 }
 
 const authMiddleware = (req, res, next) => {
@@ -384,31 +345,6 @@ app.post("/api/auth/login", async (req, res) => {
   const pin = String((req.body || {}).pin || "").trim();
   const user = await store.getUserByIdOrPin(pin);
   if (!user || !user.active) return res.status(401).json({ error: "Invalid PIN" });
-  // Satış kullanıcıları için: önceki iş gününden açık kalan vardiya varsa girişe izin verme.
-  if (isSalesRole(user)) {
-    const s = await store.getSettings();
-    const logArr = Array.isArray(s.business_operation_log) ? s.business_operation_log : [];
-    const { lastSignIn, lastSignOut } = getUserShiftStateFromLog(logArr, user.id);
-    const businessDayKeyNow = await getBusinessDayKeyForNow();
-    if (lastSignIn && (!lastSignOut || (lastSignOut.ts || 0) < (lastSignIn.ts || 0))) {
-      const lastKey = lastSignIn.business_day_key || null;
-      if (lastKey && lastKey !== businessDayKeyNow) {
-        return res.status(403).json({
-          error: "USER_NOT_SIGNED_OUT",
-          message: "This user did not sign out at the end of the previous business day and cannot sign in for a new day. Please ask a manager to close the previous shift.",
-          last_business_day_key: lastKey,
-        });
-      }
-    }
-    // Aynı iş günü içinde tekrar giriş yapılmasına izin verilir; sadece log eklenir.
-    await store.appendBusinessOperationLog({
-      ts: Date.now(),
-      action: "user_sign_in",
-      user_id: user.id,
-      user_name: user.name,
-      business_day_key: businessDayKeyNow || null,
-    });
-  }
   const perms = JSON.parse(user.permissions || "[]");
   const canAccessSettings = user.can_access_settings != null ? !!user.can_access_settings : (user.role === "admin" || user.role === "manager" || perms.includes("web_settings"));
   const canAccessAppSettings = userCanAccessAppSettings(user);
@@ -434,52 +370,8 @@ app.get("/api/auth/me", authMiddleware, async (req, res) => {
   });
 });
 
-// Kullanıcı sign-out: satış kullanıcıları için açık masa kontrolü ve iş günü bazlı vardiya kapanışı.
-// Vardiya bitmeden Sign-Out yapılamaz: kapanış saatine (auto-close penceresine) girilmeden sign-out reddedilir.
 app.post("/api/auth/logout", authMiddleware, async (req, res) => {
   await ensurePrismaReady();
-  const user = req.user;
-  if (isSalesRole(user)) {
-    const inCloseWindow = await getIsInAutoCloseWindow();
-    if (!inCloseWindow) {
-      return res.status(403).json({
-        error: "SIGN_OUT_ONLY_AFTER_SHIFT_END",
-        message: "Vardiya bitmeden Sign-Out yapılamaz. Kapanış saatinden sonra çıkış yapabilirsiniz.",
-      });
-    }
-  }
-  const businessDayKeyNow = await getBusinessDayKeyForNow();
-  let openTablesForUser = [];
-  if (isSalesRole(user)) {
-    const [tables, orders] = await Promise.all([store.getTables(), store.getOrders()]);
-    const orderById = new Map(orders.map((o) => [o.id, o]));
-    openTablesForUser = tables.filter((t) => {
-      if (!t.current_order_id || t.waiter_id !== user.id) return false;
-      const o = orderById.get(t.current_order_id);
-      return o && (o.status === "open" || o.status === "sent");
-    });
-    if (openTablesForUser.length > 0) {
-      return res.status(400).json({
-        error: "OPEN_TABLES",
-        message: "This user still has open tables. Please close those tables or transfer them to another user before signing out.",
-        openTablesCount: openTablesForUser.length,
-        tables: openTablesForUser.map((t) => ({
-          id: t.id,
-          number: typeof t.number === "string" ? parseInt(t.number, 10) || 0 : (t.number ?? 0),
-          name: t.name,
-          current_order_id: t.current_order_id,
-        })),
-      });
-    }
-  }
-  await store.appendBusinessOperationLog({
-    ts: Date.now(),
-    action: "user_sign_out",
-    user_id: user.id,
-    user_name: user.name,
-    business_day_key: businessDayKeyNow || null,
-    open_tables_count: openTablesForUser.length,
-  });
   res.json({ success: true });
 });
 
@@ -2362,12 +2254,6 @@ app.post("/api/tables/:id/open", authMiddleware, async (req, res) => {
   try {
     await ensurePrismaReady();
     const user = req.user;
-    if (user && isSalesRole(user) && !(await isUserSignedInForCurrentShift(user.id))) {
-      return res.status(403).json({
-        error: "NOT_SIGNED_IN_FOR_SHIFT",
-        message: "Sign-In olmadan satış yapılamaz. Lütfen önce vardiya girişi (Sign-In) yapın.",
-      });
-    }
     const body = req.body || {};
     console.log("ANDROID_RAW_DATA [POST /api/tables/:id/open]:", JSON.stringify({ ...body, params: req.params, query: req.query }));
     const { id } = req.params;
@@ -2711,12 +2597,6 @@ app.post("/api/orders", authMiddleware, async (req, res) => {
   try {
     await ensurePrismaReady();
     const user = req.user;
-    if (user && isSalesRole(user) && !(await isUserSignedInForCurrentShift(user.id))) {
-      return res.status(403).json({
-        error: "NOT_SIGNED_IN_FOR_SHIFT",
-        message: "Sign-In olmadan satış yapılamaz. Lütfen önce vardiya girişi (Sign-In) yapın.",
-      });
-    }
     const body = req.body || {};
     console.log("ANDROID_RAW_DATA [POST /api/orders]:", JSON.stringify(body));
 
@@ -3076,13 +2956,6 @@ app.post("/api/payments", authMiddleware, async (req, res) => {
   try {
     await ensurePrismaReady();
     const user = req.user;
-    // Sign-In olmadan satış yapılamaz: satış rolündeki kullanıcı bu iş günü için sign-in yapmış olmalı.
-    if (user && isSalesRole(user) && !(await isUserSignedInForCurrentShift(user.id))) {
-      return res.status(403).json({
-        error: "NOT_SIGNED_IN_FOR_SHIFT",
-        message: "Sign-In olmadan satış yapılamaz. Lütfen önce vardiya girişi (Sign-In) yapın.",
-      });
-    }
     const body = req.body || {};
     console.log("ANDROID_RAW_DATA [POST /api/payments]:", JSON.stringify(body));
 

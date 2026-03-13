@@ -60,7 +60,7 @@ fun LoginScreen(
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = "Enter your PIN to continue",
+            text = "Log in to the app",
             fontSize = 16.sp,
             color = LimonTextSecondary
         )
@@ -156,7 +156,7 @@ private fun Numpad(
             colors = ButtonDefaults.buttonColors(containerColor = LimonPrimary, contentColor = LimonText),
             enabled = enabled
         ) {
-            Text("Sign In", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Text("Log in", fontSize = 18.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
