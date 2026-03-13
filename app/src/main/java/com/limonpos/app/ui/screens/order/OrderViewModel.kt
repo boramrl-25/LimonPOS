@@ -515,38 +515,42 @@ class OrderViewModel @Inject constructor(
                 return@launch
             }
 
-            // Mark as sent immediately so UI updates instantly (cart shows "sent"); then navigate to floor
-            orderRepository.markItemsAsSent(orderId, pendingItemIds)
-            val updated = withContext(Dispatchers.IO) {
-                orderRepository.getOrderWithItems(orderId).first()
-            }
-            if (updated != null) {
-                _uiState.update { it.copy(orderWithItems = updated) }
-            }
-            _logoutAfterSendToKitchenRequest.value = _logoutAfterSendToKitchenRequest.value + 1
-
-            // In background: push to API, then print (no need to mark again)
-            applicationScope.launch {
-                try {
-                    if (apiSyncRepository.isOnline()) {
-                        apiSyncRepository.ensureOrderAndSendToKitchen(orderId)
-                    }
-                    when (val result = kitchenPrintHelper.printItemsAlreadyMarkedSent(orderId, pendingItemIds)) {
-                        is KitchenPrintResult.Success -> {
-                            if (apiSyncRepository.isOnline()) apiSyncRepository.syncFromApi()
-                        }
-                        is KitchenPrintResult.Failure -> {
-                            val msg = if (result.tableNumber.isNotBlank()) "Table ${result.tableNumber}: ${result.message}" else result.message
-                            printerWarningHolder.setWarning(PrinterWarningState(msg, result.orderId, result.tableId, result.pendingItemIds))
-                        }
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "sendToKitchen print error", e)
-                    printerWarningHolder.setWarning(PrinterWarningState(
-                        "Print failed: ${e.message ?: "Error"}. Tap Retry to send again.",
-                        orderId, tableId, pendingItemIds
-                    ))
+            try {
+                // Mark as sent immediately so UI updates instantly (cart shows "sent")
+                orderRepository.markItemsAsSent(orderId, pendingItemIds)
+                val updated = withContext(Dispatchers.IO) {
+                    orderRepository.getOrderWithItems(orderId).first()
                 }
+                if (updated != null) {
+                    _uiState.update { it.copy(orderWithItems = updated) }
+                }
+
+                // In background: push to API, then print (no need to mark again)
+                applicationScope.launch {
+                    try {
+                        if (apiSyncRepository.isOnline()) {
+                            apiSyncRepository.ensureOrderAndSendToKitchen(orderId)
+                        }
+                        when (val result = kitchenPrintHelper.printItemsAlreadyMarkedSent(orderId, pendingItemIds)) {
+                            is KitchenPrintResult.Success -> {
+                                if (apiSyncRepository.isOnline()) apiSyncRepository.syncFromApi()
+                            }
+                            is KitchenPrintResult.Failure -> {
+                                val msg = if (result.tableNumber.isNotBlank()) "Table ${result.tableNumber}: ${result.message}" else result.message
+                                printerWarningHolder.setWarning(PrinterWarningState(msg, result.orderId, result.tableId, result.pendingItemIds))
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "sendToKitchen print error", e)
+                        printerWarningHolder.setWarning(PrinterWarningState(
+                            "Print failed: ${e.message ?: "Error"}. Tap Retry to send again.",
+                            orderId, tableId, pendingItemIds
+                        ))
+                    }
+                }
+            } finally {
+                android.util.Log.d("LimonDebug", "OrderViewModel: Logout state artırılıyor (finally)")
+                _logoutAfterSendToKitchenRequest.value = _logoutAfterSendToKitchenRequest.value + 1
             }
         }
     }

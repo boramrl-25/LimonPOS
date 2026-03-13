@@ -257,7 +257,10 @@ fun NavGraph(
                         OrderScreen(
                             onBack = { navController.popBackStack() },
                             onNavigateToFloorPlan = { navController.navigate(Routes.FLOOR_PLAN) { popUpTo(Routes.FLOOR_PLAN) { inclusive = true }; launchSingleTop = true } },
-                            onLogout = { scope.launch { authRepository.logout() } },
+                            onLogout = {
+                                android.util.Log.d("LimonDebug", "NavGraph: onLogout tetiklendi (OrderScreen)")
+                                scope.launch { authRepository.logout() }
+                            },
                             onNavigateToTable = { targetTableId ->
                                 navController.popBackStack()
                                 navController.navigate(Routes.order(targetTableId))
@@ -278,7 +281,10 @@ fun NavGraph(
                 PaymentScreen(
                     onBack = { navController.popBackStack() },
                     onNavigateToFloorPlan = { navController.navigate(Routes.FLOOR_PLAN) { popUpTo(Routes.FLOOR_PLAN) { inclusive = true }; launchSingleTop = true } },
-                    onPaymentComplete = { navController.navigate(Routes.FLOOR_PLAN) { popUpTo(Routes.FLOOR_PLAN) { inclusive = true }; launchSingleTop = true } },
+                    onPaymentComplete = {
+                        android.util.Log.d("LimonDebug", "NavGraph: onLogout tetiklendi (PaymentScreen)")
+                        scope.launch { authRepository.logout() }
+                    },
                     onNavigateToSettings = { navController.navigate(Routes.SETTINGS) },
                     canAccessSettings = paymentCanAccessSettings,
                     onSync = onSync

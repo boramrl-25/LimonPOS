@@ -21,7 +21,8 @@ model User {
   active                Int      @default(1)
   permissions           String   @default("[]")
   cash_drawer_permission Int     @default(0)
-  can_access_settings   Boolean  @default(true)
+  can_access_settings     Boolean  @default(true)  // Web Settings (pos.the-limon.com)
+  can_access_app_settings Boolean  @default(true)  // App Settings (POS app)
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 

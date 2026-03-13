@@ -6,7 +6,17 @@ import { ArrowLeft, Plus, Trash2, FileSpreadsheet, FileDown, Search, BookOpen, E
 import { getUsers, createUser, updateUser, deleteUser, importUsers, getPermissions, createRole, deleteRole, getZohoConfig, type RoleOption, type PermissionOption } from "@/lib/api";
 import * as XLSX from "xlsx";
 
-type User = { id: string; name: string; pin: string; role: string; active?: number | boolean; permissions?: string[]; cash_drawer_permission?: boolean };
+type User = {
+  id: string;
+  name: string;
+  pin: string;
+  role: string;
+  active?: number | boolean;
+  permissions?: string[];
+  cash_drawer_permission?: boolean;
+  can_access_settings?: boolean;
+  can_access_app_settings?: boolean;
+};
 
 function isUserActive(u: User): boolean {
   const a = u.active;
@@ -19,7 +29,16 @@ export default function UsersSettingsPage() {
   const [permissions, setPermissions] = useState<PermissionOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<User | null | undefined>(undefined);
-  const [form, setForm] = useState({ name: "", pin: "", role: "waiter", active: true, permissions: [] as string[], cashDrawerPermission: false });
+  const [form, setForm] = useState({
+    name: "",
+    pin: "",
+    role: "waiter",
+    active: true,
+    permissions: [] as string[],
+    cashDrawerPermission: false,
+    canAccessSettings: true,
+    canAccessAppSettings: true,
+  });
   const [importing, setImporting] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("");
@@ -79,10 +98,21 @@ export default function UsersSettingsPage() {
         active: isUserActive(u),
         permissions: Array.isArray(u.permissions) ? u.permissions : [],
         cashDrawerPermission: !!u.cash_drawer_permission,
+        canAccessSettings: u.can_access_settings !== false,
+        canAccessAppSettings: u.can_access_app_settings !== false,
       });
     } else {
       setEditing(null);
-      setForm({ name: "", pin: "", role: "waiter", active: true, permissions: [], cashDrawerPermission: false });
+      setForm({
+        name: "",
+        pin: "",
+        role: "waiter",
+        active: true,
+        permissions: [],
+        cashDrawerPermission: false,
+        canAccessSettings: true,
+        canAccessAppSettings: true,
+      });
     }
   }
 
@@ -102,6 +132,8 @@ export default function UsersSettingsPage() {
         active: form.active,
         permissions: form.permissions,
         cash_drawer_permission: form.cashDrawerPermission,
+        can_access_settings: form.canAccessSettings,
+        can_access_app_settings: form.canAccessAppSettings,
       };
       if (editing) {
         await updateUser(editing.id, payload);
@@ -126,6 +158,8 @@ export default function UsersSettingsPage() {
         active: next === 1,
         permissions: u.permissions ?? [],
         cash_drawer_permission: !!u.cash_drawer_permission,
+        can_access_settings: u.can_access_settings !== false,
+        can_access_app_settings: u.can_access_app_settings !== false,
       });
       await load();
     } catch (e) {
@@ -174,6 +208,8 @@ export default function UsersSettingsPage() {
         active: isUserActive(u),
         permissions: u.permissions ?? [],
         cash_drawer_permission: !!u.cash_drawer_permission,
+        can_access_settings: u.can_access_settings !== false,
+        can_access_app_settings: u.can_access_app_settings !== false,
       });
       await load();
     } catch (err) {
@@ -484,6 +520,30 @@ export default function UsersSettingsPage() {
                 <div className="flex items-center gap-3 mb-3">
                   <input type="checkbox" id="cash_drawer" checked={form.cashDrawerPermission} onChange={() => setForm((f) => ({ ...f, cashDrawerPermission: !f.cashDrawerPermission }))} className="rounded bg-slate-800 border-slate-600" />
                   <label htmlFor="cash_drawer" className="text-sm text-slate-300">Cash drawer (App)</label>
+                </div>
+                <div className="flex items-center gap-3 mb-3">
+                  <input
+                    type="checkbox"
+                    id="can_access_app_settings"
+                    checked={form.canAccessAppSettings}
+                    onChange={() => setForm((f) => ({ ...f, canAccessAppSettings: !f.canAccessAppSettings }))}
+                    className="rounded bg-slate-800 border-slate-600"
+                  />
+                  <label htmlFor="can_access_app_settings" className="text-sm text-slate-300">
+                    Can access App Settings (POS app – Floor Plan 3-dot menu)
+                  </label>
+                </div>
+                <div className="flex items-center gap-3 mb-3">
+                  <input
+                    type="checkbox"
+                    id="can_access_settings"
+                    checked={form.canAccessSettings}
+                    onChange={() => setForm((f) => ({ ...f, canAccessSettings: !f.canAccessSettings }))}
+                    className="rounded bg-slate-800 border-slate-600"
+                  />
+                  <label htmlFor="can_access_settings" className="text-sm text-slate-300">
+                    Can access Web Settings (pos.the-limon.com)
+                  </label>
                 </div>
                 <div className="space-y-2 max-h-48 overflow-y-auto">
                   {permissions.filter((p) => p.scope === "app").map((p) => (

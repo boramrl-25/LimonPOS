@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import com.limonpos.app.util.toUserPermissions
 import javax.inject.Inject
 
@@ -51,8 +52,8 @@ class AuthRepository @Inject constructor(
                     val entity = userDtoToEntity(dto)
                     userDao.insertUser(entity)
                     val cashDrawerPermission = dto.role == "admin" || dto.role == "manager" || (dto.cashDrawerPermission == true)
-                    val canAccessSettings = dto.canAccessSettings ?: (dto.role in listOf("admin", "manager", "kds"))
-                    sessionManager.login(entity.id, entity.name, entity.role, entity.pin, cashDrawerPermission, canAccessSettings)
+                    val canAccessAppSettings = dto.canAccessAppSettings ?: (dto.role in listOf("admin", "manager", "kds"))
+                    sessionManager.login(entity.id, entity.name, entity.role, entity.pin, cashDrawerPermission, canAccessAppSettings)
                     authTokenProvider.setToken(body.token ?: entity.pin)
                     return Result.success(entity)
                 }
@@ -61,8 +62,8 @@ class AuthRepository @Inject constructor(
         // Fallback: local DB (sync ile güncellenmiş veya seed)
         val user = userDao.getUserByPin(pin) ?: return Result.failure(Exception("Invalid PIN"))
         val cashDrawerPermission = user.role == "admin" || user.role == "manager" || user.cashDrawerPermission
-        val canAccessSettings = user.role in listOf("admin", "manager", "kds")
-        sessionManager.login(user.id, user.name, user.role, user.pin, cashDrawerPermission, canAccessSettings)
+        val canAccessAppSettings = user.role in listOf("admin", "manager", "kds")
+        sessionManager.login(user.id, user.name, user.role, user.pin, cashDrawerPermission, canAccessAppSettings)
         authTokenProvider.setToken(user.pin)
         scope.launch {
             try {
@@ -121,21 +122,19 @@ class AuthRepository @Inject constructor(
         }
     }
 
-    /** Full logout: backend sign-out (shift out) + clear local session. Use for "End of shift". */
+    /** Full logout: backend sign-out (shift out) + clear local session. Use for "End of shift".
+     * Ekran değişimi hemen yapılır; backend cevabı beklenmez (donma riski önlenir). */
     suspend fun logout(): Result<Unit> {
-        return try {
-            val res = apiService.logout()
-            if (res.isSuccessful) {
-                clearSessionAndBumpKey()
-                Result.success(Unit)
-            } else {
-                val msg = res.errorBody()?.string()?.let { parseApiErrorMessage(it) }
-                    ?: "Shift out failed. Please close or transfer all tables before ending your shift."
-                Result.failure(Exception(msg))
-            }
-        } catch (e: Exception) {
-            Result.failure(e)
+        android.util.Log.d("LimonDebug", "Logout fonksiyonu çağrıldı")
+        // Önce ekran değişsin; temizlik işlemleri ve login ekranı hemen gösterilsin
+        clearSessionAndBumpKey()
+        // Backend'e logout bildir - bekleme, arka planda dene (500ms timeout)
+        scope.launch {
+            try {
+                withTimeoutOrNull(500L) { apiService.logout() }
+            } catch (_: Exception) { /* ignore - ekran zaten değişti */ }
         }
+        return Result.success(Unit)
     }
 
     private fun parseApiErrorMessage(json: String): String? {
@@ -154,6 +153,7 @@ class AuthRepository @Inject constructor(
         printerWarningHolder.clear()
         authTokenProvider.setToken(null)
         sessionManager.logout()
+        android.util.Log.d("LimonDebug", "Session silindi, ekran değişmeli")
         _loginScreenKey.value = _loginScreenKey.value + 1
     }
 
@@ -212,7 +212,7 @@ class AuthRepository @Inject constructor(
         return user.toUserPermissions().viewAllOrders
     }
 
-    /** True if current user can access Settings screen (admin, manager, or can_access_settings). */
+    /** True if current user can access App Settings (admin, manager, kds, or can_access_app_settings). */
     fun canAccessSettingsFlow(): Flow<Boolean> = sessionManager.getCanAccessSettingsFlow()
 
     fun hasViewAllOrdersFlow(): Flow<Boolean> = sessionManager.currentUserId

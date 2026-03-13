@@ -489,7 +489,7 @@ class ApiSyncRepository @Inject constructor(
         for (payment in pending) {
             val apiOrderId = ensureOrderExistsOnApi(payment.orderId, includeAllItems = true)
             if (apiOrderId == null) continue
-            val ok = pushPayment(
+            val result = pushPayment(
                 apiOrderId,
                 payment.amount,
                 payment.method,
@@ -497,7 +497,7 @@ class ApiSyncRepository @Inject constructor(
                 payment.changeAmount,
                 payment.userId
             )
-            if (ok) {
+            if (result.isSuccess) {
                 paymentDao.updatePayment(payment.copy(syncStatus = "SYNCED"))
             }
         }

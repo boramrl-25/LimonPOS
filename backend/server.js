@@ -90,6 +90,11 @@ function userCanAccessSettings(user) {
   return user?.role === "admin" || user?.role === "manager" || perms.includes("web_settings");
 }
 
+function userCanAccessAppSettings(user) {
+  if (user?.can_access_app_settings != null) return !!user.can_access_app_settings;
+  return user?.role === "admin" || user?.role === "manager" || user?.role === "kds";
+}
+
 function isSalesRole(user) {
   if (!user) return false;
   const role = String(user.role || "").toLowerCase();
@@ -406,8 +411,9 @@ app.post("/api/auth/login", async (req, res) => {
   }
   const perms = JSON.parse(user.permissions || "[]");
   const canAccessSettings = user.can_access_settings != null ? !!user.can_access_settings : (user.role === "admin" || user.role === "manager" || perms.includes("web_settings"));
+  const canAccessAppSettings = userCanAccessAppSettings(user);
   res.json({
-    user: { id: user.id, name: user.name, pin: user.pin, role: user.role, active: !!user.active, permissions: perms, cash_drawer_permission: !!user.cash_drawer_permission, can_access_settings: canAccessSettings },
+    user: { id: user.id, name: user.name, pin: user.pin, role: user.role, active: !!user.active, permissions: perms, cash_drawer_permission: !!user.cash_drawer_permission, can_access_settings: canAccessSettings, can_access_app_settings: canAccessAppSettings },
     token: user.id,
   });
 });
@@ -416,6 +422,7 @@ app.get("/api/auth/me", authMiddleware, async (req, res) => {
   const user = req.user;
   const perms = JSON.parse(user.permissions || "[]");
   const canAccessSettings = user.can_access_settings != null ? !!user.can_access_settings : (user.role === "admin" || user.role === "manager" || perms.includes("web_settings"));
+  const canAccessAppSettings = userCanAccessAppSettings(user);
   res.json({
     id: user.id,
     name: user.name,
@@ -423,6 +430,7 @@ app.get("/api/auth/me", authMiddleware, async (req, res) => {
     permissions: perms,
     cash_drawer_permission: !!user.cash_drawer_permission,
     can_access_settings: canAccessSettings,
+    can_access_app_settings: canAccessAppSettings,
   });
 });
 
@@ -815,12 +823,14 @@ app.get("/api/users", authMiddleware, async (req, res) => {
   res.json(users.map((r) => {
     const perms = JSON.parse(r.permissions || "[]");
     const canAccessSettings = r.can_access_settings != null ? !!r.can_access_settings : (r.role === "admin" || r.role === "manager" || perms.includes("web_settings"));
+    const canAccessAppSettings = userCanAccessAppSettings(r);
     return {
       ...r,
       active: !!(r.active !== 0 && r.active !== false),
       permissions: perms,
       cash_drawer_permission: !!r.cash_drawer_permission,
       can_access_settings: canAccessSettings,
+      can_access_app_settings: canAccessAppSettings,
     };
   }));
 });
@@ -830,12 +840,14 @@ app.post("/api/users", authMiddleware, async (req, res) => {
   const id = req.body.id || uuid().slice(0, 8);
   const body = req.body;
   const canAccessSettings = body.can_access_settings !== false;
+  const canAccessAppSettings = body.can_access_app_settings !== false;
   const user = await store.createUser({
     id, name: body.name || "User", pin: body.pin || "0000", role: body.role || "waiter",
     active: body.active !== false ? 1 : 0, permissions: JSON.stringify(body.permissions || []), cash_drawer_permission: body.cash_drawer_permission ? 1 : 0,
     can_access_settings: canAccessSettings,
+    can_access_app_settings: canAccessAppSettings,
   });
-  res.json({ ...user, permissions: JSON.parse(user.permissions || "[]"), cash_drawer_permission: !!user.cash_drawer_permission, can_access_settings: !!user.can_access_settings });
+  res.json({ ...user, permissions: JSON.parse(user.permissions || "[]"), cash_drawer_permission: !!user.cash_drawer_permission, can_access_settings: !!user.can_access_settings, can_access_app_settings: !!user.can_access_app_settings });
 });
 
 app.put("/api/users/:id", authMiddleware, async (req, res) => {
@@ -845,8 +857,9 @@ app.put("/api/users/:id", authMiddleware, async (req, res) => {
   try {
     const updateData = { name: body.name, pin: body.pin, role: body.role || "waiter", active: body.active !== false ? 1 : 0, permissions: JSON.stringify(body.permissions || []), cash_drawer_permission: body.cash_drawer_permission ? 1 : 0 };
     if (body.can_access_settings !== undefined) updateData.can_access_settings = !!body.can_access_settings;
+    if (body.can_access_app_settings !== undefined) updateData.can_access_app_settings = !!body.can_access_app_settings;
     const user = await store.updateUser(id, updateData);
-    res.json({ ...user, permissions: JSON.parse(user.permissions || "[]"), cash_drawer_permission: !!user.cash_drawer_permission, can_access_settings: !!user.can_access_settings });
+    res.json({ ...user, permissions: JSON.parse(user.permissions || "[]"), cash_drawer_permission: !!user.cash_drawer_permission, can_access_settings: !!user.can_access_settings, can_access_app_settings: !!user.can_access_app_settings });
   } catch (e) {
     if (e.code === "P2025") return res.status(404).json({ error: "Not found" });
     throw e;

@@ -197,40 +197,6 @@ fun PaymentScreen(
                         }
                     }
                 }
-                Spacer(Modifier.height(12.dp))
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = LimonSurface),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Discount", fontWeight = FontWeight.Bold, color = LimonText, fontSize = 14.sp)
-                        Spacer(Modifier.height(8.dp))
-                        if (uiState.discountRequestPending) {
-                            Text("Discount approval pending. Sync to get updated total after web approval.", color = LimonTextSecondary, fontSize = 12.sp)
-                            Spacer(Modifier.height(8.dp))
-                            OutlinedButton(onClick = { viewModel.refreshOrderFromApi() }, modifier = Modifier.fillMaxWidth()) {
-                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text("Sync / Update")
-                            }
-                        } else if (!hasDiscount) {
-                            Button(
-                                onClick = { viewModel.showDiscountRequestDialog() },
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = ButtonDefaults.buttonColors(containerColor = LimonPrimary)
-                            ) {
-                                Text("Send discount request", color = Color.Black)
-                            }
-                        } else {
-                            Text("Discount applied.", color = LimonSuccess, fontSize = 12.sp)
-                        }
-                    }
-                }
-                if (uiState.discountRequestLoading) {
-                    Spacer(Modifier.height(8.dp))
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = LimonPrimary)
-                }
                 Spacer(Modifier.height(24.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -353,6 +319,40 @@ fun PaymentScreen(
                     }
                 }
                 Spacer(Modifier.height(16.dp))
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = LimonSurface),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Discount", fontWeight = FontWeight.Bold, color = LimonText, fontSize = 14.sp)
+                        Spacer(Modifier.height(8.dp))
+                        if (uiState.discountRequestPending) {
+                            Text("Discount approval pending. Sync to get updated total after web approval.", color = LimonTextSecondary, fontSize = 12.sp)
+                            Spacer(Modifier.height(8.dp))
+                            OutlinedButton(onClick = { viewModel.refreshOrderFromApi() }, modifier = Modifier.fillMaxWidth()) {
+                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Sync / Update")
+                            }
+                        } else if (!hasDiscount) {
+                            Button(
+                                onClick = { viewModel.showDiscountRequestDialog() },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.buttonColors(containerColor = LimonPrimary)
+                            ) {
+                                Text("Send discount request", color = Color.Black)
+                            }
+                        } else {
+                            Text("Discount applied.", color = LimonSuccess, fontSize = 12.sp)
+                        }
+                    }
+                }
+                if (uiState.discountRequestLoading) {
+                    Spacer(Modifier.height(8.dp))
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = LimonPrimary)
+                }
+                Spacer(Modifier.height(12.dp))
                 OutlinedButton(
                     onClick = { viewModel.printBill() },
                     modifier = Modifier.fillMaxWidth()
@@ -551,78 +551,65 @@ private fun SplitRow(
                         )
                     }
                 } else {
-                    Column(
+                    Row(
                         modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            FilterChip(
-                                selected = true,
-                                onClick = { },
-                                label = { Text(if (method == "cash") "Cash" else "Card", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color.Black) },
-                                modifier = Modifier.heightIn(min = 52.dp),
-                                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = LimonPrimary, containerColor = LimonSurface, selectedLabelColor = Color.Black, labelColor = LimonText)
-                            )
-                            OutlinedTextField(
-                                value = amountStr,
-                                onValueChange = {
-                                    val raw = it.toDoubleOrNull() ?: 0.0
-                                    val v = raw.coerceIn(0.0, balanceAmount)
-                                    amountStr = when {
-                                        it.isEmpty() -> ""
-                                        raw > balanceAmount -> "%.2f".format(v)
-                                        else -> it
-                                    }
-                                    val received = if (method == "cash") v else 0.0
-                                    onUpdate(v, method, received, 0.0)
-                                },
-                                label = { Text("Amount") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                                singleLine = true,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .widthIn(min = 140.dp)
-                                    .heightIn(min = 56.dp),
-                                textStyle = LocalTextStyle.current.copy(fontSize = 18.sp),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedTextColor = LimonText,
-                                    unfocusedTextColor = LimonText,
-                                    focusedBorderColor = LimonPrimary,
-                                    unfocusedBorderColor = LimonTextSecondary
-                                )
-                            )
-                        }
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            if (showBalanceButton) {
-                                Button(
-                                    onClick = {
-                                        amountStr = "%.2f".format(balanceAmount)
-                                        val received = if (method == "cash") balanceAmount else 0.0
-                                        onUpdate(balanceAmount, method, received, 0.0)
-                                    },
-                                    modifier = Modifier.heightIn(min = 48.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = LimonPrimary)
-                                ) {
-                                    Text("Balance", color = Color.Black, fontWeight = FontWeight.Bold)
+                        FilterChip(
+                            selected = true,
+                            onClick = { },
+                            label = { Text(if (method == "cash") "Cash" else "Card", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color.Black) },
+                            modifier = Modifier.heightIn(min = 52.dp),
+                            colors = FilterChipDefaults.filterChipColors(selectedContainerColor = LimonPrimary, containerColor = LimonSurface, selectedLabelColor = Color.Black, labelColor = LimonText)
+                        )
+                        OutlinedTextField(
+                            value = amountStr,
+                            onValueChange = {
+                                val raw = it.toDoubleOrNull() ?: 0.0
+                                val v = raw.coerceIn(0.0, balanceAmount)
+                                amountStr = when {
+                                    it.isEmpty() -> ""
+                                    raw > balanceAmount -> "%.2f".format(v)
+                                    else -> it
                                 }
-                            }
+                                val received = if (method == "cash") v else 0.0
+                                onUpdate(v, method, received, 0.0)
+                            },
+                            label = { Text("Amount") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            singleLine = true,
+                            modifier = Modifier
+                                .weight(1f)
+                                .widthIn(min = 100.dp)
+                                .heightIn(min = 52.dp),
+                            textStyle = LocalTextStyle.current.copy(fontSize = 18.sp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = LimonText,
+                                unfocusedTextColor = LimonText,
+                                focusedBorderColor = LimonPrimary,
+                                unfocusedBorderColor = LimonTextSecondary
+                            )
+                        )
+                        if (showBalanceButton) {
                             Button(
-                                onClick = onPay,
+                                onClick = {
+                                    amountStr = "%.2f".format(balanceAmount)
+                                    val received = if (method == "cash") balanceAmount else 0.0
+                                    onUpdate(balanceAmount, method, received, 0.0)
+                                },
                                 modifier = Modifier.heightIn(min = 48.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = LimonSuccess)
+                                colors = ButtonDefaults.buttonColors(containerColor = LimonPrimary)
                             ) {
-                                Text("Pay", color = Color.Black, fontWeight = FontWeight.Bold)
+                                Text("Bal", color = Color.Black, fontWeight = FontWeight.Bold)
                             }
+                        }
+                        Button(
+                            onClick = onPay,
+                            modifier = Modifier.heightIn(min = 48.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = LimonSuccess)
+                        ) {
+                            Text("Pay", color = Color.Black, fontWeight = FontWeight.Bold)
                         }
                     }
                 }

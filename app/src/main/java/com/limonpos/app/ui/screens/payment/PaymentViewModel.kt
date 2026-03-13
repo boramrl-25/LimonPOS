@@ -334,6 +334,7 @@ class PaymentViewModel @Inject constructor(
                         ))
                         _uiState.update { it.copy(receiptFailedBeforeNavigate = true) }
                     } else {
+                        // Ödeme tamamlandı bilgisini fiş durumundan bağımsız hemen ver.
                         _uiState.update { it.copy(paymentComplete = true, message = "Payment completed") }
                         if (failedReceiptPrinters.isNotEmpty()) {
                             _uiState.update { it.copy(message = "Printed; failed on: ${failedReceiptPrinters.joinToString(", ")}") }

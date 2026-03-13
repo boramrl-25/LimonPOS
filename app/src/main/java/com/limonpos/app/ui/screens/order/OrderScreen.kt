@@ -68,6 +68,7 @@ import android.media.AudioManager
 import android.media.ToneGenerator
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import android.util.Log
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -120,6 +121,7 @@ fun OrderScreen(
     }
 
     LaunchedEffect(logoutAfterSendToKitchenRequest) {
+        Log.d("LimonDebug", "OrderScreen: Logout isteği algılandı, değer: $logoutAfterSendToKitchenRequest")
         if (logoutAfterSendToKitchenRequest > 0) {
             viewModel.consumeLogoutAfterSendToKitchenRequest()
             viewModel.dismissCart()
@@ -211,20 +213,12 @@ fun OrderScreen(
                     }
                     val itemCount = (uiState.orderWithItems?.items?.size ?: 0)
                     IconButton(onClick = { viewModel.showCart() }) {
-                        BadgedBox(
-                            badge = {
-                                if (itemCount > 0) {
-                                    Badge { Text("$itemCount", color = LimonText) }
-                                }
-                            }
-                        ) {
-                            Icon(
-                                Icons.Default.ShoppingCart,
-                                contentDescription = "Cart",
-                                tint = LimonPrimary,
-                                modifier = Modifier.size(31.dp)
-                            )
-                        }
+                        Icon(
+                            Icons.Default.ShoppingCart,
+                            contentDescription = "Cart",
+                            tint = if (itemCount > 0) LimonError else LimonSuccess,
+                            modifier = Modifier.size(28.dp)
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
