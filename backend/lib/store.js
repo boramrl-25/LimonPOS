@@ -179,6 +179,13 @@ export async function getDevices() {
   return list.map((d) => (d.payload && typeof d.payload === "object" ? d.payload : { id: d.id }));
 }
 
+export async function getDeviceById(id) {
+  const d = await prisma.device.findUnique({ where: { id } });
+  if (!d) return null;
+  const payload = d.payload && typeof d.payload === "object" ? d.payload : { id: d.id };
+  return { ...payload, id: payload.id || d.id };
+}
+
 // ============ Settings JSON merge & writes ============
 export async function updateSettings(updates) {
   const s = await getSettings();
@@ -269,6 +276,77 @@ export async function deleteDeviceClearRequested(id) {
   const p = (d.payload && typeof d.payload === "object" ? { ...d.payload } : { id });
   delete p.clear_local_data_requested;
   await prisma.device.update({ where: { id }, data: { payload: p } });
+}
+
+// ============ Security Settings & Events ============
+
+export async function getSecuritySettings() {
+  const s = await getSettings();
+  const raw = s.security_settings && typeof s.security_settings === "object" ? s.security_settings : {};
+  return {
+    require_device_approval: !!raw.require_device_approval,
+    alert_sequence_drop: raw.alert_sequence_drop !== false,
+    webhook_url: typeof raw.webhook_url === "string" ? raw.webhook_url : "",
+  };
+}
+
+export async function updateSecuritySettings(updates) {
+  const s = await getSettings();
+  const current = s.security_settings && typeof s.security_settings === "object" ? { ...s.security_settings } : {};
+  const next = { ...current, ...updates };
+  await prisma.settings.update({
+    where: { id: "default" },
+    data: { security_settings: next },
+  });
+}
+
+export async function appendSecurityEvent(event) {
+  const s = await getSettings();
+  const arr = Array.isArray(s.security_events) ? [...s.security_events] : [];
+  arr.push(event);
+  if (arr.length > 2000) arr.splice(0, arr.length - 2000);
+  await prisma.settings.update({
+    where: { id: "default" },
+    data: { security_events: arr },
+  });
+}
+
+export async function getSecurityEvents(limit = 200) {
+  const s = await getSettings();
+  const arr = Array.isArray(s.security_events) ? s.security_events : [];
+  if (!arr.length) return [];
+  return arr
+    .slice(-limit)
+    .reverse();
+}
+
+// ============ Activation Codes ============
+
+export async function createActivationCode(code, createdByUserId, expiresAt) {
+  const data = {
+    code,
+    createdByUserId: createdByUserId || null,
+  };
+  if (expiresAt) data.expiresAt = new Date(expiresAt);
+  return prisma.activationCode.create({ data });
+}
+
+export async function getActivationCodeByCode(code) {
+  return prisma.activationCode.findUnique({ where: { code } });
+}
+
+export async function markActivationCodeUsed(id, deviceId) {
+  return prisma.activationCode.update({
+    where: { id },
+    data: { usedAt: new Date(), deviceId: deviceId || null },
+  });
+}
+
+export async function listActivationCodes(limit = 100) {
+  return prisma.activationCode.findMany({
+    orderBy: { createdAt: "desc" },
+    take: limit,
+  });
 }
 
 // ============ User ============

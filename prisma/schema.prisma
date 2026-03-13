@@ -256,6 +256,16 @@ model Device {
   updatedAt DateTime @updatedAt
 }
 
+model ActivationCode {
+  id              String   @id @default(uuid())
+  code            String   @unique
+  createdAt       DateTime @default(now())
+  expiresAt       DateTime?
+  usedAt          DateTime?
+  deviceId        String?
+  createdByUserId String?
+}
+
 model AuditLog {
   id        String   @id @default(uuid())
   ts        BigInt?
@@ -311,6 +321,8 @@ model Settings {
   receipt_item_size               Int?     @default(0)
   currency_code                   String?  @default("AED")
   vat_percent                     Int?     @default(0)
+  security_events                 Json?
+  security_settings               Json?
   createdAt                       DateTime @default(now())
   updatedAt                       DateTime @updatedAt
 }

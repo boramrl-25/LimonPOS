@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { LayoutDashboard, Settings, Package, Users, Printer, FolderOpen, BarChart3, SlidersHorizontal, Map, RefreshCw, LogOut, Wallet, CreditCard, Banknote, UtensilsCrossed } from "lucide-react";
+import { LayoutDashboard, Settings, Package, Users, Printer, FolderOpen, BarChart3, SlidersHorizontal, Map, RefreshCw, LogOut, Wallet, CreditCard, Banknote, UtensilsCrossed, Shield } from "lucide-react";
 import { getToken, getSetupStatus, getTables, getProducts, getCategories, getModifierGroups, getPrinters, getUsers, getDashboardStats, logout } from "@/lib/api";
 
 function fmt(n: number) {
@@ -180,6 +180,17 @@ export default function Home() {
           </Link>
 
           <Link
+            href="/reports/user-shifts"
+            className="flex items-center gap-4 p-6 rounded-xl bg-slate-800/50 border border-slate-700 hover:border-sky-500/50 hover:bg-slate-800 transition-colors"
+          >
+            <Users className="w-10 h-10 text-emerald-400" />
+            <div>
+              <h2 className="font-semibold">User Shifts</h2>
+              <p className="text-slate-400 text-sm">Sign-in / sign-out history</p>
+            </div>
+          </Link>
+
+          <Link
             href="/settings"
             className="flex items-center gap-4 p-6 rounded-xl bg-slate-800/50 border border-slate-700 hover:border-sky-500/50 hover:bg-slate-800 transition-colors"
           >
@@ -187,6 +198,17 @@ export default function Home() {
             <div>
               <h2 className="font-semibold">Settings</h2>
               <p className="text-slate-400 text-sm">Payment, Zoho, Email, Users</p>
+            </div>
+          </Link>
+
+          <Link
+            href="/security"
+            className="flex items-center gap-4 p-6 rounded-xl bg-slate-800/50 border border-slate-700 hover:border-sky-500/50 hover:bg-slate-800 transition-colors"
+          >
+            <Shield className="w-10 h-10 text-emerald-400" />
+            <div>
+              <h2 className="font-semibold">Security</h2>
+              <p className="text-slate-400 text-sm">Devices, alerts & anti-fraud</p>
             </div>
           </Link>
 

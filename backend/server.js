@@ -90,6 +90,34 @@ function userCanAccessSettings(user) {
   return user?.role === "admin" || user?.role === "manager" || perms.includes("web_settings");
 }
 
+function isSalesRole(user) {
+  if (!user) return false;
+  const role = String(user.role || "").toLowerCase();
+  // Setup/admin/manager genellikle web yönetimi için; garson/kasa gibi roller satış rolü kabul edilir.
+  return role !== "admin" && role !== "manager" && role !== "setup";
+}
+
+async function getBusinessDayKeyForNow() {
+  const s = await store.getSettings();
+  const opening = s.opening_time ?? "07:00";
+  const closing = s.closing_time ?? "01:30";
+  const off = await store.offsetMin();
+  return getBusinessDayKey(Date.now(), opening, closing, off);
+}
+
+function getUserShiftStateFromLog(logArr, userId) {
+  const events = (logArr || []).filter((e) => e && e.user_id === userId && (e.action === "user_sign_in" || e.action === "user_sign_out"));
+  if (!events.length) return { lastSignIn: null, lastSignOut: null };
+  const sorted = [...events].sort((a, b) => (a.ts || 0) - (b.ts || 0));
+  let lastSignIn = null;
+  let lastSignOut = null;
+  for (const ev of sorted) {
+    if (ev.action === "user_sign_in") lastSignIn = ev;
+    if (ev.action === "user_sign_out") lastSignOut = ev;
+  }
+  return { lastSignIn, lastSignOut };
+}
+
 const authMiddleware = (req, res, next) => {
   const auth = req.headers.authorization;
   if (!auth?.startsWith("Bearer ")) return res.status(401).json({ error: "Unauthorized" });
@@ -330,6 +358,31 @@ app.post("/api/auth/login", async (req, res) => {
   const pin = String((req.body || {}).pin || "").trim();
   const user = await store.getUserByIdOrPin(pin);
   if (!user || !user.active) return res.status(401).json({ error: "Invalid PIN" });
+  // Satış kullanıcıları için: önceki iş gününden açık kalan vardiya varsa girişe izin verme.
+  if (isSalesRole(user)) {
+    const s = await store.getSettings();
+    const logArr = Array.isArray(s.business_operation_log) ? s.business_operation_log : [];
+    const { lastSignIn, lastSignOut } = getUserShiftStateFromLog(logArr, user.id);
+    const businessDayKeyNow = await getBusinessDayKeyForNow();
+    if (lastSignIn && (!lastSignOut || (lastSignOut.ts || 0) < (lastSignIn.ts || 0))) {
+      const lastKey = lastSignIn.business_day_key || null;
+      if (lastKey && lastKey !== businessDayKeyNow) {
+        return res.status(403).json({
+          error: "USER_NOT_SIGNED_OUT",
+          message: "This user did not sign out at the end of the previous business day and cannot sign in for a new day. Please ask a manager to close the previous shift.",
+          last_business_day_key: lastKey,
+        });
+      }
+    }
+    // Aynı iş günü içinde tekrar giriş yapılmasına izin verilir; sadece log eklenir.
+    await store.appendBusinessOperationLog({
+      ts: Date.now(),
+      action: "user_sign_in",
+      user_id: user.id,
+      user_name: user.name,
+      business_day_key: businessDayKeyNow || null,
+    });
+  }
   const perms = JSON.parse(user.permissions || "[]");
   const canAccessSettings = user.can_access_settings != null ? !!user.can_access_settings : (user.role === "admin" || user.role === "manager" || perms.includes("web_settings"));
   res.json({
@@ -350,6 +403,45 @@ app.get("/api/auth/me", authMiddleware, async (req, res) => {
     cash_drawer_permission: !!user.cash_drawer_permission,
     can_access_settings: canAccessSettings,
   });
+});
+
+// Kullanıcı sign-out: satış kullanıcıları için açık masa kontrolü ve iş günü bazlı vardiya kapanışı.
+app.post("/api/auth/logout", authMiddleware, async (req, res) => {
+  await ensurePrismaReady();
+  const user = req.user;
+  const businessDayKeyNow = await getBusinessDayKeyForNow();
+  let openTablesForUser = [];
+  if (isSalesRole(user)) {
+    const [tables, orders] = await Promise.all([store.getTables(), store.getOrders()]);
+    const orderById = new Map(orders.map((o) => [o.id, o]));
+    openTablesForUser = tables.filter((t) => {
+      if (!t.current_order_id || t.waiter_id !== user.id) return false;
+      const o = orderById.get(t.current_order_id);
+      return o && (o.status === "open" || o.status === "sent");
+    });
+    if (openTablesForUser.length > 0) {
+      return res.status(400).json({
+        error: "OPEN_TABLES",
+        message: "This user still has open tables. Please close those tables or transfer them to another user before signing out.",
+        openTablesCount: openTablesForUser.length,
+        tables: openTablesForUser.map((t) => ({
+          id: t.id,
+          number: typeof t.number === "string" ? parseInt(t.number, 10) || 0 : (t.number ?? 0),
+          name: t.name,
+          current_order_id: t.current_order_id,
+        })),
+      });
+    }
+  }
+  await store.appendBusinessOperationLog({
+    ts: Date.now(),
+    action: "user_sign_out",
+    user_id: user.id,
+    user_name: user.name,
+    business_day_key: businessDayKeyNow || null,
+    open_tables_count: openTablesForUser.length,
+  });
+  res.json({ success: true });
 });
 
 app.post("/api/auth/verify-cash-drawer", authMiddleware, async (req, res) => {
@@ -390,12 +482,45 @@ app.post("/api/devices/heartbeat", authMiddleware, async (req, res) => {
   const devices = await store.getDevices();
   const existing = devices.find((d) => d.id === deviceId);
   const device = {
+    ...(existing || {}),
     id: deviceId,
-    name: body.device_name || body.deviceName || "Android POS",
-    app_version: body.app_version || body.appVersion || null,
+    name: body.device_name || body.deviceName || existing?.name || "Android POS",
+    app_version: body.app_version || body.appVersion || existing?.app_version || null,
     last_seen: now,
-    user_id: req.user?.id || null,
+    user_id: req.user?.id || existing?.user_id || null,
   };
+  const seqRaw = body.local_sequence ?? body.sequence ?? body.localSequence ?? null;
+  if (seqRaw != null) {
+    const seq = Number(seqRaw) || 0;
+    if (seq > 0) {
+      const lastSeq = Number(existing?.last_sequence || 0);
+      let status = device.status || existing?.status || "active";
+      if (lastSeq > 0 && seq < lastSeq) {
+        status = "suspicious";
+        await store.appendSecurityEvent({
+          id: uuid(),
+          ts: now,
+          type: "sequence_reset",
+          severity: "critical",
+          device_id: deviceId,
+          user_id: req.user?.id || null,
+          details: { last_sequence: lastSeq, new_sequence: seq },
+        });
+      } else if (lastSeq > 0 && seq > lastSeq + 1) {
+        await store.appendSecurityEvent({
+          id: uuid(),
+          ts: now,
+          type: "sequence_gap",
+          severity: "warning",
+          device_id: deviceId,
+          user_id: req.user?.id || null,
+          details: { last_sequence: lastSeq, new_sequence: seq },
+        });
+      }
+      device.last_sequence = seq;
+      device.status = status;
+    }
+  }
   if (existing && existing.clear_local_data_requested === true) {
     device.clear_local_data_requested = true;
   }
@@ -435,9 +560,158 @@ app.get("/api/devices", authMiddleware, async (req, res) => {
     app_version: d.app_version || null,
     last_seen: d.last_seen || 0,
     user_id: d.user_id || null,
+    status: d.status || "active",
+    last_sequence: d.last_sequence || 0,
     online: (now - (d.last_seen || 0)) <= HEARTBEAT_TIMEOUT_MS,
   }));
   res.json(list);
+});
+
+function generateActivationCode() {
+  let code = "";
+  for (let i = 0; i < 10; i++) {
+    code += Math.floor(Math.random() * 10).toString();
+  }
+  return code;
+}
+
+app.get("/api/security/activation-codes", authMiddleware, async (req, res) => {
+  await ensurePrismaReady();
+  const perms = JSON.parse(req.user?.permissions || "[]");
+  if (req.user?.role !== "admin" && req.user?.role !== "manager" && !perms.includes("web_settings")) {
+    return res.status(403).json({ error: "Permission denied" });
+  }
+  const list = await store.listActivationCodes(100);
+  res.json(list);
+});
+
+app.post("/api/security/activation-codes", authMiddleware, async (req, res) => {
+  await ensurePrismaReady();
+  const perms = JSON.parse(req.user?.permissions || "[]");
+  if (req.user?.role !== "admin" && req.user?.role !== "manager" && !perms.includes("web_settings")) {
+    return res.status(403).json({ error: "Permission denied" });
+  }
+  const expiresInMinutesRaw = parseInt(req.body?.expires_in_minutes, 10);
+  const expiresInMinutes = isNaN(expiresInMinutesRaw) ? 1440 : Math.max(5, Math.min(7 * 24 * 60, expiresInMinutesRaw));
+  const expiresAt = Date.now() + expiresInMinutes * 60 * 1000;
+  let code;
+  for (let i = 0; i < 5; i++) {
+    code = generateActivationCode();
+    const existing = await store.getActivationCodeByCode(code);
+    if (!existing) break;
+  }
+  if (!code) return res.status(500).json({ error: "failed_to_generate_code" });
+  const created = await store.createActivationCode(code, req.user?.id || null, expiresAt);
+  res.status(201).json(created);
+});
+
+app.post("/api/devices/activate", async (req, res) => {
+  await ensurePrismaReady();
+  const body = req.body || {};
+  const codeRaw = String(body.code || body.activation_code || "").trim();
+  if (!codeRaw || codeRaw.length !== 10) {
+    return res.status(400).json({ error: "invalid_code", message: "10-digit activation code required" });
+  }
+  const record = await store.getActivationCodeByCode(codeRaw);
+  if (!record) {
+    return res.status(404).json({ error: "not_found", message: "Activation code not found" });
+  }
+  if (record.usedAt) {
+    return res.status(400).json({ error: "used", message: "Activation code already used" });
+  }
+  if (record.expiresAt && record.expiresAt.getTime() < Date.now()) {
+    return res.status(400).json({ error: "expired", message: "Activation code expired" });
+  }
+  const deviceId = String(body.device_id || body.deviceId || uuid()).trim();
+  const deviceName = String(body.device_name || body.deviceName || "Android POS").slice(0, 100);
+  const appVersion = body.app_version || body.appVersion || null;
+  const now = Date.now();
+  const existing = await store.getDeviceById(deviceId);
+  const base = existing || {};
+  const settings = await store.getSecuritySettings();
+  const status = settings.require_device_approval ? "pending" : "active";
+  const payload = {
+    ...base,
+    id: deviceId,
+    name: deviceName || base.name || "Android POS",
+    app_version: appVersion || base.app_version || null,
+    last_seen: now,
+    status,
+  };
+  await store.upsertDevice(deviceId, payload);
+  await store.markActivationCodeUsed(record.id, deviceId);
+  await store.appendSecurityEvent({
+    id: uuid(),
+    ts: now,
+    type: "device_activated",
+    severity: "info",
+    device_id: deviceId,
+    user_id: record.createdByUserId || null,
+    details: { code: record.code, status },
+  });
+  res.json({ device_id: deviceId, status });
+});
+
+// Security: settings, events, device management
+app.get("/api/security/settings", authMiddleware, async (req, res) => {
+  await ensurePrismaReady();
+  const perms = JSON.parse(req.user?.permissions || "[]");
+  if (req.user?.role !== "admin" && req.user?.role !== "manager" && !perms.includes("web_settings")) {
+    return res.status(403).json({ error: "Permission denied. Security settings require admin, manager, or web_settings." });
+  }
+  const s = await store.getSecuritySettings();
+  res.json(s);
+});
+
+app.patch("/api/security/settings", authMiddleware, async (req, res) => {
+  await ensurePrismaReady();
+  const perms = JSON.parse(req.user?.permissions || "[]");
+  if (req.user?.role !== "admin" && req.user?.role !== "manager" && !perms.includes("web_settings")) {
+    return res.status(403).json({ error: "Permission denied. Security settings require admin, manager, or web_settings." });
+  }
+  const updates = {};
+  if (typeof req.body.require_device_approval === "boolean") updates.require_device_approval = req.body.require_device_approval;
+  if (typeof req.body.alert_sequence_drop === "boolean") updates.alert_sequence_drop = req.body.alert_sequence_drop;
+  if (typeof req.body.webhook_url === "string") updates.webhook_url = req.body.webhook_url.slice(0, 500);
+  if (Object.keys(updates).length > 0) {
+    await store.updateSecuritySettings(updates);
+  }
+  const s = await store.getSecuritySettings();
+  res.json(s);
+});
+
+app.get("/api/security/events", authMiddleware, async (req, res) => {
+  await ensurePrismaReady();
+  const perms = JSON.parse(req.user?.permissions || "[]");
+  if (req.user?.role !== "admin" && req.user?.role !== "manager" && !perms.includes("web_settings")) {
+    return res.status(403).json({ error: "Permission denied. Security events require admin, manager, or web_settings." });
+  }
+  const limit = Math.min(500, Math.max(1, parseInt(req.query.limit, 10) || 200));
+  const events = await store.getSecurityEvents(limit);
+  res.json(events);
+});
+
+app.patch("/api/devices/:id", authMiddleware, async (req, res) => {
+  await ensurePrismaReady();
+  const perms = JSON.parse(req.user?.permissions || "[]");
+  if (req.user?.role !== "admin" && req.user?.role !== "manager" && !perms.includes("web_settings")) {
+    return res.status(403).json({ error: "Permission denied" });
+  }
+  const deviceId = req.params.id;
+  const existing = await store.getDeviceById(deviceId);
+  if (!existing) return res.status(404).json({ error: "Device not found" });
+  const updates = { ...existing };
+  if (typeof req.body.name === "string" && req.body.name.trim()) {
+    updates.name = req.body.name.trim().slice(0, 100);
+  }
+  if (typeof req.body.status === "string") {
+    const st = req.body.status.toLowerCase();
+    if (st === "active" || st === "blocked" || st === "pending") {
+      updates.status = st;
+    }
+  }
+  await store.upsertDevice(deviceId, updates);
+  res.json(updates);
 });
 
 // Roles and permissions list (for Web user management – assign to users; App reads same keys from user.permissions)
@@ -1255,6 +1529,60 @@ app.get("/api/dashboard/open-tables-not-closed", authMiddleware, async (req, res
     };
   });
   res.json({ list, count: list.length });
+});
+
+// Kullanıcı sign-in/sign-out hareketleri (business_operation_log üzerinden) – tarih aralığı filtreli.
+app.get("/api/security/user-shifts", authMiddleware, async (req, res) => {
+  await ensurePrismaReady();
+  if (!userCanAccessSettings(req.user)) {
+    return res.status(403).json({ error: "Forbidden", message: "Ayarlar yetkisi gerekli." });
+  }
+  const s = await store.getSettings();
+  const rawLog = Array.isArray(s.business_operation_log) ? s.business_operation_log : [];
+  let events = rawLog.filter((e) => e && (e.action === "user_sign_in" || e.action === "user_sign_out"));
+
+  const dateFrom = req.query.dateFrom ? String(req.query.dateFrom) : null;
+  const dateTo = req.query.dateTo ? String(req.query.dateTo) : null;
+  let startTs = 0;
+  let endTs = Number.MAX_SAFE_INTEGER;
+  try {
+    if (dateFrom && dateTo) {
+      const fromRange = await store.getCalendarDayBoundsForDate(dateFrom);
+      const toRange = await store.getCalendarDayBoundsForDate(dateTo);
+      if (fromRange && toRange) {
+        startTs = fromRange.startTs;
+        endTs = toRange.endTs;
+      }
+    } else if (dateFrom) {
+      const r = await store.getCalendarDayBoundsForDate(dateFrom);
+      if (r) {
+        startTs = r.startTs;
+        endTs = r.endTs;
+      }
+    } else if (dateTo) {
+      const r = await store.getCalendarDayBoundsForDate(dateTo);
+      if (r) {
+        startTs = r.startTs;
+        endTs = r.endTs;
+      }
+    }
+  } catch {
+    // tarih parse hatalarında tüm logu dökmeye devam et (backend çökmemeli)
+  }
+
+  if (startTs || endTs !== Number.MAX_SAFE_INTEGER) {
+    events = events.filter((e) => {
+      const ts = e.ts || e.timestamp || 0;
+      return ts >= startTs && ts < endTs;
+    });
+  }
+
+  events.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+
+  res.json({
+    count: events.length,
+    events,
+  });
 });
 
 // Open orders: only orders that are linked to a table (current_order_id). App ile uyumlu.

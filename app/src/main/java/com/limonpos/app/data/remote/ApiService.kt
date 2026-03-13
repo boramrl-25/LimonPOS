@@ -8,6 +8,9 @@ interface ApiService {
     @POST("auth/login")
     suspend fun login(@Body request: LoginRequest): Response<LoginResponse>
 
+    @POST("auth/logout")
+    suspend fun logout(): Response<Unit>
+
     @POST("auth/verify-cash-drawer")
     suspend fun verifyCashDrawer(@Body request: CashDrawerVerifyRequest): Response<CashDrawerVerifyResponse>
 

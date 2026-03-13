@@ -493,6 +493,119 @@ export async function getReconciliationInboxConfig(): Promise<{ configured: bool
   return res.json();
 }
 
+export type SecuritySettings = {
+  require_device_approval: boolean;
+  alert_sequence_drop: boolean;
+  webhook_url: string;
+};
+
+export type SecurityDevice = {
+  id: string;
+  name: string;
+  app_version: string | null;
+  last_seen: number;
+  user_id: string | null;
+  status: string;
+  last_sequence: number;
+  online: boolean;
+};
+
+export type SecurityEvent = {
+  id: string;
+  ts: number;
+  type: string;
+  severity: string;
+  device_id?: string;
+  user_id?: string;
+  details?: Record<string, unknown>;
+};
+
+export type ActivationCode = {
+  id: string;
+  code: string;
+  createdAt: string;
+  expiresAt: string | null;
+  usedAt: string | null;
+  deviceId: string | null;
+  createdByUserId: string | null;
+};
+
+export async function getSecuritySettings(): Promise<SecuritySettings> {
+  const res = await fetchWithTimeout(`${API_URL}/security/settings`, { headers: headers() });
+  if (!res.ok) throw new Error("Failed to fetch security settings");
+  return res.json();
+}
+
+export async function updateSecuritySettings(body: Partial<SecuritySettings>): Promise<SecuritySettings> {
+  const res = await fetchWithTimeout(`${API_URL}/security/settings`, {
+    method: "PATCH",
+    headers: headers(),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error("Failed to update security settings");
+  return res.json();
+}
+
+export async function getSecurityDevices(): Promise<SecurityDevice[]> {
+  const res = await fetchWithTimeout(`${API_URL}/devices`, { headers: headers() });
+  if (!res.ok) throw new Error("Failed to fetch devices");
+  return res.json();
+}
+
+export async function updateSecurityDevice(id: string, body: { name?: string; status?: string }): Promise<SecurityDevice> {
+  const res = await fetchWithTimeout(`${API_URL}/devices/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: headers(),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error("Failed to update device");
+  return res.json();
+}
+
+export async function getSecurityEvents(limit = 200): Promise<SecurityEvent[]> {
+  const params = new URLSearchParams();
+  params.set("limit", String(limit));
+  const res = await fetchWithTimeout(`${API_URL}/security/events?${params.toString()}`, { headers: headers() });
+  if (!res.ok) throw new Error("Failed to fetch security events");
+  return res.json();
+}
+
+export type UserShiftEvent = {
+  ts: number;
+  action: "user_sign_in" | "user_sign_out";
+  user_id?: string;
+  user_name?: string;
+  business_day_key?: string | null;
+  open_tables_count?: number;
+};
+
+export async function getUserShiftEvents(dateFrom?: string, dateTo?: string): Promise<{ count: number; events: UserShiftEvent[] }> {
+  const params = new URLSearchParams();
+  if (dateFrom) params.set("dateFrom", dateFrom);
+  if (dateTo) params.set("dateTo", dateTo);
+  const qs = params.toString();
+  const url = qs ? `${API_URL}/security/user-shifts?${qs}` : `${API_URL}/security/user-shifts`;
+  const res = await fetchWithTimeout(url, { headers: headers() });
+  if (!res.ok) throw new Error("Failed to fetch user shift events");
+  return res.json();
+}
+
+export async function getActivationCodes(): Promise<ActivationCode[]> {
+  const res = await fetchWithTimeout(`${API_URL}/security/activation-codes`, { headers: headers() });
+  if (!res.ok) throw new Error("Failed to fetch activation codes");
+  return res.json();
+}
+
+export async function createActivationCode(expiresInMinutes: number): Promise<ActivationCode> {
+  const res = await fetchWithTimeout(`${API_URL}/security/activation-codes`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({ expires_in_minutes: expiresInMinutes }),
+  });
+  if (!res.ok) throw new Error("Failed to create activation code");
+  return res.json();
+}
+
 export async function updateReconciliationInboxConfig(config: { host: string; port?: number; user: string; password: string; secure?: boolean }) {
   const res = await fetchWithTimeout(`${API_URL}/reconciliation/inbox-config`, {
     method: "PUT",
