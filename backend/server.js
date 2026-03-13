@@ -1084,8 +1084,8 @@ app.get("/api/dashboard/stats", authMiddleware, async (req, res) => {
   const dateToStr = (req.query.dateTo || "").toString().trim();
   let summary;
   if (dateFromStr && dateToStr) {
-    const fromBounds = store.getCalendarDayBoundsUTC(dateFromStr);
-    const toBounds = store.getCalendarDayBoundsUTC(dateToStr);
+    const fromBounds = await store.getCalendarDayBoundsForDate(dateFromStr);
+    const toBounds = await store.getCalendarDayBoundsForDate(dateToStr);
     if (fromBounds && toBounds && fromBounds.startTs <= toBounds.endTs) {
       summary = await store.getSalesSummaryForRange(fromBounds.startTs, toBounds.endTs);
     } else {
@@ -1249,8 +1249,8 @@ app.get("/api/dashboard/daily-sales", authMiddleware, async (req, res) => {
   let dayStartTs;
   let dayEndTs;
   if (dateFromStr && dateToStr) {
-    const fromBounds = store.getCalendarDayBoundsUTC(dateFromStr);
-    const toBounds = store.getCalendarDayBoundsUTC(dateToStr);
+    const fromBounds = await store.getCalendarDayBoundsForDate(dateFromStr);
+    const toBounds = await store.getCalendarDayBoundsForDate(dateToStr);
     if (!fromBounds || !toBounds) return res.status(400).json({ error: "invalid_date", message: "dateFrom and dateTo must be YYYY-MM-DD" });
     dayStartTs = fromBounds.startTs;
     dayEndTs = toBounds.endTs;

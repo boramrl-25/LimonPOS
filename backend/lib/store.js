@@ -857,6 +857,13 @@ export function getCalendarDayBounds(dateStr, offsetMinutes = DEFAULT_TIMEZONE_O
   return { startTs, endTs: startTs + dayMs };
 }
 
+/** Async: calendar day bounds for date string using business timezone from settings. Dashboard seçilen tarihi iş diliminde yorumlar. */
+export async function getCalendarDayBoundsForDate(dateStr) {
+  const s = await getSettings();
+  const off = (s?.timezone_offset_minutes != null ? s.timezone_offset_minutes : DEFAULT_TIMEZONE_OFFSET_MINUTES) | 0;
+  return getCalendarDayBounds(dateStr, off);
+}
+
 export async function getDayBounds(dateStr) {
   const s = await getSettings();
   const opening = s.opening_time ?? "07:00";
@@ -927,10 +934,15 @@ export async function getSalesSummaryForRange(startTs, endTs) {
     return created >= startTs && created < endTs && (v.type === "refund_full" || v.type === "recalled_void");
   });
   const fullyVoidedOrderIds = new Set(rangeVoidsForExclusion.map((v) => v.order_id).filter(Boolean));
+  const paymentCreatedByOrder = {};
+  for (const p of payments) {
+    const t = ts(p.created_at) ?? ts(p.createdAt);
+    if (t && (!paymentCreatedByOrder[p.order_id] || paymentCreatedByOrder[p.order_id] < t)) paymentCreatedByOrder[p.order_id] = t;
+  }
   const paidInRange = orders.filter((o) => {
     if (o.status !== "paid") return false;
     if (fullyVoidedOrderIds.has(o.id)) return false;
-    const paidAt = ts(o.paid_at) ?? ts(o.updatedAt) ?? ts(o.createdAt) ?? 0;
+    const paidAt = ts(o.paid_at) ?? paymentCreatedByOrder[o.id] ?? ts(o.updatedAt) ?? ts(o.createdAt) ?? 0;
     return paidAt >= startTs && paidAt < endTs;
   });
   const paidOrderIds = new Set(paidInRange.map((o) => o.id));
