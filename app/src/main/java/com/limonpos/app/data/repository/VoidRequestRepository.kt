@@ -42,4 +42,8 @@ class VoidRequestRepository @Inject constructor(
     suspend fun updateRequest(request: VoidRequestEntity) {
         voidRequestDao.update(request)
     }
+
+    suspend fun deleteRequest(id: String) {
+        voidRequestDao.deleteById(id)
+    }
 }

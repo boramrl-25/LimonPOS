@@ -1489,7 +1489,97 @@ app.get("/api/daily-cash-entry", authMiddleware, async (req, res) => {
   });
 });
 
-// Reconciliation: Cash & Card from UTAP/Bank emails (auto-forward)
+// Daily Transaction: Cash (unlimited) + Card (unlimited, each with ref 1-15 digits)
+app.post("/api/daily-transaction", authMiddleware, async (req, res) => {
+  try {
+    await ensurePrismaReady();
+    const body = req.body || {};
+    const type = (body.type || "cash").toString().toLowerCase().trim();
+    const dateStr = (body.date || "").toString().trim() || new Date().toISOString().slice(0, 10);
+    let bounds = null;
+    try {
+      bounds = await store.getDayBounds(dateStr);
+    } catch (_) {}
+    const todayRange = await store.getTodayRange();
+    const dayStartTs = bounds ? bounds.startTs : todayRange.startTs;
+    const dayEndTs = bounds ? bounds.endTs : todayRange.endTs;
+    const summary = await store.getSalesSummaryForRange(dayStartTs, dayEndTs);
+  if (type === "cash") {
+    const physicalCash = parseFloat(body.physical_cash);
+    if (isNaN(physicalCash) || physicalCash < 0) {
+      return res.status(400).json({ error: "invalid_physical_cash", message: "physical_cash must be a non-negative number" });
+    }
+    const entry = {
+      id: uuid(),
+      type: "cash",
+      date: dateStr,
+      date_ts: dayStartTs,
+      system_cash: summary.totalCash,
+      physical_cash: physicalCash,
+      difference: physicalCash - summary.totalCash,
+      user_id: req.user?.id || "",
+      user_name: req.user?.name || "—",
+      created_at: Date.now(),
+    };
+    await store.appendDailyTransactionEntry(entry);
+    res.json(entry);
+  } else if (type === "card") {
+    const amount = parseFloat(body.amount ?? body.physical_cash ?? 0);
+    const cardRef = String(body.card_reference || body.cardReference || "").replace(/\D/g, "").slice(0, 15);
+    if (isNaN(amount) || amount < 0) {
+      return res.status(400).json({ error: "invalid_amount", message: "amount must be a non-negative number" });
+    }
+    if (cardRef.length < 1) {
+      return res.status(400).json({ error: "invalid_card_reference", message: "card_reference must have at least 1 digit" });
+    }
+    const entry = {
+      id: uuid(),
+      type: "card",
+      date: dateStr,
+      date_ts: dayStartTs,
+      card_reference: cardRef,
+      amount,
+      system_card: summary.totalCard,
+      user_id: req.user?.id || "",
+      user_name: req.user?.name || "—",
+      created_at: Date.now(),
+    };
+    await store.appendDailyTransactionEntry(entry);
+    res.json(entry);
+  } else {
+    return res.status(400).json({ error: "invalid_type", message: "type must be cash or card" });
+  }
+  } catch (err) {
+    console.error("[daily-transaction] POST error:", err?.message || err);
+    res.status(500).json({ error: "server_error", message: String(err?.message || err) });
+  }
+});
+
+app.get("/api/daily-transaction", authMiddleware, async (req, res) => {
+  await ensurePrismaReady();
+  const dateStr = (req.query.date || "").toString().trim() || new Date().toISOString().slice(0, 10);
+  const bounds = await store.getDayBounds(dateStr);
+  if (!bounds) return res.status(400).json({ error: "invalid_date", message: "date must be YYYY-MM-DD" });
+  const all = await store.getDailyTransactionEntries();
+  const dayStart = bounds.startTs;
+  const dayEnd = bounds.endTs;
+  const forDay = all.filter((e) => {
+    const ts = e.date_ts ?? e.created_at ?? 0;
+    return ts >= dayStart && ts < dayEnd;
+  });
+  const cashEntries = forDay.filter((e) => !e.type || e.type === "cash");
+  const cardEntries = forDay.filter((e) => e.type === "card");
+  const summary = await store.getSalesSummaryForRange(dayStart, dayEnd);
+  res.json({
+    date: dateStr,
+    systemCash: summary.totalCash,
+    systemCard: summary.totalCard,
+    cashEntries,
+    cardEntries,
+  });
+});
+
+// Reconciliation: Cash & Card from UTAP/Bank emails
 app.get("/api/reconciliation/inbox-config", authMiddleware, async (req, res) => {
   await ensurePrismaReady();
   const c = await store.getReconciliationInboxConfig();
@@ -2624,8 +2714,13 @@ app.post("/api/payments", authMiddleware, async (req, res) => {
 
   const paymentPayloads = (payments || []).map((p) => {
     const amt = Number(p.amount ?? p.total ?? p.value ?? 0) || 0;
-    const rawMethod = p.method ?? p.payment_method ?? p.paymentMethod ?? p.type ?? p.payment_method_id ?? p.method_id ?? "cash";
-    const method = store.resolveIncomingPaymentMethod(rawMethod, paymentMethods);
+    let rawMethod = p.method ?? p.payment_method ?? p.paymentMethod ?? p.type ?? p.payment_method_id ?? p.method_id ?? "cash";
+    rawMethod = rawMethod == null ? "cash" : String(rawMethod);
+    const m = rawMethod.toLowerCase().trim();
+    let method = "cash";
+    if (m === "card" || m === "2" || m.includes("card") || m.includes("kart") || m.includes("kredi") || m.includes("credit") || m.includes("debit")) method = "card";
+    else if (m === "cash" || m === "1" || m.includes("cash") || m.includes("nakit")) method = "cash";
+    else method = store.resolveIncomingPaymentMethod(rawMethod, paymentMethods);
     return {
       id: p.id ?? `pay_${uuid().slice(0, 8)}`,
       amount: amt,
@@ -2704,11 +2799,12 @@ app.post("/api/payments", authMiddleware, async (req, res) => {
             await store.completePaymentTransaction({ orderId, paymentPayloads, userId, now });
           } else {
             for (const p of paymentPayloads) {
+              const payMethod = (String(p.method || "cash").toLowerCase().trim() === "card") ? "card" : "cash";
               await store.createPayment({
                 id: p.id,
                 order_id: orderId,
                 amount: p.amount,
-                method: p.method || "cash",
+                method: payMethod,
                 received_amount: p.received_amount ?? p.amount,
                 change_amount: p.change_amount ?? 0,
                 user_id: userId,
@@ -2792,9 +2888,13 @@ app.post("/api/voids", authMiddleware, async (req, res) => {
 // Void requests
 app.get("/api/void-requests", authMiddleware, async (req, res) => {
   await ensurePrismaReady();
-  const status = req.query.status || "pending";
+  const status = (req.query.status || "pending").toString().toLowerCase();
   const voidReqs = await store.getVoidRequests();
-  res.json(voidReqs.filter((v) => v.status === status));
+  if (status === "all" || status === "") {
+    res.json(voidReqs.slice(-200));
+  } else {
+    res.json(voidReqs.filter((v) => v.status === status));
+  }
 });
 
 app.post("/api/void-requests", authMiddleware, async (req, res) => {
@@ -2812,7 +2912,23 @@ app.patch("/api/void-requests/:id", authMiddleware, async (req, res) => {
   const vr = voidReqs.find((v) => v.id === req.params.id);
   if (!vr) return res.status(404).json({ error: "Not found" });
   const body = req.body;
-  const updated = await store.updateVoidRequest(req.params.id, { ...vr, status: body.status || "approved", approved_by_supervisor_user_id: body.approved_by_supervisor_user_id, approved_by_supervisor_user_name: body.approved_by_supervisor_user_name, approved_by_supervisor_at: body.approved_by_supervisor_at, approved_by_kds_user_id: body.approved_by_kds_user_id, approved_by_kds_user_name: body.approved_by_kds_user_name, approved_by_kds_at: body.approved_by_kds_at });
+  const newStatus = body.status || "approved";
+  const updated = await store.updateVoidRequest(req.params.id, { ...vr, status: newStatus, approved_by_supervisor_user_id: body.approved_by_supervisor_user_id, approved_by_supervisor_user_name: body.approved_by_supervisor_user_name, approved_by_supervisor_at: body.approved_by_supervisor_at, approved_by_kds_user_id: body.approved_by_kds_user_id, approved_by_kds_user_name: body.approved_by_kds_user_name, approved_by_kds_at: body.approved_by_kds_at });
+  if (newStatus === "approved" && vr.order_id && vr.order_item_id) {
+    try {
+      const items = await store.getOrderItems(vr.order_id);
+      const item = items.find((i) => i.id === vr.order_item_id);
+      if (item) {
+        const amount = (vr.quantity ?? item.quantity) * (vr.price ?? item.price);
+        const voidLogPayload = { id: `void_${uuid().slice(0, 8)}`, type: "post_void", order_id: vr.order_id, order_item_id: vr.order_item_id, product_name: vr.product_name || item.product_name, quantity: vr.quantity ?? item.quantity, price: vr.price ?? item.price, amount, user_name: body.approved_by_supervisor_user_name || "Web", details: "Void approved from web" };
+        await store.createVoidLog(voidLogPayload);
+        await store.deleteOrderItem(vr.order_item_id);
+        await recalcOrderTotal(vr.order_id);
+      }
+    } catch (err) {
+      console.error("[void-request] approve: delete item failed", err?.message);
+    }
+  }
   res.json(updated);
 });
 

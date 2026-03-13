@@ -234,6 +234,18 @@ export async function appendDailyCashEntry(entry) {
   await prisma.settings.update({ where: { id: "default" }, data: { daily_cash_entries: arr } });
 }
 
+export async function appendDailyTransactionEntry(entry) {
+  const s = await getSettings();
+  const arr = Array.isArray(s.daily_cash_entries) ? [...s.daily_cash_entries] : [];
+  arr.push(entry);
+  await prisma.settings.update({ where: { id: "default" }, data: { daily_cash_entries: arr } });
+}
+
+export async function getDailyTransactionEntries() {
+  const s = await getSettings();
+  return (s.daily_cash_entries && Array.isArray(s.daily_cash_entries) ? s.daily_cash_entries : []);
+}
+
 // ============ Device ============
 export async function upsertDevice(id, payload) {
   await prisma.device.upsert({
@@ -435,8 +447,10 @@ export async function deleteOrderItem(id) {
 function normalizePaymentData(data) {
   const num = (v, def = 0) => (v === null || v === undefined ? def : (typeof v === "number" && !Number.isNaN(v) ? v : Number(v) || def));
   const str = (v, def = "") => (v == null ? def : String(v));
-  const rawMethod = str(data.method, "cash").toLowerCase();
-  const method = rawMethod === "card" ? "card" : "cash";
+  const rawMethod = str(data.method, "cash").toLowerCase().trim();
+  let method = "cash";
+  if (rawMethod === "card" || rawMethod === "2" || rawMethod.includes("card") || rawMethod.includes("kart") || rawMethod.includes("kredi") || rawMethod.includes("credit") || rawMethod.includes("debit")) method = "card";
+  else if (rawMethod === "cash" || rawMethod === "1" || rawMethod.includes("cash") || rawMethod.includes("nakit")) method = "cash";
   return {
     id: str(data.id, undefined),
     order_id: str(data.order_id),
@@ -906,10 +920,14 @@ function resolvePaymentMethodCode(method, paymentMethods) {
 export function resolveIncomingPaymentMethod(raw, paymentMethods = []) {
   const list = paymentMethods || [];
   const m = raw == null ? "" : String(raw).toLowerCase().trim();
-  const cashHints = ["cash", "nakit", "naqid", "naqd", "1", "c", "money", "cash_", "pm-cash"];
-  const cardHints = ["card", "kart", "kredi", "credit", "debit", "2", "pos", "visa", "mastercard"];
-  if (m && cashHints.some((h) => m === h || m.startsWith(h) || m.includes(h))) return "cash";
+  if (m === "card") return "card";
+  if (m === "cash") return "cash";
+  if (m.includes("card") || m.includes("kart") || m.includes("kredi") || m.includes("credit") || m.includes("debit") || m.includes("pos") || m.includes("visa") || m.includes("master")) return "card";
+  const cashHints = ["nakit", "naqid", "naqd", "1", "money", "cash_", "pm-cash"];
+  const cardHints = ["kart", "kredi", "credit", "debit", "2", "pos", "visa", "mastercard"];
   if (m && cardHints.some((h) => m === h || m.startsWith(h) || m.includes(h))) return "card";
+  if (m && cashHints.some((h) => m === h || m.startsWith(h) || m.includes(h))) return "cash";
+  if (m === "c") return "cash";
   if (m && list.length > 0) {
     const byId = list.find((pm) => (pm.id || "").toLowerCase() === m);
     const byCode = list.find((pm) => (pm.code || "").toLowerCase() === m);

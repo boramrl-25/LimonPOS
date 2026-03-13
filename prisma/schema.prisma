@@ -298,7 +298,7 @@ model Settings {
   business_operation_log          Json?    // []
   eod_logs                        Json?    // []
   cash_drawer_opens               Json?    // []
-  daily_cash_entries              Json?    // []
+  daily_cash_entries              Json?    // [] (cash + card entries with type)
   custom_roles                    Json?    // []
   reconciliation_imports          Json?    // []
   reconciliation_inbox_config     Json?    // null

@@ -252,13 +252,19 @@ class ApiSyncRepository @Inject constructor(
         val voidedIds = voidLogDao.getVoidedItemIdsForOrder(dto.id).toSet()
         val filteredItems = items.filter { it.id !in voidedIds }
         val localItems = orderItemDao.getOrderItems(dto.id).first()
+        val resolvedOrderStatus = run {
+            val localOrder = orderDao.getOrderById(dto.id)
+            val apiStatus = dto.status
+            if (localOrder?.status == "sent" && (apiStatus == "open" || apiStatus.isNullOrBlank())) "sent"
+            else apiStatus ?: localOrder?.status ?: "open"
+        }
         val orderEntity = OrderEntity(
             id = dto.id,
             tableId = dto.tableId,
             tableNumber = dto.tableNumber,
             waiterId = dto.waiterId,
             waiterName = dto.waiterName,
-            status = dto.status,
+            status = resolvedOrderStatus,
             subtotal = dto.subtotal,
             taxAmount = dto.taxAmount,
             discountPercent = dto.discountPercent,
@@ -494,8 +500,12 @@ class ApiSyncRepository @Inject constructor(
         }
 
         for (item in filteredApiItems) {
-            val local = item.clientLineId?.let { localByClientLineId[it] }
+            var local = item.clientLineId?.let { localByClientLineId[it] }
                 ?: localByApiId[item.id]
+            if (local == null) {
+                val fuzzy = localItems.firstOrNull { it.productId == item.productId && it.quantity == item.quantity && (it.price - item.price).let { d -> d >= -0.01 && d <= 0.01 } && (it.notes ?: "") == (item.notes ?: "") && (it.status == "sent" || it.sentAt != null) }
+                if (fuzzy != null && (fuzzy.status == "sent" || fuzzy.sentAt != null)) local = fuzzy
+            }
             val (resolvedStatus, resolvedDeliveredAt) = resolveStatusForSync(local?.status, local?.deliveredAt, item.status)
             val resolvedSentAt = local?.sentAt ?: item.sentAt
             val resolvedDeliveredAtFinal = resolvedDeliveredAt ?: local?.deliveredAt ?: item.deliveredAt
@@ -666,7 +676,7 @@ class ApiSyncRepository @Inject constructor(
             val res = dto.reservation
             val isReservedFromApi = dto.status == "reserved" || res != null
             val apiSaysFree = dto.status == "free"
-            val useLocalOccupied = !isReservedFromApi && !apiSaysFree && local != null && dto.currentOrderId.isNullOrBlank() && local.currentOrderId != null
+            val useLocalOccupied = !isReservedFromApi && local != null && local.currentOrderId != null && (dto.currentOrderId.isNullOrBlank() || apiSaysFree)
             TableEntity(
                 id = dto.id,
                 number = dto.number.toString(),
@@ -723,13 +733,19 @@ class ApiSyncRepository @Inject constructor(
                 val voidedIds = voidLogDao.getVoidedItemIdsForOrder(dto.id).toSet()
                 val filteredItems = items.filter { it.id !in voidedIds }
                 val localItems = orderItemDao.getOrderItems(dto.id).first()
+                val resOrderStatus = run {
+                    val localOrder = orderDao.getOrderById(dto.id)
+                    val apiStatus = dto.status
+                    if (localOrder?.status == "sent" && (apiStatus == "open" || apiStatus.isNullOrBlank())) "sent"
+                    else apiStatus ?: localOrder?.status ?: "open"
+                }
                 val orderEntity = OrderEntity(
                     id = dto.id,
                     tableId = dto.tableId,
                     tableNumber = dto.tableNumber,
                     waiterId = dto.waiterId,
                     waiterName = dto.waiterName,
-                    status = dto.status,
+                    status = resOrderStatus,
                     subtotal = dto.subtotal,
                     taxAmount = dto.taxAmount,
                     discountPercent = dto.discountPercent,
@@ -766,14 +782,24 @@ class ApiSyncRepository @Inject constructor(
                 if (filteredItems.isEmpty() && localItems.isNotEmpty()) {
                     continue
                 }
-
+                val resolvedOrderStatus = run {
+                    val localOrder = orderDao.getOrderById(dto.id)
+                    val apiStatus = dto.status
+                    if (localOrder?.status == "sent" && (apiStatus == "open" || apiStatus.isNullOrBlank())) "sent"
+                    else apiStatus ?: localOrder?.status ?: "open"
+                }
+                val resolvedTableId = run {
+                    if (dto.tableId == table.id) dto.tableId
+                    else table.id
+                }
+                val resolvedTableNumber = if (resolvedTableId == table.id) table.number else dto.tableNumber
                 val orderEntity = OrderEntity(
                     id = dto.id,
-                    tableId = dto.tableId,
-                    tableNumber = dto.tableNumber,
+                    tableId = resolvedTableId,
+                    tableNumber = resolvedTableNumber,
                     waiterId = dto.waiterId,
                     waiterName = dto.waiterName,
-                    status = dto.status,
+                    status = resolvedOrderStatus,
                     subtotal = dto.subtotal,
                     taxAmount = dto.taxAmount,
                     discountPercent = dto.discountPercent,
@@ -1089,14 +1115,10 @@ class ApiSyncRepository @Inject constructor(
     private suspend fun syncVoidRequests() {
         if (!isOnline()) return
         try {
-            val response = apiService.getVoidRequests("pending")
+            val response = apiService.getVoidRequests("all")
             if (!response.isSuccessful) return
             val dtos = response.body() ?: return
             for (dto in dtos) {
-                val existing = voidRequestDao.getById(dto.id)
-                if (existing != null && existing.status !in listOf("pending")) {
-                    continue
-                }
                 val entity = VoidRequestEntity(
                     id = dto.id,
                     orderId = dto.orderId,
@@ -1117,10 +1139,40 @@ class ApiSyncRepository @Inject constructor(
                     approvedByKdsAt = dto.approvedByKdsAt
                 )
                 voidRequestDao.insert(entity)
+                if (dto.status == "approved" && dto.orderItemId.isNotBlank() && dto.orderId.isNotBlank()) {
+                    var item = orderItemDao.getOrderItemById(dto.orderItemId)
+                    if (item == null) {
+                        val orderItems = orderItemDao.getOrderItems(dto.orderId).first()
+                        // 1) Önce API id (backend order_item.id) ile eşle
+                        item = orderItems.firstOrNull { it.apiId == dto.orderItemId }
+                            // 2) Sonra lokal id ile dene
+                            ?: orderItems.firstOrNull { it.id == dto.orderItemId }
+                            // 3) Son çare: ürün adı + adet + fiyat ile eşleşme
+                            ?: orderItems.firstOrNull {
+                                it.productName == dto.productName &&
+                                    it.quantity == dto.quantity &&
+                                    kotlin.math.abs(it.price - dto.price) < 0.01
+                            }
+                    }
+                    if (item != null) {
+                        orderItemDao.deleteOrderItem(item)
+                        refreshOrderTotals(dto.orderId)
+                    }
+                }
             }
         } catch (e: Exception) {
             Log.e("ApiSync", "syncVoidRequests error: ${e.message}", e)
         }
+    }
+
+    private suspend fun refreshOrderTotals(orderId: String) {
+        val order = orderDao.getOrderById(orderId) ?: return
+        val items = orderItemDao.getOrderItems(orderId).first()
+        val subtotal = items.sumOf { it.price * it.quantity }
+        val taxAmount = order.taxAmount
+        val discount = order.discountPercent / 100.0 * subtotal + order.discountAmount
+        val total = (subtotal + taxAmount - discount).coerceAtLeast(0.0)
+        orderDao.updateOrder(order.copy(subtotal = subtotal, total = total, syncStatus = "PENDING"))
     }
 
     private suspend fun syncClosedBillAccessRequests() {
@@ -1386,13 +1438,19 @@ class ApiSyncRepository @Inject constructor(
             val response = apiService.getOrder(orderId)
             if (!response.isSuccessful) return false
             val dto = response.body() ?: return false
+            val resOrderStatus = run {
+                val localOrder = orderDao.getOrderById(dto.id)
+                val apiStatus = dto.status
+                if (localOrder?.status == "sent" && (apiStatus == "open" || apiStatus.isNullOrBlank())) "sent"
+                else apiStatus ?: localOrder?.status ?: "open"
+            }
             val order = OrderEntity(
                 id = dto.id,
                 tableId = dto.tableId,
                 tableNumber = dto.tableNumber,
                 waiterId = dto.waiterId,
                 waiterName = dto.waiterName,
-                status = dto.status,
+                status = resOrderStatus,
                 subtotal = dto.subtotal,
                 taxAmount = dto.taxAmount,
                 discountPercent = dto.discountPercent,
@@ -1425,6 +1483,11 @@ class ApiSyncRepository @Inject constructor(
         } catch (_: Exception) {
             false
         }
+    }
+
+    /** Call after voiding an item from app so the void log is sent to the server. */
+    suspend fun pushPendingVoidsNow() {
+        pushPendingVoids()
     }
 
     private suspend fun pushPendingVoids() {

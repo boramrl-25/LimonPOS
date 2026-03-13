@@ -65,10 +65,19 @@ fun KdsScreen(
         if (kdsUrl != null) {
             AndroidView(
                 factory = { ctx ->
-                    WebView(ctx).apply {
-                        webViewClient = WebViewClient()
-                        settings.javaScriptEnabled = true
-                        loadUrl(kdsUrl!!)
+                    try {
+                        WebView(ctx).apply {
+                            webViewClient = WebViewClient()
+                            settings.javaScriptEnabled = true
+                            loadUrl(kdsUrl!!)
+                        }
+                    } catch (e: Throwable) {
+                        android.widget.TextView(ctx).apply {
+                            text = "KDS requires Android System WebView.\n\nInstall or update it from Play Store (search: \"Android System WebView\") or enable in Settings → Apps."
+                            setPadding(48, 48, 48, 48)
+                            setTextColor(android.graphics.Color.DKGRAY)
+                            textSize = 16f
+                        }
                     }
                 },
                 modifier = Modifier

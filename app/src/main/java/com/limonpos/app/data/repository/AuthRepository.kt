@@ -145,6 +145,14 @@ class AuthRepository @Inject constructor(
         }
         .map { user -> user?.toUserPermissions()?.kdsModeAccess ?: false }
 
+    /** True if current user can approve void requests (supervisor only; KDS removed). */
+    fun canAccessVoidApprovals(): Flow<Boolean> = sessionManager.currentUserId
+        .flatMapLatest { userId ->
+            if (userId == null) flowOf(null)
+            else userDao.getUserByIdFlow(userId)
+        }
+        .map { user -> user?.role in listOf("admin", "manager", "supervisor") }
+
     /** Current user entity or null if not logged in. */
     suspend fun getCurrentUser(): UserEntity? {
         val userId = sessionManager.getUserId() ?: return null

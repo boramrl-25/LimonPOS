@@ -200,6 +200,12 @@ interface ApiService {
     @POST("daily-cash-entry")
     suspend fun postDailyCashEntry(@Body body: DailyCashEntryRequest): Response<DailyCashEntryDto>
 
+    @GET("daily-transaction")
+    suspend fun getDailyTransaction(@Query("date") date: String?): Response<DailyTransactionResponse>
+
+    @POST("daily-transaction")
+    suspend fun postDailyTransaction(@Body body: DailyTransactionRequest): Response<DailyTransactionEntryDto>
+
     @POST("sync-errors")
     suspend fun reportSyncError(@Body body: Map<String, Any?>): Response<Any>
 

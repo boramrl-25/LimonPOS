@@ -64,9 +64,6 @@ export default function ApprovalsPage() {
         approved_by_supervisor_user_id: WEB_APPROVER.id,
         approved_by_supervisor_user_name: WEB_APPROVER.name,
         approved_by_supervisor_at: Date.now(),
-        approved_by_kds_user_id: WEB_APPROVER.id,
-        approved_by_kds_user_name: WEB_APPROVER.name,
-        approved_by_kds_at: Date.now(),
       });
       await load();
     } catch (e) {

@@ -168,12 +168,7 @@ private fun VoidRequestCard(
                 fontSize = 12.sp
             )
             Text(
-                "KDS: ${request.approvedByKdsUserName?.let { "✓ $it" } ?: "Pending"}",
-                color = if (request.approvedByKdsUserId != null) LimonSuccess else LimonTextSecondary,
-                fontSize = 12.sp
-            )
-            Text(
-                "Both approvals required",
+                "One approval required",
                 color = LimonTextSecondary,
                 fontSize = 11.sp
             )

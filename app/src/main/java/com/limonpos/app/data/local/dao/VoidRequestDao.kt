@@ -17,6 +17,9 @@ interface VoidRequestDao {
     @androidx.room.Update
     suspend fun update(request: VoidRequestEntity)
 
+    @androidx.room.Query("DELETE FROM void_requests WHERE id = :id")
+    suspend fun deleteById(id: String)
+
     @androidx.room.Query("DELETE FROM void_requests")
     suspend fun deleteAll()
 }

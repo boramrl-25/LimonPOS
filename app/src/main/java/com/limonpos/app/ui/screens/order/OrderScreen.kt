@@ -686,6 +686,15 @@ private fun CartBottomSheet(
                         Icon(Icons.Default.Close, contentDescription = "Close", tint = LimonText)
                     }
                 }
+                orderWithItems?.let { ow ->
+                    val ticketNo = "#${ow.order.id.takeLast(8)}"
+                    Text(
+                        "Table ${ow.order.tableNumber} · $ticketNo · ${ow.order.waiterName.ifBlank { "—" }}",
+                        color = LimonTextSecondary,
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
                 Spacer(modifier = Modifier.height(16.dp))
                 if (orderWithItems == null || orderWithItems.items.isEmpty()) {
                     Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {

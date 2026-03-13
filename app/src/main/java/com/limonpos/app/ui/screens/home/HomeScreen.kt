@@ -17,6 +17,7 @@ import com.limonpos.app.ui.theme.*
 @Composable
 fun HomeScreen(
     canAccessKds: Boolean = true,
+    canAccessVoidApprovals: Boolean = false,
     onNavigateToFloorPlan: () -> Unit = {},
     onNavigateToClosedBills: () -> Unit,
     onNavigateToKds: () -> Unit,
@@ -128,7 +129,7 @@ fun HomeScreen(
                     Text("Void Report", color = LimonText, fontWeight = FontWeight.Medium, fontSize = 16.sp)
                 }
             }
-            if (canAccessKds) {
+            if (canAccessVoidApprovals) {
                 OutlinedCard(
                     onClick = onNavigateToVoidApprovals,
                     modifier = Modifier.fillMaxWidth(),
@@ -141,7 +142,7 @@ fun HomeScreen(
                     ) {
                         Icon(Icons.Default.Check, contentDescription = null, tint = LimonPrimary, modifier = Modifier.size(28.dp))
                         Spacer(modifier = Modifier.width(16.dp))
-                        Text("Void Approvals (KDS/Supervisor)", color = LimonText, fontWeight = FontWeight.Medium, fontSize = 16.sp)
+                        Text("Void Approvals", color = LimonText, fontWeight = FontWeight.Medium, fontSize = 16.sp)
                     }
                 }
             }

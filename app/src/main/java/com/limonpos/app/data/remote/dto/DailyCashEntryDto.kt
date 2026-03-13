@@ -22,3 +22,30 @@ data class DailyCashEntryDto(
     @SerializedName("user_name") val userName: String?,
     @SerializedName("created_at") val createdAt: Long?
 )
+
+data class DailyTransactionRequest(
+    @SerializedName("type") val type: String,
+    @SerializedName("physical_cash") val physicalCash: Double? = null,
+    @SerializedName("card_reference") val cardReference: String? = null,
+    @SerializedName("amount") val amount: Double? = null,
+    @SerializedName("date") val date: String? = null
+)
+
+data class DailyTransactionResponse(
+    @SerializedName("date") val date: String?,
+    @SerializedName("systemCash") val systemCash: Double?,
+    @SerializedName("systemCard") val systemCard: Double?,
+    @SerializedName("cashEntries") val cashEntries: List<DailyTransactionEntryDto>?,
+    @SerializedName("cardEntries") val cardEntries: List<DailyTransactionEntryDto>?
+)
+
+data class DailyTransactionEntryDto(
+    @SerializedName("id") val id: String?,
+    @SerializedName("date") val date: String?,
+    @SerializedName("type") val type: String?,
+    @SerializedName("physical_cash") val physicalCash: Double?,
+    @SerializedName("card_reference") val cardReference: String?,
+    @SerializedName("amount") val amount: Double?,
+    @SerializedName("user_name") val userName: String?,
+    @SerializedName("created_at") val createdAt: Long?
+)

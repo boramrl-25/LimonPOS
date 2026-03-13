@@ -362,13 +362,13 @@ class PaymentViewModel @Inject constructor(
     fun completePayment() {
         viewModelScope.launch {
             val ow = _uiState.value.orderWithItems ?: return@launch
+            val orderTotal = ow.order.total
             val splits = _uiState.value.splits.filter { it.amount > 0 }
-            if (splits.isEmpty()) {
+            if (splits.isEmpty() && orderTotal > 0.01) {
                 _uiState.update { it.copy(message = "Add at least one payment") }
                 return@launch
             }
             val totalSplits = splits.sumOf { it.amount }
-            val orderTotal = ow.order.total
             if (totalSplits > orderTotal + 0.01) {
                 _uiState.update { it.copy(message = "Payment cannot exceed total (${CurrencyUtils.format(orderTotal)})") }
                 return@launch
@@ -378,10 +378,14 @@ class PaymentViewModel @Inject constructor(
                 return@launch
             }
             val userId = authRepository.getCurrentUserIdSync() ?: return@launch
+            val effectiveSplits = if (orderTotal <= 0.01 && splits.isEmpty()) {
+                listOf(PaymentSplit("_zero", 0.0, "cash", 0.0, 0.0))
+            } else {
+                splits
+            }
             try {
-                // Save all payments on IO thread
                 withContext(Dispatchers.IO) {
-                    for (split in splits) {
+                    for (split in effectiveSplits) {
                         val received = if (split.method == "cash") split.receivedAmount else split.amount
                         val change = if (split.method == "cash") split.changeAmount else 0.0
                         paymentRepository.createPayment(
@@ -408,7 +412,7 @@ class PaymentViewModel @Inject constructor(
                     val itemSize = printerPreferences.getReceiptItemSize()
                     val receiptSettings = receiptPreferences.getReceiptSettings()
                     val receipt = printerService.buildReceipt(ow.order, ow.items, itemSize, receiptSettings)
-                    val hasCashPayment = splits.any { it.method.equals("cash", true) }
+                    val hasCashPayment = effectiveSplits.any { it.method.equals("cash", true) && it.amount > 0.01 }
                     for (printer in cashierPrinters) {
                         val printResult = printerService.sendToPrinter(printer.ipAddress, printer.port, receipt)
                         if (printResult.isFailure) receiptFailedPrinters.add(printer.name)
@@ -442,7 +446,7 @@ class PaymentViewModel @Inject constructor(
                             apiSyncRepository.pushCloseTable(tableId)
                             apiSyncRepository.pushTableStatesNow()
                         }
-                        val primaryMethod = splits.firstOrNull()?.method ?: "cash"
+                        val primaryMethod = effectiveSplits.firstOrNull()?.method ?: "cash"
                         zohoBooksRepository.pushSalesReceipt(ow.order, ow.items, primaryMethod)
                         if (apiSyncRepository.isOnline()) {
                             apiSyncRepository.syncFromApi()

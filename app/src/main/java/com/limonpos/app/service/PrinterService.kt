@@ -128,6 +128,7 @@ class PrinterService @Inject constructor() {
     ): ByteArray {
         val p = ESCPOSPrinter
         val buffer = mutableListOf<Byte>()
+        val timeStr = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date())
 
         fun addBytes(bytes: ByteArray) = buffer.addAll(bytes.toList())
         fun addText(text: String) = buffer.addAll(text.toByteArray(Charsets.UTF_8).toList())
@@ -135,17 +136,17 @@ class PrinterService @Inject constructor() {
         addBytes(p.INIT)
         addBytes(p.ALIGN_CENTER)
         addBytes(p.DOUBLE_SIZE)
-        addText("** DAILY CASH ENTRY **\n")
+        addText("CASH DEPOSIT\n")
         addBytes(p.NORMAL_SIZE)
-        addText("================================\n")
+        addText("--------------------------------\n")
         addBytes(p.ALIGN_LEFT)
 
         addBytes(p.BOLD_ON)
-        addText("Cash: ${String.format("%.2f", physicalCash)}\n")
-        addText("By: $userName\n")
-        addBytes(p.BOLD_OFF)
+        addText("Amount: ${String.format("%.2f", physicalCash)} AED\n")
+        addText("Deposited by: $userName\n")
+        addText("Time: $timeStr\n")
         addText("Date: $date\n")
-        addText("FID: $fid\n")
+        addBytes(p.BOLD_OFF)
         addText("--------------------------------\n")
         addBytes(p.ALIGN_CENTER)
         addText("\n\n\n")

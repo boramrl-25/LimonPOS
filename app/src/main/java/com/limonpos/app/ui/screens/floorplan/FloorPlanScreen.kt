@@ -295,7 +295,7 @@ fun FloorPlanScreen(
                                 leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null, tint = LimonPrimary) }
                             )
                             DropdownMenuItem(
-                                text = { Text("Daily Cash Entry", color = LimonText) },
+                                text = { Text("Daily Transaction", color = LimonText) },
                                 onClick = {
                                     viewModel.dismissMenu()
                                     onNavigateToDailyCashEntry()

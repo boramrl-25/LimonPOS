@@ -1,7 +1,9 @@
 package com.limonpos.app.ui.screens.dailycashentry
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
@@ -11,14 +13,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.Color
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.limonpos.app.ui.theme.LimonPrimary
-import com.limonpos.app.ui.theme.LimonError
-import com.limonpos.app.ui.theme.LimonText
-import com.limonpos.app.ui.theme.LimonTextSecondary
-import com.limonpos.app.ui.theme.LimonSurface
+import com.limonpos.app.ui.theme.*
+import com.limonpos.app.util.CurrencyUtils
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -32,7 +31,7 @@ fun DailyCashEntryScreen(
     printWarning?.let { message ->
         AlertDialog(
             onDismissRequest = { viewModel.dismissPrintWarning() },
-            title = { Text("Print failed", color = LimonText) },
+            title = { Text("Print Error", color = LimonText) },
             text = { Text(message, color = LimonTextSecondary) },
             confirmButton = {
                 Button(
@@ -44,7 +43,7 @@ fun DailyCashEntryScreen(
             },
             dismissButton = {
                 TextButton(onClick = { viewModel.dismissPrintWarning() }) {
-                    Text("Dismiss", color = LimonTextSecondary)
+                    Text("Close", color = LimonTextSecondary)
                 }
             },
             containerColor = LimonSurface
@@ -55,7 +54,7 @@ fun DailyCashEntryScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text("Daily Cash Entry", fontWeight = FontWeight.Bold, color = LimonText)
+                    Text("Daily Transaction", fontWeight = FontWeight.Bold, color = LimonText)
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -73,63 +72,105 @@ fun DailyCashEntryScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .verticalScroll(rememberScrollState())
                 .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-            OutlinedTextField(
-                value = uiState.physicalCashInput,
-                onValueChange = { viewModel.setPhysicalCashInput(it) },
-                label = { Text("Cash (End of day count)") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                modifier = Modifier.fillMaxWidth(),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = LimonText,
-                    unfocusedTextColor = LimonText,
-                    focusedBorderColor = LimonPrimary,
-                    cursorColor = LimonPrimary
-                )
-            )
-
             uiState.error?.let { err ->
                 Text(err, color = LimonError, fontSize = 14.sp)
             }
 
-            Button(
-                onClick = { viewModel.save() },
+            Card(
                 modifier = Modifier.fillMaxWidth(),
-                enabled = !uiState.isLoading,
-                colors = ButtonDefaults.buttonColors(containerColor = LimonPrimary)
+                colors = CardDefaults.cardColors(containerColor = LimonSurface),
+                shape = MaterialTheme.shapes.medium
             ) {
-                if (uiState.isLoading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        color = androidx.compose.ui.graphics.Color.White
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Cash", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = LimonText)
+                    Text("System cash: ${CurrencyUtils.format(uiState.systemCash)}", fontSize = 13.sp, color = LimonTextSecondary)
+                    OutlinedTextField(
+                        value = uiState.cashInput,
+                        onValueChange = { viewModel.setCashInput(it) },
+                        label = { Text("Cash amount") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = LimonText,
+                            unfocusedTextColor = LimonText,
+                            focusedBorderColor = LimonPrimary,
+                            cursorColor = LimonPrimary
+                        )
                     )
-                    Spacer(Modifier.width(8.dp))
+                    Button(
+                        onClick = { viewModel.saveCash() },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !uiState.isLoading,
+                        colors = ButtonDefaults.buttonColors(containerColor = LimonPrimary)
+                    ) {
+                        if (uiState.isLoading && uiState.lastSavedType == "cash") {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White)
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        Text("Add Cash")
+                    }
+                    if (uiState.cashEntries.isNotEmpty()) {
+                        Text("Today's cash entries: ${uiState.cashEntries.size}", fontSize = 12.sp, color = LimonTextSecondary)
+                    }
                 }
-                Text("Save")
             }
 
-            uiState.savedEntry?.let { entry ->
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = LimonSurface),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        if (uiState.saveSuccess) {
-                            Text("Saved successfully", fontSize = 14.sp, color = LimonPrimary)
-                        }
-                        Text(
-                            "Cash: %.2f".format(entry.physicalCash),
-                            fontSize = 16.sp,
-                            color = LimonText
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = LimonSurface),
+                shape = MaterialTheme.shapes.medium
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Card", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = LimonText)
+                    Text("System card: ${CurrencyUtils.format(uiState.systemCard)}", fontSize = 13.sp, color = LimonTextSecondary)
+                    OutlinedTextField(
+                        value = uiState.cardRefInput,
+                        onValueChange = { viewModel.setCardRefInput(it) },
+                        label = { Text("Card reference (1–15 digits)") },
+                        singleLine = true,
+                        placeholder = { Text("123456789012345") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = LimonText,
+                            unfocusedTextColor = LimonText,
+                            focusedBorderColor = LimonPrimary,
+                            cursorColor = LimonPrimary
                         )
-                        entry.userName?.let { Text("By: $it", fontSize = 12.sp, color = LimonTextSecondary) }
+                    )
+                    OutlinedTextField(
+                        value = uiState.cardAmountInput,
+                        onValueChange = { viewModel.setCardAmountInput(it) },
+                        label = { Text("Card amount") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = LimonText,
+                            unfocusedTextColor = LimonText,
+                            focusedBorderColor = LimonPrimary,
+                            cursorColor = LimonPrimary
+                        )
+                    )
+                    Button(
+                        onClick = { viewModel.saveCard() },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !uiState.isLoading,
+                        colors = ButtonDefaults.buttonColors(containerColor = LimonPrimary)
+                    ) {
+                        if (uiState.isLoading && uiState.lastSavedType == "card") {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White)
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        Text("Add Card")
+                    }
+                    if (uiState.cardEntries.isNotEmpty()) {
+                        Text("Today's card entries: ${uiState.cardEntries.size}", fontSize = 12.sp, color = LimonTextSecondary)
                     }
                 }
             }

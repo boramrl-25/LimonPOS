@@ -202,6 +202,7 @@ fun NavGraph(
                     false -> {
                         val scope = rememberCoroutineScope()
                         val canAccessKds by authRepository.canAccessKds().collectAsState(initial = false)
+                        val canAccessVoidApprovals by authRepository.canAccessVoidApprovals().collectAsState(initial = false)
                         var canAccessClosedBillApprovals by remember { mutableStateOf(false) }
                         val canAccessSettings by authRepository.canAccessSettingsFlow().collectAsState(initial = true)
                         LaunchedEffect(Unit) {
@@ -214,7 +215,7 @@ fun NavGraph(
                             onNavigateToClosedBills = { navController.navigate(Routes.CLOSED_BILLS) },
                             onNavigateToDailyCashEntry = { navController.navigate(Routes.DAILY_CASH_ENTRY) },
                             onNavigateToVoidApprovals = { navController.navigate(Routes.VOID_APPROVALS) },
-                            canAccessVoidApprovals = canAccessKds,
+                            canAccessVoidApprovals = canAccessVoidApprovals,
                             onNavigateToClosedBillAccessApprovals = { navController.navigate(Routes.CLOSED_BILL_ACCESS_APPROVALS) },
                             canAccessClosedBillAccessApprovals = canAccessClosedBillApprovals,
                             onSync = onSync,
@@ -285,9 +286,11 @@ fun NavGraph(
             }
             composable(Routes.HOME) {
                 val canAccessKds by authRepository.canAccessKds().collectAsState(initial = false)
+                val canAccessVoidApprovals by authRepository.canAccessVoidApprovals().collectAsState(initial = false)
                 val homeCanAccessSettings by authRepository.canAccessSettingsFlow().collectAsState(initial = true)
                 HomeScreen(
                     canAccessKds = canAccessKds,
+                    canAccessVoidApprovals = canAccessVoidApprovals,
                     onNavigateToFloorPlan = { navController.navigate(Routes.FLOOR_PLAN) { popUpTo(Routes.FLOOR_PLAN) { inclusive = true }; launchSingleTop = true } },
                     onNavigateToClosedBills = { navController.navigate(Routes.CLOSED_BILLS) },
                     onNavigateToKds = { navController.navigate(Routes.KDS) },

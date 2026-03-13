@@ -3,7 +3,8 @@ package com.limonpos.app.ui.screens.dailycashentry
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.limonpos.app.data.remote.ApiService
-import com.limonpos.app.data.remote.dto.DailyCashEntryRequest
+import com.limonpos.app.data.remote.dto.DailyTransactionRequest
+import com.limonpos.app.data.remote.dto.DailyTransactionEntryDto
 import com.limonpos.app.data.repository.PrinterRepository
 import com.limonpos.app.service.PrinterService
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -17,26 +18,24 @@ import java.util.Date
 import java.util.Locale
 import javax.inject.Inject
 
-/** Data needed to retry print after save. */
-private data class DailyCashPrintData(
+private data class DailyPrintData(
     val physicalCash: Double,
     val userName: String,
     val date: String,
     val fid: String
 )
 
-data class DailyCashEntryUiState(
-    val physicalCashInput: String = "",
-    val savedEntry: DailyCashEntrySaved? = null,
+data class DailyTransactionUiState(
+    val cashInput: String = "",
+    val cardRefInput: String = "",
+    val cardAmountInput: String = "",
+    val cashEntries: List<DailyTransactionEntryDto> = emptyList(),
+    val cardEntries: List<DailyTransactionEntryDto> = emptyList(),
+    val systemCash: Double = 0.0,
+    val systemCard: Double = 0.0,
     val isLoading: Boolean = false,
     val error: String? = null,
-    val saveSuccess: Boolean = false,
-)
-
-data class DailyCashEntrySaved(
-    val physicalCash: Double,
-    val difference: Double,
-    val userName: String?,
+    val lastSavedType: String? = null,
 )
 
 @HiltViewModel
@@ -46,58 +45,138 @@ class DailyCashEntryViewModel @Inject constructor(
     private val printerService: PrinterService
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(DailyCashEntryUiState())
-    val uiState: StateFlow<DailyCashEntryUiState> = _uiState.asStateFlow()
+    private val _uiState = MutableStateFlow(DailyTransactionUiState())
+    val uiState: StateFlow<DailyTransactionUiState> = _uiState.asStateFlow()
 
     private val _printWarning = MutableStateFlow<String?>(null)
     val printWarning: StateFlow<String?> = _printWarning.asStateFlow()
 
-    private var lastPrintData: DailyCashPrintData? = null
+    private var lastPrintData: DailyPrintData? = null
 
-    fun setPhysicalCashInput(value: String) {
-        _uiState.value = _uiState.value.copy(
-            physicalCashInput = value,
-            saveSuccess = false
-        )
+    init {
+        load()
     }
 
-    fun save() {
-        val input = _uiState.value.physicalCashInput.trim()
-        val physicalCash = input.toDoubleOrNull() ?: run {
+    fun load() {
+        viewModelScope.launch {
+            val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+            try {
+                val res = apiService.getDailyTransaction(today)
+                if (res.isSuccessful) {
+                    val body = res.body()
+                    _uiState.value = _uiState.value.copy(
+                        cashEntries = body?.cashEntries ?: emptyList(),
+                        cardEntries = body?.cardEntries ?: emptyList(),
+                        systemCash = body?.systemCash ?: 0.0,
+                        systemCard = body?.systemCard ?: 0.0,
+                        error = null
+                    )
+                }
+            } catch (_: Exception) { }
+        }
+    }
+
+    fun setCashInput(value: String) {
+        _uiState.value = _uiState.value.copy(cashInput = value, error = null)
+    }
+
+    fun setCardRefInput(value: String) {
+        val digits = value.replace(Regex("[^0-9]"), "").take(15)
+        _uiState.value = _uiState.value.copy(cardRefInput = digits, error = null)
+    }
+
+    fun setCardAmountInput(value: String) {
+        _uiState.value = _uiState.value.copy(cardAmountInput = value, error = null)
+    }
+
+    fun saveCash() {
+        val input = _uiState.value.cashInput.trim().replace(',', '.')
+        val amount = input.toDoubleOrNull() ?: run {
             _uiState.value = _uiState.value.copy(error = "Enter a valid amount")
             return
         }
-        if (physicalCash < 0) {
-            _uiState.value = _uiState.value.copy(error = "Amount must be non-negative")
+        if (amount < 0) {
+            _uiState.value = _uiState.value.copy(error = "Amount cannot be negative")
             return
         }
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
             try {
-                val res = apiService.postDailyCashEntry(
-                    DailyCashEntryRequest(physicalCash = physicalCash, date = today)
+                val res = apiService.postDailyTransaction(
+                    DailyTransactionRequest(type = "cash", physicalCash = amount, date = today)
                 )
                 if (res.isSuccessful) {
                     val body = res.body()
-                    val diff = body?.difference ?: 0.0
-                    val userName = body?.userName ?: "—"
-                    val date = body?.date ?: today
-                    val fid = body?.id ?: ""
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        savedEntry = DailyCashEntrySaved(
-                            physicalCash = physicalCash,
-                            difference = diff,
-                            userName = body?.userName
-                        ),
-                        saveSuccess = true,
+                        cashInput = "",
+                        lastSavedType = "cash",
                         error = null
                     )
-                    lastPrintData = DailyCashPrintData(physicalCash, userName, date, fid)
+                    lastPrintData = DailyPrintData(amount, body?.userName ?: "—", body?.date ?: today, body?.id ?: "")
+                    load()
                     tryPrintSlip()
                 } else {
-                    _uiState.value = _uiState.value.copy(isLoading = false, error = "Failed to save")
+                    val fallback = apiService.postDailyCashEntry(
+                        com.limonpos.app.data.remote.dto.DailyCashEntryRequest(physicalCash = amount, date = today)
+                    )
+                    if (fallback.isSuccessful) {
+                        val body = fallback.body()
+                        _uiState.value = _uiState.value.copy(isLoading = false, cashInput = "", lastSavedType = "cash", error = null)
+                        lastPrintData = DailyPrintData(amount, body?.userName ?: "—", body?.date ?: today, body?.id ?: "")
+                        load()
+                        tryPrintSlip()
+                    } else {
+                        _uiState.value = _uiState.value.copy(isLoading = false, error = "Save failed (${res.code()})")
+                    }
+                }
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = e.message ?: "Network error"
+                )
+            }
+        }
+    }
+
+    fun saveCard() {
+        val ref = _uiState.value.cardRefInput
+        val amountStr = _uiState.value.cardAmountInput.trim().replace(',', '.')
+        val amount = amountStr.toDoubleOrNull() ?: run {
+            _uiState.value = _uiState.value.copy(error = "Enter a valid amount")
+            return
+        }
+        if (amount < 0) {
+            _uiState.value = _uiState.value.copy(error = "Amount cannot be negative")
+            return
+        }
+        if (ref.isBlank()) {
+            _uiState.value = _uiState.value.copy(error = "Enter card reference")
+            return
+        }
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+            val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+            try {
+                val res = apiService.postDailyTransaction(
+                    DailyTransactionRequest(type = "card", cardReference = ref, amount = amount, date = today)
+                )
+                if (res.isSuccessful) {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        cardRefInput = "",
+                        cardAmountInput = "",
+                        lastSavedType = "card",
+                        error = null
+                    )
+                    load()
+                } else {
+                    val errBody = res.errorBody()?.string()?.take(300) ?: ""
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        error = "Save failed (${res.code()})${if (errBody.isNotBlank()) ": $errBody" else ""}"
+                    )
                 }
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
@@ -113,7 +192,7 @@ class DailyCashEntryViewModel @Inject constructor(
         val cashierPrinters = printerRepository.getAllPrinters().first()
             .filter { (it.printerType == "cashier" || it.printerType.equals("receipt", true)) && it.ipAddress.isNotBlank() && it.enabled }
         if (cashierPrinters.isEmpty()) {
-            _printWarning.value = "No cashier printer configured. Please add a printer in Settings."
+            _printWarning.value = "No cashier printer. Add one in settings."
             return
         }
         val slip = printerService.buildDailyCashEntrySlip(data.physicalCash, data.userName, data.date, data.fid)
@@ -123,7 +202,7 @@ class DailyCashEntryViewModel @Inject constructor(
             if (result.isFailure) failed.add(printer.name)
         }
         if (failed.isNotEmpty()) {
-            _printWarning.value = "Receipt print failed: ${failed.joinToString(", ")}. Check printer connection."
+            _printWarning.value = "Print failed: ${failed.joinToString(", ")}"
         }
     }
 
