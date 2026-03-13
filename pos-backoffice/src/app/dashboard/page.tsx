@@ -59,8 +59,15 @@ export default function DashboardPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const [ticketModalType, setTicketModalType] = useState<TicketModalType>(null);
-  const [selectedDateFrom, setSelectedDateFrom] = useState<string | null>(null);
-  const [selectedDateTo, setSelectedDateTo] = useState<string | null>(null);
+  const [selectedDateFrom, setSelectedDateFrom] = useState<string | null>(() => {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - 6);
+    return toYYYYMMDD(start);
+  });
+  const [selectedDateTo, setSelectedDateTo] = useState<string | null>(() => {
+    return toYYYYMMDD(new Date());
+  });
   const [openOrders, setOpenOrders] = useState<OpenOrderRow[]>([]);
   const [openOrdersLoading, setOpenOrdersLoading] = useState(false);
   const [closedBillChanges, setClosedBillChanges] = useState<{ count: number; summary: { fullRefunds: number; itemRefunds: number; paymentMethodChanges?: number }; changes: Array<{ id: string; order_id: string; receipt_no: string | null; table_number: string; type: string; product_name: string | null; amount: number; user_name: string; created_at: number; details?: string | null }> } | null>(null);
@@ -176,16 +183,6 @@ export default function DashboardPage() {
     setRefreshing(true);
     await fetchData();
   }
-
-  useEffect(() => {
-    if (selectedDateFrom === null && selectedDateTo === null) {
-      const end = new Date();
-      const start = new Date();
-      start.setDate(start.getDate() - 6);
-      setSelectedDateFrom(toYYYYMMDD(start));
-      setSelectedDateTo(toYYYYMMDD(end));
-    }
-  }, []);
 
   useEffect(() => {
     fetchData();

@@ -832,7 +832,19 @@ export async function getTodayRange() {
   return { startTs, endTs };
 }
 
-/** Calendar day bounds (00:00–24:00 local). Used for date-range dashboard so totals match selected days. */
+/** Calendar day bounds in UTC (00:00 UTC – next day 00:00 UTC). No timezone dependency; DB paid_at is UTC. */
+export function getCalendarDayBoundsUTC(dateStr) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+  if (!match) return null;
+  const y = parseInt(match[1], 10);
+  const m = parseInt(match[2], 10) - 1;
+  const d = parseInt(match[3], 10);
+  const startTs = Date.UTC(y, m, d, 0, 0, 0, 0);
+  const endTs = Date.UTC(y, m, d + 1, 0, 0, 0, 0);
+  return { startTs, endTs };
+}
+
+/** Calendar day bounds (00:00–24:00 local). Used when timezone matters. */
 export function getCalendarDayBounds(dateStr, offsetMinutes = DEFAULT_TIMEZONE_OFFSET_MINUTES) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
   if (!match) return null;
