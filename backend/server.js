@@ -108,6 +108,68 @@ app.get("/api/health", (req, res) => {
   res.json({ ok: true, message: "LimonPOS API", ts: Date.now() });
 });
 
+// Debug: Android'den gelen veriler DB'ye nasıl yansımış? Son N sipariş + item + payment.
+// Sadece web panel token'ı ile erişilsin diye authMiddleware arkasına koyuyoruz.
+app.get("/api/debug/android-latest", authMiddleware, async (req, res) => {
+  await ensurePrismaReady();
+  const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 10));
+  const [orders, orderItems, payments, paymentMethods] = await Promise.all([
+    store.getOrders(),
+    store.getAllOrderItems(),
+    store.getPayments(),
+    store.getAllPaymentMethods(),
+  ]);
+  const sortedOrders = [...orders].sort((a, b) => {
+    const ta = a.createdAt || a.created_at || 0;
+    const tb = b.createdAt || b.created_at || 0;
+    return (tb instanceof Date ? tb.getTime() : tb) - (ta instanceof Date ? ta.getTime() : ta);
+  }).slice(0, limit);
+  const paymentByOrder = payments.reduce((acc, p) => {
+    (acc[p.order_id] ||= []).push(p);
+    return acc;
+  }, {});
+  const resolveCode = (m) => resolvePaymentMethodCode(m, paymentMethods) || "cash";
+  const result = sortedOrders.map((o) => {
+    const items = orderItems.filter((it) => it.order_id === o.id);
+    const pays = paymentByOrder[o.id] || [];
+    return {
+      id: o.id,
+      table_id: o.table_id,
+      table_number: o.table_number,
+      status: o.status,
+      subtotal: o.subtotal,
+      tax_amount: o.tax_amount,
+      discount_percent: o.discount_percent,
+      discount_amount: o.discount_amount,
+      total: o.total,
+      created_at: o.created_at ?? o.createdAt ?? null,
+      paid_at: o.paid_at ?? null,
+      items: items.map((it) => ({
+        id: it.id,
+        product_id: it.product_id,
+        product_name: it.product_name,
+        quantity: it.quantity,
+        price: it.price,
+        notes: it.notes,
+        status: it.status,
+        sent_at: it.sent_at,
+        client_line_id: it.client_line_id,
+      })),
+      payments: pays.map((p) => ({
+        id: p.id,
+        amount: p.amount,
+        raw_method: p.method,
+        resolved_method: resolveCode(p.method),
+        received_amount: p.received_amount,
+        change_amount: p.change_amount,
+        user_id: p.user_id,
+        created_at: p.created_at ?? p.createdAt ?? null,
+      })),
+    };
+  });
+  res.json({ count: result.length, orders: result });
+});
+
 /** Delta Sync: Son 'since' ms'den sonra güncellenen varlıkları döner. Android sadece değişenleri çeker. */
 app.get("/api/sync/delta", authMiddleware, async (req, res) => {
   await ensurePrismaReady();
