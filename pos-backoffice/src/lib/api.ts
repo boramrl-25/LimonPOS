@@ -447,8 +447,13 @@ export async function updateSettings(settings: Partial<Settings>) {
   return res.json();
 }
 
-export async function getDashboardStats() {
-  const res = await fetchWithTimeout(`${API_URL}/dashboard/stats`, { headers: headers() });
+export async function getDashboardStats(dateFrom?: string, dateTo?: string) {
+  const params = new URLSearchParams();
+  if (dateFrom) params.set("dateFrom", dateFrom);
+  if (dateTo) params.set("dateTo", dateTo);
+  const qs = params.toString();
+  const url = qs ? `${API_URL}/dashboard/stats?${qs}` : `${API_URL}/dashboard/stats`;
+  const res = await fetchWithTimeout(url, { headers: headers() });
   if (!res.ok) throw new Error("Failed to fetch dashboard stats");
   return res.json();
 }

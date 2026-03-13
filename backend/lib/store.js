@@ -435,12 +435,13 @@ export async function deleteOrderItem(id) {
 function normalizePaymentData(data) {
   const num = (v, def = 0) => (v === null || v === undefined ? def : (typeof v === "number" && !Number.isNaN(v) ? v : Number(v) || def));
   const str = (v, def = "") => (v == null ? def : String(v));
-  const method = str(data.method, "cash").toLowerCase();
+  const rawMethod = str(data.method, "cash").toLowerCase();
+  const method = rawMethod === "card" ? "card" : "cash";
   return {
     id: str(data.id, undefined),
     order_id: str(data.order_id),
     amount: num(data.amount),
-    method: method === "card" ? "card" : "cash",
+    method,
     received_amount: data.received_amount != null ? num(data.received_amount, data.amount) : num(data.amount),
     change_amount: num(data.change_amount, 0),
     user_id: data.user_id != null ? str(data.user_id) : null,
@@ -466,12 +467,13 @@ export async function completePaymentTransaction({ orderId, paymentPayloads, use
   return prisma.$transaction(async (tx) => {
     for (const p of paymentPayloads) {
       const amount = Number(p.amount) || 0;
+      const method = (String(p.method || "cash").toLowerCase() === "card" ? "card" : "cash");
       await tx.payment.create({
         data: {
           id: p.id,
           order_id: orderId,
           amount,
-          method: String(p.method || "cash").toLowerCase() === "card" ? "card" : "cash",
+          method,
           received_amount: Number(p.received_amount ?? p.amount) || amount,
           change_amount: Number(p.change_amount ?? 0) || 0,
           user_id: userId || null,
@@ -861,6 +863,34 @@ function resolvePaymentMethodCode(method, paymentMethods) {
   if (pm && (pm.code || "").toLowerCase() === "cash") return "cash";
   if (pm && (pm.code || "").toLowerCase() === "card") return "card";
   return null;
+}
+
+/**
+ * SAFETY LAYER: Map any raw Android payment input to "cash" or "card".
+ * Handles: cash, CASH, Nakit, 1, card, CARD, Kredi Kartı, 2, pm-cash, uuid...
+ * Fallback: first payment method from DB, or "cash".
+ * Never returns null - always "cash" or "card".
+ */
+export function resolveIncomingPaymentMethod(raw, paymentMethods = []) {
+  const list = paymentMethods || [];
+  const m = raw == null ? "" : String(raw).toLowerCase().trim();
+  const cashHints = ["cash", "nakit", "naqid", "naqd", "1", "c", "money", "cash_", "pm-cash"];
+  const cardHints = ["card", "kart", "kredi", "credit", "debit", "2", "pos", "visa", "mastercard"];
+  if (m && cashHints.some((h) => m === h || m.startsWith(h) || m.includes(h))) return "cash";
+  if (m && cardHints.some((h) => m === h || m.startsWith(h) || m.includes(h))) return "card";
+  if (m && list.length > 0) {
+    const byId = list.find((pm) => (pm.id || "").toLowerCase() === m);
+    const byCode = list.find((pm) => (pm.code || "").toLowerCase() === m);
+    const byName = list.find((pm) => (pm.name || "").toLowerCase().includes(m) || m.includes((pm.name || "").toLowerCase()));
+    const pm = byId || byCode || byName;
+    if (pm) {
+      const code = (pm.code || "").toLowerCase();
+      if (code === "cash" || code === "card") return code;
+    }
+  }
+  const first = list[0];
+  if (first && (first.code || "").toLowerCase() === "card") return "card";
+  return "cash";
 }
 
 export async function getSalesSummaryForRange(startTs, endTs) {

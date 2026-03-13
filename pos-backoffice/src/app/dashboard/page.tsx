@@ -98,7 +98,7 @@ export default function DashboardPage() {
       const dateForDiscounts = singleDate || toYYYYMMDD(new Date());
       const reconDate = singleDate || toYYYYMMDD(new Date());
       const [statsRes, dailyRes, closedChangesRes, cashDrawerRes, discountsRes, reconRes] = await Promise.all([
-        getDashboardStats(),
+        useRange ? getDashboardStats(from, to) : getDashboardStats(),
         useRange ? getDailySales(undefined, from, to) : getDailySales(singleDate),
         useRange ? getClosedBillChanges(undefined, from, to) : getClosedBillChanges(singleDate).catch(() => ({ count: 0, summary: { fullRefunds: 0, itemRefunds: 0, paymentMethodChanges: 0 }, changes: [] })),
         useRange ? getCashDrawerOpens(undefined, from, to) : getCashDrawerOpens(singleDate).catch(() => ({ count: 0, opens: [] })),
@@ -178,10 +178,26 @@ export default function DashboardPage() {
   }
 
   useEffect(() => {
+    if (selectedDateFrom === null && selectedDateTo === null) {
+      const end = new Date();
+      const start = new Date();
+      start.setDate(start.getDate() - 6);
+      setSelectedDateFrom(toYYYYMMDD(start));
+      setSelectedDateTo(toYYYYMMDD(end));
+    }
+  }, []);
+
+  useEffect(() => {
     fetchData();
     const id = setInterval(fetchData, POLL_INTERVAL_MS);
     return () => clearInterval(id);
   }, [fetchData]);
+
+  useEffect(() => {
+    if (selectedDateFrom != null && selectedDateTo != null) {
+      fetchData();
+    }
+  }, [selectedDateFrom, selectedDateTo, fetchData]);
 
   useEffect(() => {
     getBusinessDayStatus()
@@ -260,6 +276,19 @@ export default function DashboardPage() {
           <input type="date" value={selectedDateTo ?? ""} max={todayStr} onChange={(e) => setSelectedDateTo(e.target.value || null)} className="px-3 py-1.5 rounded-lg bg-slate-700 text-slate-200 border border-slate-600 text-sm" />
           <button type="button" onClick={() => { setSelectedDateFrom(null); setSelectedDateTo(null); }} className={`px-3 py-1.5 rounded-lg text-sm font-medium ${selectedDateFrom === null && selectedDateTo === null ? "bg-sky-600 text-white" : "bg-slate-700 text-slate-300 hover:bg-slate-600"}`}>Today</button>
           <button type="button" onClick={() => { setSelectedDateFrom(yesterdayStr); setSelectedDateTo(yesterdayStr); }} className={`px-3 py-1.5 rounded-lg text-sm font-medium ${selectedDateFrom === yesterdayStr && selectedDateTo === yesterdayStr ? "bg-sky-600 text-white" : "bg-slate-700 text-slate-300 hover:bg-slate-600"}`}>Yesterday</button>
+          <button
+            type="button"
+            onClick={() => {
+              const end = new Date();
+              const start = new Date();
+              start.setDate(start.getDate() - 6);
+              setSelectedDateFrom(toYYYYMMDD(start));
+              setSelectedDateTo(toYYYYMMDD(end));
+            }}
+            className="px-3 py-1.5 rounded-lg text-sm font-medium bg-slate-700 text-slate-300 hover:bg-slate-600"
+          >
+            Last 7 Days
+          </button>
         </div>
         <button onClick={handleRefresh} disabled={refreshing} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors disabled:opacity-50">
           <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />

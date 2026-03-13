@@ -51,8 +51,15 @@ const app = express();
 // PORT env'den alınır; 0.0.0.0 ile dış erişime açılır.
 const PORT = Number(process.env.PORT) || 3002;
 
-// CORS: tüm origin'lere izin (pos.the-limon.com, the-limon.com vb.)
-app.use(cors({ origin: true, credentials: true }));
+// CORS: file:// (origin null), localhost, 127.0.0.1 + tüm origins; Authorization header allow
+app.use(cors({
+  origin: (origin, cb) => {
+    const ok = !origin || origin === "null" || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+    cb(null, ok ? (origin || true) : true);
+  },
+  credentials: true,
+  allowedHeaders: ["Content-Type", "Authorization", "Accept"],
+}));
 app.use(express.json());
 
 const DEFAULT_SETUP = { id: "u1", name: "Setup", pin: "2222", role: "setup", active: 1, permissions: "[]", cash_drawer_permission: 0 };
@@ -1070,9 +1077,23 @@ app.post("/api/eod/run", authMiddleware, async (req, res) => {
 });
 
 // Dashboard stats. Open Tables = only tables that have an order with status open/sent (masaya bağlı açık hesap).
+// Optional: ?dateFrom=YYYY-MM-DD&dateTo=YYYY-MM-DD for date-range sales (matches daily-sales range logic).
 app.get("/api/dashboard/stats", authMiddleware, async (req, res) => {
   await ensurePrismaReady();
-  const summary = await store.getTodaySalesSummary();
+  const dateFromStr = (req.query.dateFrom || "").toString().trim();
+  const dateToStr = (req.query.dateTo || "").toString().trim();
+  let summary;
+  if (dateFromStr && dateToStr) {
+    const fromBounds = await store.getDayBounds(dateFromStr);
+    const toBounds = await store.getDayBounds(dateToStr);
+    if (fromBounds && toBounds && fromBounds.startTs <= toBounds.endTs) {
+      summary = await store.getSalesSummaryForRange(fromBounds.startTs, toBounds.endTs);
+    } else {
+      summary = await store.getTodaySalesSummary();
+    }
+  } else {
+    summary = await store.getTodaySalesSummary();
+  }
   const orders = await store.getOrders();
   const tables = await store.getTables();
   const voidLogs = await store.getVoidLogs();
@@ -2093,13 +2114,12 @@ app.get("/api/orders/discount-requests", authMiddleware, async (req, res) => {
   res.json({ requests: list });
 });
 
-// Orders (full ticket detail: order, items, payments, voids, refunds). Items enriched with product overdue_undelivered_minutes for web floor.
+// Orders (full ticket detail: order, items, payments, voids). Items enriched with product overdue_undelivered_minutes for web floor.
 app.get("/api/orders/:id", authMiddleware, async (req, res) => {
   await ensurePrismaReady();
-  const orders = await store.getOrders();
-  const order = orders.find((o) => o.id === req.params.id);
+  const order = await store.getOrderById(req.params.id);
   if (!order) return res.status(404).json({ error: "Not found" });
-  const rawItems = await store.getOrderItems(order.id);
+  const rawItems = Array.isArray(order.orderItems) ? order.orderItems : await store.getOrderItems(order.id);
   const products = await store.getAllProducts();
   const s = await store.getSettings();
   const defaultOverdue = Math.min(1440, Math.max(1, (s?.overdue_undelivered_minutes ?? 10) | 0));
@@ -2108,11 +2128,11 @@ app.get("/api/orders/:id", authMiddleware, async (req, res) => {
     const overdue_undelivered_minutes = product?.overdue_undelivered_minutes != null ? product.overdue_undelivered_minutes : defaultOverdue;
     return { ...i, overdue_undelivered_minutes };
   });
-  const allPayments = await store.getPayments();
-  const payments = allPayments.filter((p) => p.order_id === order.id);
+  const payments = order.payments || (await store.getPayments()).filter((p) => p.order_id === order.id);
   const allVoids = await store.getVoidLogs();
   const voids = allVoids.filter((v) => v.order_id === order.id);
-  res.json({ ...order, items, payments, voids });
+  const { orderItems, ...orderRest } = order;
+  res.json({ ...orderRest, items, payments, voids });
 });
 
 app.patch("/api/orders/:id", authMiddleware, async (req, res) => {
@@ -2192,10 +2212,12 @@ app.post("/api/orders", authMiddleware, async (req, res) => {
     }
     const itemsArray = body.items ?? body.orderItems ?? body.order_items ?? [];
     const products = await store.getAllProducts();
+    const productIds = new Set((products || []).map((p) => p.id));
     const fallbackProductId = products[0]?.id || "p_unknown";
     for (let i = 0; i < itemsArray.length; i++) {
       const it = itemsArray[i] || {};
-      const prodId = it.product_id ?? it.productId ?? fallbackProductId;
+      let prodId = it.product_id ?? it.productId ?? fallbackProductId;
+      if (!productIds.has(prodId)) prodId = fallbackProductId;
       const prodName = it.product_name ?? it.productName ?? it.name ?? "Item";
       const qty = Number(it.quantity ?? 1) || 1;
       const price = Number(it.price ?? it.unit_price ?? it.unitPrice ?? 0) || 0;
@@ -2251,9 +2273,11 @@ app.post("/api/orders/:id/items", authMiddleware, async (req, res) => {
     console.log("ANDROID_RAW_DATA [POST /api/orders/:id/items]:", JSON.stringify(body));
 
     const products = await store.getAllProducts();
+    const productIdsSet = new Set((products || []).map((p) => p.id));
     const fallbackProductId = products[0]?.id || "p_unknown";
     const clientLineId = body.client_line_id ?? body.clientLineId ?? null;
-    const productId = body.product_id ?? body.productId ?? fallbackProductId;
+    let productId = body.product_id ?? body.productId ?? fallbackProductId;
+    if (!productIdsSet.has(productId)) productId = fallbackProductId;
     const productName = body.product_name ?? body.productName ?? body.name ?? "Item";
     const quantity = Number(body.quantity ?? 1) || 1;
     const price = Number(body.price ?? body.unit_price ?? body.unitPrice ?? 0) || 0;
@@ -2489,8 +2513,9 @@ app.post("/api/payments", authMiddleware, async (req, res) => {
     const body = req.body || {};
     console.log("ANDROID_RAW_DATA [POST /api/payments]:", JSON.stringify(body));
 
-    const userId = req.query.user_id ?? req.user?.id ?? body.user_id ?? body.userId;
-    const orderId = body.order_id ?? body.orderId;
+    const userId = req.query.user_id ?? req.user?.id ?? body.user_id ?? body.userId ?? null;
+    let orderId = body.order_id ?? body.orderId ?? null;
+    if (!orderId) return res.status(400).json({ error: "order_id or orderId required" });
     const paymentsRaw = body.payments ?? body.payment ?? body.payment_methods ?? [];
     const payments = Array.isArray(paymentsRaw) ? paymentsRaw : [paymentsRaw].filter(Boolean);
     console.log("[Zoho] POST /api/payments received:", orderId, "payments:", payments?.length, "total:", payments?.reduce((s, p) => s + (Number(p.amount) || 0), 0));
@@ -2499,6 +2524,7 @@ app.post("/api/payments", authMiddleware, async (req, res) => {
   const order = await store.getOrderById(orderId);
   const items = await store.getOrderItems(orderId);
   const existingPayments = await store.getPayments();
+  const paymentMethods = await store.getAllPaymentMethods();
   const totalExisting = existingPayments.filter((p) => p.order_id === orderId).reduce((s, p) => s + p.amount, 0);
   const totalNew = (payments || []).reduce((s, p) => s + (Number(p.amount) || 0), 0);
   const totalPaid = totalExisting + totalNew;
@@ -2520,11 +2546,12 @@ app.post("/api/payments", authMiddleware, async (req, res) => {
 
   const paymentPayloads = (payments || []).map((p) => {
     const amt = Number(p.amount ?? p.total ?? p.value ?? 0) || 0;
-    const meth = p.method ?? p.payment_method ?? p.type ?? "cash";
+    const rawMethod = p.method ?? p.payment_method ?? p.paymentMethod ?? p.type ?? p.payment_method_id ?? p.method_id ?? "cash";
+    const method = store.resolveIncomingPaymentMethod(rawMethod, paymentMethods);
     return {
       id: p.id ?? `pay_${uuid().slice(0, 8)}`,
       amount: amt,
-      method: String(meth).toLowerCase() === "card" ? "card" : "cash",
+      method,
       received_amount: Number(p.received_amount ?? p.receivedAmount ?? p.amount ?? amt) || amt,
       change_amount: Number(p.change_amount ?? p.changeAmount ?? 0) || 0,
     };
@@ -2565,9 +2592,11 @@ app.post("/api/payments", authMiddleware, async (req, res) => {
         });
         const itemsArray = orderData.items ?? orderData.orderItems ?? [];
         const products = await store.getAllProducts();
+        const productIdsSet = new Set((products || []).map((p) => p.id));
         const fallbackPid = products[0]?.id || "p_unknown";
         for (const it of itemsArray) {
-          const pid = it.product_id ?? it.productId ?? fallbackPid;
+          let pid = it.product_id ?? it.productId ?? fallbackPid;
+          if (!productIdsSet.has(pid)) pid = fallbackPid;
           const pname = it.product_name ?? it.productName ?? it.name ?? "Item";
           const qty = Number(it.quantity ?? 1) || 1;
           const pr = Number(it.price ?? it.unit_price ?? it.unitPrice ?? 0) || 0;
