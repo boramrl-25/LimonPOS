@@ -2207,8 +2207,10 @@ app.get("/api/orders/:id", authMiddleware, async (req, res) => {
   const payments = Array.isArray(order.payments) ? order.payments : (await store.getPayments()).filter((p) => p.order_id === order.id);
   const allVoids = await store.getVoidLogs();
   const voids = allVoids.filter((v) => v.order_id === order.id);
-  const { orderItems, ...orderRest } = order;
-  res.json({ ...orderRest, items, payments, voids });
+  const { orderItems, created_at, paid_at, createdAt, ...orderRest } = order;
+  const createdAtMs = created_at ? toTs(created_at) : toTs(createdAt);
+  const paidAtMs = paid_at ? toTs(paid_at) : null;
+  res.json({ ...orderRest, created_at: createdAtMs, paid_at: paidAtMs, items, payments, voids });
 });
 
 app.patch("/api/orders/:id", authMiddleware, async (req, res) => {
