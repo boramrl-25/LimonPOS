@@ -51,10 +51,10 @@ class PaymentRepository @Inject constructor(
                 syncStatus = "PENDING"
             )
             paymentDao.insertPayment(payment)
-            // Her ödeme alındığında, bağlantı durumundan bağımsız olarak backend'e push etmeyi dene.
-            // ApiSyncRepository.pushPayment zaten kendi içinde isOnline + retry mantığını yönetiyor.
-            val pushed = apiSyncRepository.pushPayment(orderId, amount, method, receivedAmount, changeAmount, userId)
-            if (pushed) paymentDao.updatePayment(payment.copy(syncStatus = "SYNCED"))
+            if (apiSyncRepository.isOnline()) {
+                val pushed = apiSyncRepository.pushPayment(orderId, amount, method, receivedAmount, changeAmount, userId)
+                if (pushed) paymentDao.updatePayment(payment.copy(syncStatus = "SYNCED"))
+            }
         }
     }
 }
