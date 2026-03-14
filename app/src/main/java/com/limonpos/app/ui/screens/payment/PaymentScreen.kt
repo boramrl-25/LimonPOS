@@ -245,7 +245,7 @@ fun PaymentScreen(
                         onUpdateSplit = { id, amt, method, received, change ->
                             viewModel.updateSplit(id, amt, method, received, change)
                         },
-                        onPaySplit = { viewModel.paySplit(it) },
+                        onPaySplit = { id, amt, meth -> viewModel.paySplit(id, amt, meth) },
                         onCancelPayment = { viewModel.cancelPayment(it) },
                         isRecalledOrder = uiState.isRecalledOrder,
                         onClearPreviousPayments = { viewModel.clearPreviousPaymentsForRecalled() }
@@ -382,12 +382,12 @@ private fun SplitPaymentDialog(
     onDismiss: () -> Unit,
     onEnsureSplit: () -> Unit,
     onUpdateSplit: (id: String, amount: Double, method: String, received: Double, change: Double) -> Unit,
-    onPaySplit: (id: String) -> Unit,
+    onPaySplit: (id: String, amount: Double, method: String) -> Unit,
     onCancelPayment: (id: String) -> Unit,
     isRecalledOrder: Boolean,
     onClearPreviousPayments: () -> Unit
 ) {
-    LaunchedEffect(splits.size) {
+    LaunchedEffect(splits.size, completedPayments.size) {
         if (splits.isEmpty()) onEnsureSplit()
     }
     Dialog(
@@ -402,6 +402,7 @@ private fun SplitPaymentDialog(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(16.dp)
+                    .verticalScroll(rememberScrollState())
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -456,28 +457,41 @@ private fun SplitPaymentDialog(
                     }
                 }
                 Spacer(Modifier.height(16.dp))
+                Text("Next payment", fontWeight = FontWeight.Bold, color = LimonText, fontSize = 14.sp)
+                Spacer(Modifier.height(8.dp))
                 splits.firstOrNull()?.let { split ->
-                    SplitRow(
-                        split = split,
-                        orderTotal = orderTotal,
-                        otherSplitsTotal = totalPaid - splits.sumOf { it.amount },
-                        isFirstSplit = completedPayments.isEmpty(),
-                        buttonsEnabled = buttonsEnabled,
-                        onUpdate = { amt, method, received, change ->
-                            onUpdateSplit(split.id, amt, method, received, change)
-                        },
-                        onRemove = { },
-                        onPay = { onPaySplit(split.id) },
-                        showRemove = false
-                    )
+                    val remainingBalance = orderTotal - (totalPaid - splits.sumOf { it.amount })
+                    key("${split.id}_${completedPayments.size}") {
+                        SplitRow(
+                            split = split,
+                            orderTotal = orderTotal,
+                            remainingBalance = remainingBalance,
+                            isFirstSplit = completedPayments.isEmpty(),
+                            buttonsEnabled = buttonsEnabled,
+                            onUpdate = { amt, method, received, change ->
+                                onUpdateSplit(split.id, amt, method, received, change)
+                            },
+                            onRemove = { },
+                            onPay = { amt, meth -> onPaySplit(split.id, amt, meth) },
+                            showRemove = false
+                        )
+                    }
                 }
                 if (completedPayments.isNotEmpty()) {
                     Spacer(Modifier.height(16.dp))
-                    Text("Previous payments", fontWeight = FontWeight.Bold, color = LimonText, fontSize = 14.sp)
-                    Spacer(Modifier.height(8.dp))
-                    completedPayments.forEach { payment ->
-                        CompletedPaymentRow(payment = payment, onCancel = { onCancelPayment(payment.id) }, cancelEnabled = buttonsEnabled)
-                        Spacer(Modifier.height(4.dp))
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = LimonSurface),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text("Previous payments", fontWeight = FontWeight.Bold, color = LimonText, fontSize = 14.sp)
+                            Spacer(Modifier.height(12.dp))
+                            completedPayments.sortedBy { it.createdAt }.forEachIndexed { index, payment ->
+                                if (index > 0) Spacer(Modifier.height(8.dp))
+                                CompletedPaymentRowInCard(payment = payment, onCancel = { onCancelPayment(payment.id) }, cancelEnabled = buttonsEnabled)
+                            }
+                        }
                     }
                 }
                 if (isRecalledOrder && completedPayments.isNotEmpty()) {
@@ -562,36 +576,28 @@ private fun PaymentOrderItemRow(item: OrderItemEntity) {
 }
 
 @Composable
-private fun CompletedPaymentRow(
+private fun CompletedPaymentRowInCard(
     payment: PaymentEntity,
     onCancel: () -> Unit,
     cancelEnabled: Boolean = true
 ) {
-    Card(
+    Row(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = LimonSurface.copy(alpha = 0.7f)),
-        shape = RoundedCornerShape(8.dp)
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = payment.method.uppercase(),
-                    fontWeight = FontWeight.Bold,
-                    color = LimonPrimary,
-                    fontSize = 14.sp,
-                    modifier = Modifier.padding(end = 12.dp)
-                )
-                Text(CurrencyUtils.format(payment.amount), color = LimonText, fontSize = 14.sp)
-            }
-                    TextButton(onClick = onCancel, enabled = cancelEnabled) {
-                        Text("Cancel", color = LimonError, fontSize = 14.sp)
-                    }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = payment.method.uppercase(),
+                fontWeight = FontWeight.Bold,
+                color = LimonPrimary,
+                fontSize = 14.sp,
+                modifier = Modifier.padding(end = 12.dp)
+            )
+            Text(CurrencyUtils.format(payment.amount), color = LimonText, fontSize = 14.sp)
+        }
+        TextButton(onClick = onCancel, enabled = cancelEnabled) {
+            Text("Cancel", color = LimonError, fontSize = 14.sp)
         }
     }
 }
@@ -601,15 +607,15 @@ private fun CompletedPaymentRow(
 private fun SplitRow(
     split: PaymentSplit,
     orderTotal: Double,
-    otherSplitsTotal: Double = 0.0,
+    remainingBalance: Double = 0.0,
     isFirstSplit: Boolean = false,
     buttonsEnabled: Boolean = true,
     onUpdate: (amount: Double, method: String, received: Double, change: Double) -> Unit,
     onRemove: () -> Unit,
-    onPay: () -> Unit = {},
+    onPay: (amount: Double, method: String) -> Unit = { _, _ -> },
     showRemove: Boolean = true
 ) {
-    val balanceAmount = (orderTotal - otherSplitsTotal).coerceAtLeast(0.0)
+    val maxAmount = remainingBalance.coerceAtLeast(0.0)
     // First split: no Balance button, amount stays empty (user types). Second+: Balance button, amount fills only when Balance pressed.
     var amountStr by remember(split.id) {
         mutableStateOf(if (split.amount > 0) "%.2f".format(split.amount) else "")
@@ -665,68 +671,80 @@ private fun SplitRow(
                         )
                     }
                 } else {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        FilterChip(
-                            selected = true,
-                            onClick = { },
-                            label = { Text(if (method == "cash") "Cash" else "Card", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color.Black) },
-                            modifier = Modifier.heightIn(min = 52.dp),
-                            colors = FilterChipDefaults.filterChipColors(selectedContainerColor = LimonPrimary, containerColor = LimonSurface, selectedLabelColor = Color.Black, labelColor = LimonText)
-                        )
-                        OutlinedTextField(
-                            value = amountStr,
-                            enabled = buttonsEnabled,
-                            onValueChange = {
-                                val raw = it.toDoubleOrNull() ?: 0.0
-                                val v = raw.coerceIn(0.0, balanceAmount)
-                                amountStr = when {
-                                    it.isEmpty() -> ""
-                                    raw > balanceAmount -> "%.2f".format(v)
-                                    else -> it
-                                }
-                                val received = if (method == "cash") v else 0.0
-                                onUpdate(v, method, received, 0.0)
-                            },
-                            label = { Text("Amount") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            singleLine = true,
-                            modifier = Modifier
-                                .weight(1f)
-                                .widthIn(min = 100.dp)
-                                .heightIn(min = 52.dp),
-                            textStyle = LocalTextStyle.current.copy(fontSize = 18.sp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = LimonText,
-                                unfocusedTextColor = LimonText,
-                                focusedBorderColor = LimonPrimary,
-                                unfocusedBorderColor = LimonTextSecondary
-                            )
-                        )
-                        if (showBalanceButton) {
-                            Button(
+                    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            FilterChip(
+                                selected = true,
                                 onClick = {
-                                    amountStr = "%.2f".format(balanceAmount)
-                                    val received = if (method == "cash") balanceAmount else 0.0
-                                    onUpdate(balanceAmount, method, received, 0.0)
+                                    method = ""
+                                    amountStr = ""
+                                    onUpdate(0.0, "", 0.0, 0.0)
                                 },
                                 enabled = buttonsEnabled,
+                                label = { Text(if (method == "cash") "Cash" else "Card", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color.Black) },
+                                modifier = Modifier.heightIn(min = 52.dp),
+                                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = LimonPrimary, containerColor = LimonSurface, selectedLabelColor = Color.Black, labelColor = LimonText)
+                            )
+                            OutlinedTextField(
+                                value = amountStr,
+                                enabled = buttonsEnabled,
+                                onValueChange = {
+                                    val raw = it.toDoubleOrNull() ?: 0.0
+                                    val v = raw.coerceIn(0.0, maxAmount)
+                                    amountStr = when {
+                                        it.isEmpty() -> ""
+                                        raw > maxAmount -> "%.2f".format(v)
+                                        else -> it
+                                    }
+                                    val received = if (method == "cash") v else 0.0
+                                    onUpdate(v, method, received, 0.0)
+                                },
+                                label = { Text("Amount") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                singleLine = true,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .widthIn(min = 100.dp)
+                                    .heightIn(min = 52.dp),
+                                textStyle = LocalTextStyle.current.copy(fontSize = 18.sp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedTextColor = LimonText,
+                                    unfocusedTextColor = LimonText,
+                                    focusedBorderColor = LimonPrimary,
+                                    unfocusedBorderColor = LimonTextSecondary
+                                )
+                            )
+                            Button(
+                                onClick = {
+                                    val amt = amountStr.toDoubleOrNull() ?: 0.0
+                                    val rec = if (method == "cash") amt else 0.0
+                                    onUpdate(amt, method, rec, 0.0)
+                                    onPay(amt, method)
+                                },
+                                enabled = buttonsEnabled && (amountStr.toDoubleOrNull() ?: 0.0) >= 0.01,
                                 modifier = Modifier.heightIn(min = 48.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = LimonPrimary)
+                                colors = ButtonDefaults.buttonColors(containerColor = LimonSuccess)
                             ) {
-                                Text("Bal", color = Color.Black, fontWeight = FontWeight.Bold)
+                                Text("Pay", color = Color.Black, fontWeight = FontWeight.Bold)
                             }
                         }
-                        Button(
-                            onClick = onPay,
-                            enabled = buttonsEnabled,
-                            modifier = Modifier.heightIn(min = 48.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = LimonSuccess)
-                        ) {
-                            Text("Pay", color = Color.Black, fontWeight = FontWeight.Bold)
+                        if (showBalanceButton) {
+                            OutlinedButton(
+                                onClick = {
+                                    amountStr = "%.2f".format(maxAmount)
+                                    val received = if (method == "cash") maxAmount else 0.0
+                                    onUpdate(maxAmount, method, received, 0.0)
+                                },
+                                enabled = buttonsEnabled,
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = LimonPrimary)
+                            ) {
+                                Text("Balance: ${CurrencyUtils.format(maxAmount)}", fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }

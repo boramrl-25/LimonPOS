@@ -3084,6 +3084,7 @@ app.post("/api/payments", authMiddleware, async (req, res) => {
           if (Math.abs(totPaid - totOrd) < 0.01) {
             await store.completePaymentTransaction({ orderId, paymentPayloads, userId, now });
           } else {
+            // Partial/split payment: only add payments, do NOT mark order paid
             for (const p of paymentPayloads) {
               const payMethod = (String(p.method || "cash").toLowerCase().trim() === "card") ? "card" : "cash";
               await store.createPayment({
@@ -3097,7 +3098,6 @@ app.post("/api/payments", authMiddleware, async (req, res) => {
                 created_at: new Date(now),
               });
             }
-            await store.updateOrder(orderId, { status: "paid", paid_at: new Date(now) });
           }
         }
         return res.json({ success: true, created: true });
@@ -3121,6 +3121,7 @@ app.post("/api/payments", authMiddleware, async (req, res) => {
         now,
       });
     } else {
+      // Partial/split payment: only add payments, do NOT mark order paid until full amount received
       for (const p of paymentPayloads) {
         await store.createPayment({
           id: p.id,
@@ -3133,13 +3134,6 @@ app.post("/api/payments", authMiddleware, async (req, res) => {
           created_at: new Date(now),
         });
       }
-      const totalPaidSum = paymentPayloads.reduce((s, p) => s + (Number(p.amount) || 0), 0);
-      await store.updateOrder(orderId, {
-        status: "paid",
-        paid_at: new Date(now),
-        total: totalPaidSum,
-        subtotal: order.subtotal || totalPaidSum,
-      });
     }
   }
 

@@ -690,6 +690,7 @@ class ApiSyncRepository @Inject constructor(
             return
         }
         val localAll = tableDao.getAllTablesIncludingOrphaned()
+        val localById = localAll.associateBy { it.id }
         val localOccupied = localAll.filter { it.currentOrderId != null }.associateBy { it.id }
         val apiIds = dtos.map { it.id }.toSet()
         val orderIdsClosedByApi = mutableSetOf<String>()
@@ -699,11 +700,16 @@ class ApiSyncRepository @Inject constructor(
             }
         }
         val entities = dtos.map { dto ->
-            val local = localOccupied[dto.id]
+            val localOccupiedRow = localOccupied[dto.id]
+            val localAny = localById[dto.id]
             val res = dto.reservation
             val isReservedFromApi = dto.status == "reserved" || res != null
             val apiSaysFree = dto.status == "free"
-            val useLocalOccupied = !isReservedFromApi && local != null && local.currentOrderId != null && (dto.currentOrderId.isNullOrBlank() || apiSaysFree)
+            val useLocalOccupied = !isReservedFromApi && localOccupiedRow != null && localOccupiedRow.currentOrderId != null && (dto.currentOrderId.isNullOrBlank() || apiSaysFree)
+            // Local table is free but API says occupied: prefer local (don't reopen - API may not have our close yet)
+            val apiSaysOccupied = !dto.currentOrderId.isNullOrBlank()
+            val localSaysFree = localAny != null && localAny.currentOrderId.isNullOrBlank()
+            val useLocalFree = !isReservedFromApi && localSaysFree && apiSaysOccupied
             TableEntity(
                 id = dto.id,
                 number = dto.number.toString(),
@@ -712,14 +718,35 @@ class ApiSyncRepository @Inject constructor(
                 floor = dto.floor,
                 status = when {
                     isReservedFromApi -> "reserved"
-                    useLocalOccupied -> local!!.status
+                    useLocalFree -> "free"
+                    useLocalOccupied -> localOccupiedRow!!.status
                     else -> dto.status
                 },
-                currentOrderId = if (useLocalOccupied) local!!.currentOrderId else dto.currentOrderId,
-                guestCount = if (useLocalOccupied) local!!.guestCount else dto.guestCount,
-                waiterId = if (useLocalOccupied) local!!.waiterId else dto.waiterId,
-                waiterName = if (useLocalOccupied) local!!.waiterName else dto.waiterName,
-                openedAt = if (useLocalOccupied) local!!.openedAt else dto.openedAt?.let { parseIsoDate(it) },
+                currentOrderId = when {
+                    useLocalFree -> null
+                    useLocalOccupied -> localOccupiedRow!!.currentOrderId
+                    else -> dto.currentOrderId
+                },
+                guestCount = when {
+                    useLocalFree -> 0
+                    useLocalOccupied -> localOccupiedRow!!.guestCount
+                    else -> dto.guestCount ?: 0
+                },
+                waiterId = when {
+                    useLocalFree -> null
+                    useLocalOccupied -> localOccupiedRow!!.waiterId
+                    else -> dto.waiterId
+                },
+                waiterName = when {
+                    useLocalFree -> null
+                    useLocalOccupied -> localOccupiedRow!!.waiterName
+                    else -> dto.waiterName
+                },
+                openedAt = when {
+                    useLocalFree -> null
+                    useLocalOccupied -> localOccupiedRow!!.openedAt
+                    else -> dto.openedAt?.let { parseIsoDate(it) }
+                },
                 syncStatus = "SYNCED",
                 x = dto.x,
                 y = dto.y,
