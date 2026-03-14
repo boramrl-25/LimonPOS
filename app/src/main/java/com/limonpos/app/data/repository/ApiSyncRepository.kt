@@ -250,7 +250,9 @@ class ApiSyncRepository @Inject constructor(
         val dto = res.body() ?: return false
         val items = dto.items ?: emptyList()
         val voidedIds = voidLogDao.getVoidedItemIdsForOrder(dto.id).toSet()
-        val filteredItems = items.filter { it.id !in voidedIds }
+        val filteredItems = items.filter { item ->
+            item.id !in voidedIds && (item.clientLineId == null || item.clientLineId !in voidedIds)
+        }
         val localItems = orderItemDao.getOrderItems(dto.id).first()
         val resolvedOrderStatus = run {
             val localOrder = orderDao.getOrderById(dto.id)
@@ -756,7 +758,9 @@ class ApiSyncRepository @Inject constructor(
                 val dto = resp.body() ?: continue
                 val items = dto.items ?: emptyList()
                 val voidedIds = voidLogDao.getVoidedItemIdsForOrder(dto.id).toSet()
-                val filteredItems = items.filter { it.id !in voidedIds }
+                val filteredItems = items.filter { item ->
+                    item.id !in voidedIds && (item.clientLineId == null || item.clientLineId !in voidedIds)
+                }
                 val localItems = orderItemDao.getOrderItems(dto.id).first()
                 val resOrderStatus = run {
                     val localOrder = orderDao.getOrderById(dto.id)
@@ -801,7 +805,9 @@ class ApiSyncRepository @Inject constructor(
                 val items = dto.items ?: emptyList()
 
                 val voidedIds = voidLogDao.getVoidedItemIdsForOrder(dto.id).toSet()
-                val filteredItems = items.filter { it.id !in voidedIds }
+                val filteredItems = items.filter { item ->
+                    item.id !in voidedIds && (item.clientLineId == null || item.clientLineId !in voidedIds)
+                }
                 val localItems = orderItemDao.getOrderItems(dto.id).first()
 
                 if (filteredItems.isEmpty() && localItems.isNotEmpty()) {

@@ -2990,6 +2990,14 @@ app.post("/api/payments", authMiddleware, async (req, res) => {
     willPushZoho,
   });
 
+  const orderTotal = order ? (order.total || 0) : 0;
+  if (order && totalPaid > orderTotal + 0.01) {
+    return res.status(400).json({
+      error: "OVERPAYMENT_NOT_ALLOWED",
+      message: "Payment total cannot exceed order total. Excess payments are not accepted.",
+    });
+  }
+
   const paymentPayloads = (payments || []).map((p) => {
     const amt = Number(p.amount ?? p.total ?? p.value ?? 0) || 0;
     let rawMethod = p.method ?? p.payment_method ?? p.paymentMethod ?? p.type ?? p.payment_method_id ?? p.method_id ?? "cash";
@@ -3388,7 +3396,7 @@ app.post("/api/settings/clear-sales-by-date-range", authMiddleware, async (req, 
 app.get("/api/zoho/callback", (req, res) => {
   const code = req.query?.code;
   const frontendUrl = process.env.FRONTEND_URL || "https://pos.the-limon.com";
-  const target = `${frontendUrl.replace(/\/$/, "")}/pos/settings/zoho${code ? `?code=${encodeURIComponent(String(code))}` : ""}`;
+  const target = `${frontendUrl.replace(/\/$/, "")}/settings/zoho${code ? `?code=${encodeURIComponent(String(code))}` : ""}`;
   res.redirect(302, target);
 });
 
@@ -3570,7 +3578,7 @@ app.get("/", (req, res) => {
       <h1>LimonPOS API</h1>
       <p>API çalışıyor.</p>
       <p><a href="/api/health">/api/health</a> – sağlık kontrolü</p>
-      <p><strong>Backoffice:</strong> <a href="http://localhost:3000/pos">http://localhost:3000/pos</a></p>
+      <p><strong>Backoffice:</strong> <a href="http://localhost:3000">http://localhost:3000</a></p>
     </body>
     </html>
   `);

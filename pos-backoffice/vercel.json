@@ -1,6 +1,1 @@
-{
-  "redirects": [
-    { "source": "/login", "destination": "/pos/login", "permanent": false },
-    { "source": "/", "destination": "/pos", "permanent": false }
-  ]
-}
+{}

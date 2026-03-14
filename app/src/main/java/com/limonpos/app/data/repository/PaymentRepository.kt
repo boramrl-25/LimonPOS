@@ -53,8 +53,16 @@ class PaymentRepository @Inject constructor(
             paymentDao.insertPayment(payment)
             if (apiSyncRepository.isOnline()) {
                 val pushResult = apiSyncRepository.pushPayment(orderId, amount, method, receivedAmount, changeAmount, userId)
-                if (pushResult.isSuccess) paymentDao.updatePayment(payment.copy(syncStatus = "SYNCED"))
-                else pushResult.exceptionOrNull()?.let { throw it }
+                if (pushResult.isSuccess) {
+                    paymentDao.updatePayment(payment.copy(syncStatus = "SYNCED"))
+                } else {
+                    val ex = pushResult.exceptionOrNull()
+                    val msg = ex?.message?.lowercase() ?: ""
+                    if (msg.contains("overpayment") || msg.contains("exceed") || msg.contains("excess")) {
+                        paymentDao.deletePayment(payment.id)
+                    }
+                    ex?.let { throw it }
+                }
             }
         }
     }

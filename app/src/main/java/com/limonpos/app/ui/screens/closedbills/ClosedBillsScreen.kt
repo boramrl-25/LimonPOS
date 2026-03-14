@@ -13,7 +13,6 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -30,6 +29,7 @@ import com.limonpos.app.data.local.entity.PaymentEntity
 import com.limonpos.app.data.local.entity.TableEntity
 import com.limonpos.app.data.repository.OrderWithItems
 import com.limonpos.app.ui.theme.*
+import com.limonpos.app.util.MoneyUtils
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -369,13 +369,32 @@ private fun BillDetailDialog(
                     Spacer(Modifier.height(8.dp))
                     Divider(color = LimonTextSecondary.copy(alpha = 0.3f))
                 }
+                val subtotal = MoneyUtils.round(order.subtotal)
+                val taxAmount = MoneyUtils.round(order.taxAmount)
+                val discountAmount = MoneyUtils.round(order.discountPercent / 100.0 * order.subtotal + order.discountAmount)
+                val totalComputed = MoneyUtils.round((subtotal + taxAmount - discountAmount).coerceAtLeast(0.0))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("Subtotal", color = LimonTextSecondary, fontSize = 14.sp)
-                    Text("AED ${String.format("%.2f", order.subtotal)}", color = LimonText, fontSize = 14.sp)
+                    Text("AED ${String.format("%.2f", subtotal)}", color = LimonText, fontSize = 14.sp)
                 }
+                if (taxAmount > 0.01) {
+                    Spacer(Modifier.height(4.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Tax", color = LimonTextSecondary, fontSize = 14.sp)
+                        Text("AED ${String.format("%.2f", taxAmount)}", color = LimonText, fontSize = 14.sp)
+                    }
+                }
+                if (discountAmount > 0.01) {
+                    Spacer(Modifier.height(4.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Discount", color = LimonTextSecondary, fontSize = 14.sp)
+                        Text("-AED ${String.format("%.2f", discountAmount)}", color = LimonPrimary, fontSize = 14.sp)
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("Total", color = LimonText, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    Text("AED ${String.format("%.2f", order.total)}", color = LimonPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text("AED ${String.format("%.2f", totalComputed)}", color = LimonPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 }
                 Spacer(Modifier.height(12.dp))
                 OutlinedButton(
@@ -430,6 +449,9 @@ private fun ClosedBillCard(
             SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()).format(Date(it))
         } ?: "-"
     }
+    val billNo = order.id.takeLast(8).uppercase()
+    val discountAmount = MoneyUtils.round(order.discountPercent / 100.0 * order.subtotal + order.discountAmount)
+    val totalComputed = MoneyUtils.round((order.subtotal + order.taxAmount - discountAmount).coerceAtLeast(0.0))
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = LimonSurface),
@@ -441,11 +463,10 @@ private fun ClosedBillCard(
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(Icons.Default.Receipt, contentDescription = null, tint = LimonPrimary)
-            Spacer(Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text("Table ${order.tableNumber}", fontWeight = FontWeight.Bold, color = LimonText)
-                Text("AED ${String.format("%.2f", order.total)}", color = LimonPrimary, fontSize = 14.sp)
+                Text("Table ${order.tableNumber}", fontWeight = FontWeight.Bold, color = LimonText, fontSize = 16.sp)
+                Text("AED ${String.format("%.2f", totalComputed)}", color = LimonPrimary, fontSize = 14.sp)
+                Text("Bill #$billNo", color = LimonTextSecondary, fontSize = 12.sp)
                 Text(dateStr, color = LimonTextSecondary, fontSize = 12.sp)
             }
             Button(

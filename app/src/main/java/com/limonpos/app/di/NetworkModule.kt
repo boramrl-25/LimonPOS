@@ -1,7 +1,9 @@
 package com.limonpos.app.di
 
+import com.google.gson.GsonBuilder
 import com.limonpos.app.data.prefs.ServerPreferences
 import com.limonpos.app.data.remote.ApiService
+import com.limonpos.app.data.remote.LongOrIsoDateAdapter
 import com.limonpos.app.data.remote.AuthInterceptor
 import com.limonpos.app.data.remote.BaseUrlInterceptor
 import com.limonpos.app.data.remote.RetryInterceptor
@@ -45,10 +47,13 @@ object NetworkModule {
     @LimonApi
     fun provideRetrofit(client: OkHttpClient, serverPreferences: ServerPreferences): Retrofit {
         val baseUrl = runBlocking { serverPreferences.getBaseUrl() }
+        val builder = GsonBuilder().registerTypeAdapter(Long::class.javaObjectType, LongOrIsoDateAdapter)
+        Long::class.javaPrimitiveType?.let { builder.registerTypeAdapter(it, LongOrIsoDateAdapter) }
+        val gson = builder.create()
         return Retrofit.Builder()
             .baseUrl(baseUrl)
             .client(client)
-            .addConverterFactory(GsonConverterFactory.create())
+            .addConverterFactory(GsonConverterFactory.create(gson))
             .build()
     }
 

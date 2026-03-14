@@ -1,5 +1,6 @@
 package com.limonpos.app.ui.screens.payment
 
+import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -19,12 +20,13 @@ import com.limonpos.app.data.repository.TableRepository
 import com.limonpos.app.data.zoho.ZohoBooksRepository
 import com.limonpos.app.service.PrinterService
 import com.limonpos.app.util.CurrencyUtils
+import com.limonpos.app.util.MoneyUtils
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -42,10 +44,13 @@ data class PaymentSplit(
 
 data class PaymentUiState(
     val orderWithItems: OrderWithItems? = null,
+    /** Order total computed from items+tax-discount. Single source for split/cash/card. */
+    val orderTotalComputed: Double = 0.0,
     val splits: List<PaymentSplit> = emptyList(),
+    /** DB'den gelen kesinleşmiş ödemelerin toplamı. Sadece payment flow günceller. */
     val completedPaymentsTotal: Double = 0.0,
     val completedPayments: List<PaymentEntity> = emptyList(),
-    val paymentMode: String = "split", // cash | card | split
+    val paymentMode: String = "cash", // cash | card | split
     val message: String? = null,
     val paymentComplete: Boolean = false,
     val redirectToOrder: Boolean = false,
@@ -57,8 +62,24 @@ data class PaymentUiState(
     val discountRequestLoading: Boolean = false,
     val showDiscountRequestDialog: Boolean = false,
     /** After discount request sent successfully, navigate to floor plan. */
-    val navigateToFloorPlanAfterDiscount: Boolean = false
-)
+    val navigateToFloorPlanAfterDiscount: Boolean = false,
+    /** Derived: TOTAL_PAID = completedPaymentsTotal + splits.sum. Computed on every state change. */
+    val totalPaid: Double = 0.0,
+    /** Derived: remainder = orderTotalComputed - totalPaid. Computed on every state change. */
+    val remainder: Double = 0.0,
+    /** Transaction Lock: true while paySplit or completePayment is running. Disables all payment buttons. */
+    val paymentInProgress: Boolean = false
+) {
+    /** SSOT: totalPaid = completedPayments + activeSplits. Cash/Card: tek seçim, switch yapınca önceki silinir yenisi full amount. */
+    fun withComputedTotals(): PaymentUiState {
+        val orderTotal = MoneyUtils.round(orderTotalComputed)
+        val completed = MoneyUtils.round(completedPaymentsTotal)
+        val splitsSum = MoneyUtils.sum(splits.map { it.amount })
+        val total = MoneyUtils.add(completed, splitsSum)
+        val rem = MoneyUtils.subtract(orderTotal, total)
+        return copy(totalPaid = total, remainder = rem)
+    }
+}
 
 @HiltViewModel
 class PaymentViewModel @Inject constructor(
@@ -79,7 +100,10 @@ class PaymentViewModel @Inject constructor(
     private val tableId: String = checkNotNull(savedStateHandle["tableId"]) { "tableId required" }
 
     private val _uiState = MutableStateFlow(PaymentUiState())
-    val uiState: StateFlow<PaymentUiState> = _uiState.asStateFlow()
+    /** UI reads totalPaid/remainder from here; computed on every state change (SSOT). */
+    val uiState: StateFlow<PaymentUiState> = _uiState
+        .map { it.withComputedTotals() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, PaymentUiState().withComputedTotals())
 
     val receiptPrintWarningState: StateFlow<ReceiptPrintWarningState?> = receiptPrintWarningHolder.state
 
@@ -104,11 +128,19 @@ class PaymentViewModel @Inject constructor(
                     _uiState.update { it.copy(redirectToOrder = true) }
                     return@launch
                 }
+                orderRepository.refreshOrderTotals(order.id)
                 val isRecalled = orderRepository.isOrderRecalled(order.id)
                 orderRepository.getOrderWithItems(order.id).first()?.let { ow ->
-                    _uiState.update { it.copy(orderWithItems = ow, isRecalledOrder = isRecalled) }
+                    val subtotal = MoneyUtils.sum(ow.items.map { it.price * it.quantity })
+                    val disc = ow.order.discountPercent / 100.0 * subtotal + ow.order.discountAmount
+                    val orderTotalComputed = MoneyUtils.round((subtotal + ow.order.taxAmount - disc).coerceAtLeast(0.0))
+                    _uiState.update { it.copy(orderWithItems = ow, orderTotalComputed = orderTotalComputed, isRecalledOrder = isRecalled, splits = emptyList()) }
                     paymentRepository.getPaymentsByOrder(ow.order.id).collect { payments ->
-                        val total = payments.sumOf { it.amount }
+                        val total = MoneyUtils.sum(payments.map { it.amount })
+                        if (MoneyUtils.greaterThan(total, orderTotalComputed)) {
+                            paymentRepository.fixOverpayment(ow.order.id, orderTotalComputed)
+                            return@collect
+                        }
                         _uiState.update { it.copy(completedPaymentsTotal = total, completedPayments = payments) }
                     }
                     loadDiscountRequestStatus(ow.order.id)
@@ -153,7 +185,7 @@ class PaymentViewModel @Inject constructor(
 
     fun refreshOrderFromApi() {
         viewModelScope.launch {
-            val ow = _uiState.value.orderWithItems ?: return@launch
+            if (_uiState.value.orderWithItems == null) return@launch
             _uiState.update { it.copy(discountRequestLoading = true) }
             val ok = withContext(Dispatchers.IO) { apiSyncRepository.syncFromApi() }
             _uiState.update { it.copy(discountRequestLoading = false) }
@@ -169,21 +201,29 @@ class PaymentViewModel @Inject constructor(
             val ow = _uiState.value.orderWithItems ?: return@launch
             if (!_uiState.value.isRecalledOrder) return@launch
             paymentRepository.deleteAllPaymentsForOrder(ow.order.id)
-            _uiState.update { it.copy(completedPaymentsTotal = 0.0, message = "Previous payments cleared. Enter new payment.") }
+            _uiState.update { it.copy(splits = emptyList(), completedPaymentsTotal = 0.0, completedPayments = emptyList(), message = "Previous payments cleared. Enter new payment.") }
         }
     }
 
+    /** Reset on Select: Cash/Card seçildiğinde splits temizlenir, tek satır kalan bakiye ile eklenir. */
     fun selectPaymentMode(mode: String) {
-        val ow = _uiState.value.orderWithItems ?: return
-        val orderTotal = ow.order.total
+        if (_uiState.value.orderWithItems == null || _uiState.value.paymentInProgress) return
+        val orderTotal = MoneyUtils.round(_uiState.value.orderTotalComputed)
+        val completed = MoneyUtils.round(_uiState.value.completedPaymentsTotal)
+        val remainingBalance = MoneyUtils.subtract(orderTotal, completed).coerceAtLeast(0.0)
         _uiState.update {
             when (mode) {
-                "cash" -> it.copy(paymentMode = "cash", splits = listOf(
-                    PaymentSplit(id = "split_${System.currentTimeMillis()}", amount = orderTotal, method = "cash", receivedAmount = orderTotal)
-                ))
-                "card" -> it.copy(paymentMode = "card", splits = listOf(
-                    PaymentSplit(id = "split_${System.currentTimeMillis()}", amount = orderTotal, method = "card")
-                ))
+                "cash", "card" -> it.copy(
+                    paymentMode = mode,
+                    splits = listOf(
+                        PaymentSplit(
+                            id = "split_${System.currentTimeMillis()}",
+                            amount = MoneyUtils.round(remainingBalance),
+                            method = mode,
+                            receivedAmount = if (mode == "cash") MoneyUtils.round(remainingBalance) else 0.0
+                        )
+                    )
+                )
                 "split" -> it.copy(paymentMode = "split", splits = listOf(
                     PaymentSplit(id = "split_${System.currentTimeMillis()}", amount = 0.0, method = "")
                 ))
@@ -207,14 +247,19 @@ class PaymentViewModel @Inject constructor(
         }
     }
 
+    /** Validation: if (new amount + current total) > order total, cap to remaining balance. */
     fun updateSplit(id: String, amount: Double, method: String, receivedAmount: Double = 0.0, changeAmount: Double = 0.0) {
-        val ow = _uiState.value.orderWithItems ?: return
-        val maxAllowed = ow.order.total - _uiState.value.completedPaymentsTotal -
-            _uiState.value.splits.filter { it.id != id }.sumOf { it.amount }
-        val cappedAmount = amount.coerceIn(0.0, maxAllowed.coerceAtLeast(0.0))
+        val orderTotal = MoneyUtils.round(_uiState.value.orderTotalComputed)
+        val completed = MoneyUtils.round(_uiState.value.completedPaymentsTotal)
+        val otherSplitsSum = MoneyUtils.sum(_uiState.value.splits.filter { it.id != id }.map { it.amount })
+        val remainingBalance = MoneyUtils.subtract(orderTotal, MoneyUtils.add(completed, otherSplitsSum))
+        val maxAllowed = remainingBalance.coerceAtLeast(0.0)
+        val cappedAmount = MoneyUtils.coerceIn(amount, 0.0, maxAllowed)
+        val cappedChange = MoneyUtils.round(changeAmount.coerceAtLeast(0.0))
+        val cappedReceived = if (method == "cash") MoneyUtils.round(receivedAmount) else 0.0
         _uiState.update {
             it.copy(splits = it.splits.map { s ->
-                if (s.id == id) s.copy(amount = cappedAmount, method = method, receivedAmount = receivedAmount, changeAmount = changeAmount.coerceAtLeast(0.0))
+                if (s.id == id) s.copy(amount = cappedAmount, method = method, receivedAmount = cappedReceived, changeAmount = cappedChange)
                 else s
             })
         }
@@ -223,47 +268,56 @@ class PaymentViewModel @Inject constructor(
     fun paySplit(splitId: String) {
         viewModelScope.launch {
             val ow = _uiState.value.orderWithItems ?: return@launch
-            val split = _uiState.value.splits.find { it.id == splitId } ?: return@launch
-            if (split.amount <= 0) {
-                _uiState.update { it.copy(message = "Enter amount") }
+            if (_uiState.value.paymentInProgress) return@launch
+            _uiState.update { it.copy(paymentInProgress = true) }
+            val split = _uiState.value.splits.find { it.id == splitId }
+            if (split == null || split.amount <= 0) {
+                _uiState.update { it.copy(paymentInProgress = false, message = "Enter amount") }
                 return@launch
             }
             if (split.method != "cash" && split.method != "card") {
-                _uiState.update { it.copy(message = "Select Cash or Card") }
+                _uiState.update { it.copy(paymentInProgress = false, message = "Select Cash or Card") }
                 return@launch
             }
-            val userId = authRepository.getCurrentUserIdSync() ?: return@launch
-            val totalPaidBefore = paymentRepository.getPaymentsSumByOrder(ow.order.id)
-            val balanceRemaining = ow.order.total - totalPaidBefore
-
-            if (split.amount > balanceRemaining + 0.01) {
-                _uiState.update { it.copy(message = "Amount cannot exceed balance (${CurrencyUtils.format(balanceRemaining)})") }
+            val userId = authRepository.getCurrentUserIdSync()
+            if (userId == null) {
+                _uiState.update { it.copy(paymentInProgress = false) }
                 return@launch
             }
-
+            val orderTotal = MoneyUtils.round(_uiState.value.orderTotalComputed)
+            val dbTotal = MoneyUtils.round(paymentRepository.getPaymentsSumByOrder(ow.order.id))
+            val amountToSend = MoneyUtils.round(split.amount)
+            if (amountToSend <= 0) {
+                Log.w("PaymentViewModel", "paySplit: amount<=0, aborting. split.amount=${split.amount}")
+                _uiState.update { it.copy(paymentInProgress = false, message = "Invalid amount") }
+                return@launch
+            }
+            if (MoneyUtils.greaterThan(MoneyUtils.add(dbTotal, amountToSend), orderTotal)) {
+                Log.w("PaymentViewModel", "paySplit: would exceed order total. db=$dbTotal amount=$amountToSend orderTotal=$orderTotal")
+                _uiState.update { it.copy(paymentInProgress = false, message = "Amount exceeds balance") }
+                return@launch
+            }
             try {
-                val received = if (split.method == "cash") split.receivedAmount else split.amount
-                val change = if (split.method == "cash") split.changeAmount else 0.0
                 paymentRepository.createPayment(
                     orderId = ow.order.id,
-                    amount = split.amount,
+                    amount = amountToSend,
                     method = split.method,
-                    receivedAmount = received,
-                    changeAmount = change,
+                    receivedAmount = if (split.method == "cash") MoneyUtils.round(split.receivedAmount) else amountToSend,
+                    changeAmount = if (split.method == "cash") MoneyUtils.round(split.changeAmount) else 0.0,
                     userId = userId
                 )
-                val totalPaidAfter = totalPaidBefore + split.amount
-                val newBalance = ow.order.total - totalPaidAfter
-
-                // Hemen UI güncelle – Pay butonu geç algılanmasın
+                val freshTotal = MoneyUtils.round(paymentRepository.getPaymentsSumByOrder(ow.order.id))
+                val freshPayments = paymentRepository.getPaymentsByOrderSync(ow.order.id)
+                val newBalance = MoneyUtils.subtract(orderTotal, freshTotal)
                 _uiState.update {
                     it.copy(
                         splits = listOf(PaymentSplit(id = "split_${System.currentTimeMillis()}", amount = 0.0, method = "")),
+                        completedPaymentsTotal = freshTotal,
+                        completedPayments = freshPayments,
+                        paymentInProgress = false,
                         message = "Payment received"
                     )
                 }
-
-                // Partial receipt sadece bakiye varsa; bakiye 0 ise sadece final receipt basılacak (race önleme)
                 if (kotlin.math.abs(newBalance) >= 0.01) {
                 viewModelScope.launch(Dispatchers.IO) {
                     val cashierPrinters = printerRepository.getAllPrinters().first()
@@ -274,9 +328,9 @@ class PaymentViewModel @Inject constructor(
                         val receipt = printerService.buildPartialReceipt(
                             order = ow.order,
                             items = ow.items,
-                            paymentAmount = split.amount,
+                            paymentAmount = amountToSend,
                             paymentMethod = split.method,
-                            totalPaidSoFar = totalPaidAfter,
+                            totalPaidSoFar = freshTotal,
                             balanceRemaining = newBalance
                         )
                         val printResult = printerService.sendToPrinter(printer.ipAddress, printer.port, receipt)
@@ -293,9 +347,9 @@ class PaymentViewModel @Inject constructor(
                             orderId = ow.order.id,
                             tableId = tableId,
                             isPartial = true,
-                            paymentAmount = split.amount,
+                            paymentAmount = amountToSend,
                             paymentMethod = split.method,
-                            totalPaidSoFar = totalPaidAfter,
+                            totalPaidSoFar = freshTotal,
                             balanceRemaining = newBalance
                         ))
                     } else if (drawerFailedPrinters.isNotEmpty()) {
@@ -355,7 +409,7 @@ class PaymentViewModel @Inject constructor(
                     }
                 }
             } catch (e: Exception) {
-                _uiState.update { it.copy(message = e.message ?: "Payment error") }
+                _uiState.update { it.copy(paymentInProgress = false, message = e.message ?: "Payment error") }
             }
         }
     }
@@ -363,40 +417,53 @@ class PaymentViewModel @Inject constructor(
     fun completePayment() {
         viewModelScope.launch {
             val ow = _uiState.value.orderWithItems ?: return@launch
-            val orderTotal = ow.order.total
+            if (_uiState.value.paymentInProgress) return@launch
+            _uiState.update { it.copy(paymentInProgress = true) }
+            val orderTotal = MoneyUtils.round(_uiState.value.orderTotalComputed)
             val splits = _uiState.value.splits.filter { it.amount > 0 }
             if (splits.isEmpty() && orderTotal > 0.01) {
-                _uiState.update { it.copy(message = "Add at least one payment") }
+                _uiState.update { it.copy(paymentInProgress = false, message = "Add at least one payment") }
                 return@launch
             }
-            val totalSplits = splits.sumOf { it.amount }
-            if (totalSplits > orderTotal + 0.01) {
-                _uiState.update { it.copy(message = "Payment cannot exceed total (${CurrencyUtils.format(orderTotal)})") }
+            val totalSplits = MoneyUtils.sum(splits.map { it.amount })
+            if (MoneyUtils.greaterThan(totalSplits, orderTotal)) {
+                _uiState.update { it.copy(paymentInProgress = false, message = "Payment cannot exceed total (${CurrencyUtils.format(orderTotal)})") }
                 return@launch
             }
-            if (kotlin.math.abs(totalSplits - orderTotal) > 0.01) {
-                _uiState.update { it.copy(message = "Payment total must be ${CurrencyUtils.format(orderTotal)} (current: ${CurrencyUtils.format(totalSplits)})") }
+            if (!MoneyUtils.equals(totalSplits, orderTotal) && !(orderTotal <= 0.01 && splits.isEmpty())) {
+                _uiState.update { it.copy(paymentInProgress = false, message = "Payment total must be ${CurrencyUtils.format(orderTotal)} (current: ${CurrencyUtils.format(totalSplits)})") }
                 return@launch
             }
-            val userId = authRepository.getCurrentUserIdSync() ?: return@launch
+            val userId = authRepository.getCurrentUserIdSync()
+            if (userId == null) {
+                _uiState.update { it.copy(paymentInProgress = false) }
+                return@launch
+            }
             val effectiveSplits = if (orderTotal <= 0.01 && splits.isEmpty()) {
                 listOf(PaymentSplit("_zero", 0.0, "cash", 0.0, 0.0))
-            } else {
-                splits
-            }
+            } else splits
             try {
                 withContext(Dispatchers.IO) {
+                    var runningDbTotal = MoneyUtils.round(paymentRepository.getPaymentsSumByOrder(ow.order.id))
                     for (split in effectiveSplits) {
-                        val received = if (split.method == "cash") split.receivedAmount else split.amount
-                        val change = if (split.method == "cash") split.changeAmount else 0.0
+                        val amt = MoneyUtils.round(split.amount)
+                        if (amt <= 0) {
+                            Log.w("PaymentViewModel", "completePayment: skip split with amount<=0")
+                            continue
+                        }
+                        if (MoneyUtils.greaterThan(MoneyUtils.add(runningDbTotal, amt), orderTotal)) {
+                            Log.w("PaymentViewModel", "completePayment: would exceed order total, abort. db=$runningDbTotal amt=$amt orderTotal=$orderTotal")
+                            throw IllegalStateException("Payment would exceed order total")
+                        }
                         paymentRepository.createPayment(
                             orderId = ow.order.id,
-                            amount = split.amount,
+                            amount = amt,
                             method = split.method,
-                            receivedAmount = received,
-                            changeAmount = change,
+                            receivedAmount = if (split.method == "cash") MoneyUtils.round(split.receivedAmount) else amt,
+                            changeAmount = if (split.method == "cash") MoneyUtils.round(split.changeAmount) else 0.0,
                             userId = userId
                         )
+                        runningDbTotal = MoneyUtils.add(runningDbTotal, amt)
                     }
                     orderRepository.markOrderPaid(ow.order.id)
                     tableRepository.closeTable(tableId)
@@ -431,13 +498,18 @@ class PaymentViewModel @Inject constructor(
                         tableId = tableId,
                         isPartial = false
                     ))
-                    _uiState.update { it.copy(receiptFailedBeforeNavigate = true) }
+                    _uiState.update { it.copy(paymentInProgress = false, receiptFailedBeforeNavigate = true) }
                 } else {
-                    _uiState.update { it.copy(paymentComplete = true, message = "Payment completed") }
-                    if (receiptFailedPrinters.isNotEmpty()) {
-                        _uiState.update { it.copy(message = "Printed; failed on: ${receiptFailedPrinters.joinToString(", ")}") }
-                    } else if (drawerFailedPrinters.isNotEmpty()) {
-                        _uiState.update { it.copy(message = "Receipt printed. Cash drawer did not open: ${drawerFailedPrinters.joinToString(", ")}") }
+                    _uiState.update {
+                        it.copy(
+                            paymentInProgress = false,
+                            paymentComplete = true,
+                            message = when {
+                                receiptFailedPrinters.isNotEmpty() -> "Printed; failed on: ${receiptFailedPrinters.joinToString(", ")}"
+                                drawerFailedPrinters.isNotEmpty() -> "Receipt printed. Cash drawer did not open: ${drawerFailedPrinters.joinToString(", ")}"
+                                else -> "Payment completed"
+                            }
+                        )
                     }
                 }
 
@@ -455,15 +527,26 @@ class PaymentViewModel @Inject constructor(
                     } catch (_: Exception) { }
                 }
             } catch (e: Exception) {
-                _uiState.update { it.copy(message = e.message ?: "Payment error") }
+                _uiState.update { it.copy(paymentInProgress = false, message = e.message ?: "Payment error") }
             }
         }
     }
 
+    /** Single-Source Recovery: ödeme iptal edildiğinde splits sıfırlanır, temiz sayfa. */
     fun cancelPayment(paymentId: String) {
         viewModelScope.launch {
             paymentRepository.deletePayment(paymentId)
-            // completedPayments updates via getPaymentsByOrder flow
+            val freshPayments = paymentRepository.getPaymentsByOrderSync(
+                _uiState.value.orderWithItems?.order?.id ?: return@launch
+            )
+            val freshTotal = MoneyUtils.sum(freshPayments.map { it.amount })
+            _uiState.update {
+                it.copy(
+                    splits = emptyList(),
+                    completedPaymentsTotal = freshTotal,
+                    completedPayments = freshPayments
+                )
+            }
         }
     }
 
@@ -478,8 +561,9 @@ class PaymentViewModel @Inject constructor(
     fun fixNegativeBalance() {
         viewModelScope.launch {
             val ow = _uiState.value.orderWithItems ?: return@launch
+            val orderTotal = _uiState.value.orderTotalComputed
             try {
-                paymentRepository.fixOverpayment(ow.order.id, ow.order.total)
+                paymentRepository.fixOverpayment(ow.order.id, orderTotal)
                 _uiState.update { it.copy(message = "Overpayment fixed") }
             } catch (e: Exception) {
                 _uiState.update { it.copy(message = e.message ?: "Fix failed") }

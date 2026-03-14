@@ -148,6 +148,11 @@ class OrderRepository @Inject constructor(
         orderDao.updateOrder(updated)
     }
 
+    /** Recalculate order totals from items + tax/discount. Call before payment to ensure correct total. */
+    suspend fun refreshOrderTotals(orderId: String) {
+        updateOrderTotals(orderId)
+    }
+
     suspend fun sendToKitchen(orderId: String) {
         val order = orderDao.getOrderById(orderId) ?: throw Exception("Order not found")
         orderDao.updateOrder(order.copy(status = "sent", syncStatus = "PENDING"))

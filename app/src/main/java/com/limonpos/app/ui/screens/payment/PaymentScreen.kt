@@ -24,6 +24,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.limonpos.app.data.local.entity.OrderItemEntity
 import com.limonpos.app.data.local.entity.PaymentEntity
@@ -163,6 +165,7 @@ fun PaymentScreen(
             }
             uiState.orderWithItems?.let { ow ->
                 val hasDiscount = (ow.order.discountPercent > 0.0) || (ow.order.discountAmount > 0.0)
+                val orderTotal = uiState.orderTotalComputed
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = LimonSurface),
@@ -193,32 +196,36 @@ fun PaymentScreen(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text("Total:", fontWeight = FontWeight.Bold, color = LimonText, fontSize = 16.sp)
-                            Text(CurrencyUtils.format(ow.order.total), fontWeight = FontWeight.Bold, color = LimonPrimary, fontSize = 18.sp)
+                            Text(CurrencyUtils.format(orderTotal), fontWeight = FontWeight.Bold, color = LimonPrimary, fontSize = 18.sp)
                         }
                     }
                 }
                 Spacer(Modifier.height(24.dp))
+                val buttonsEnabled = !uiState.paymentInProgress
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     FilterChip(
                         selected = uiState.paymentMode == "cash",
-                        onClick = { viewModel.selectPaymentMode("cash") },
+                        onClick = { if (buttonsEnabled) viewModel.selectPaymentMode("cash") },
+                        enabled = buttonsEnabled,
                         label = { Text("CASH", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
                         modifier = Modifier.weight(1f).heightIn(min = 56.dp),
                         colors = FilterChipDefaults.filterChipColors(selectedContainerColor = LimonPrimary, selectedLabelColor = Color.Black, containerColor = LimonSurface, labelColor = LimonText)
                     )
                     FilterChip(
                         selected = uiState.paymentMode == "card",
-                        onClick = { viewModel.selectPaymentMode("card") },
+                        onClick = { if (buttonsEnabled) viewModel.selectPaymentMode("card") },
+                        enabled = buttonsEnabled,
                         label = { Text("CARD", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
                         modifier = Modifier.weight(1f).heightIn(min = 56.dp),
                         colors = FilterChipDefaults.filterChipColors(selectedContainerColor = LimonPrimary, selectedLabelColor = Color.Black, containerColor = LimonSurface, labelColor = LimonText)
                     )
                     FilterChip(
                         selected = uiState.paymentMode == "split",
-                        onClick = { viewModel.selectPaymentMode("split") },
+                        onClick = { if (buttonsEnabled) viewModel.selectPaymentMode("split") },
+                        enabled = buttonsEnabled,
                         label = { Text("SPLIT", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
                         modifier = Modifier.weight(1f).heightIn(min = 56.dp),
                         colors = FilterChipDefaults.filterChipColors(selectedContainerColor = LimonPrimary, selectedLabelColor = Color.Black, containerColor = LimonSurface, labelColor = LimonText)
@@ -226,42 +233,28 @@ fun PaymentScreen(
                 }
                 Spacer(Modifier.height(16.dp))
                 if (uiState.paymentMode == "split") {
-                    LaunchedEffect(uiState.paymentMode, uiState.splits.size) {
-                        if (uiState.paymentMode == "split" && uiState.splits.isEmpty()) {
-                            viewModel.ensureOneSplitRow()
-                        }
-                    }
-                    uiState.splits.firstOrNull()?.let { split ->
-                        val otherSplitsTotal = uiState.completedPaymentsTotal
-                        SplitRow(
-                            split = split,
-                            orderTotal = ow.order.total,
-                            otherSplitsTotal = otherSplitsTotal,
-                            isFirstSplit = uiState.completedPayments.isEmpty(),
-                            onUpdate = { amt, method, received, change ->
-                                viewModel.updateSplit(split.id, amt, method, received, change)
-                            },
-                            onRemove = { },
-                            onPay = { viewModel.paySplit(split.id) },
-                            showRemove = false
-                        )
-                    }
-                    if (uiState.completedPayments.isNotEmpty()) {
-                        Spacer(Modifier.height(16.dp))
-                        Text("Previous payments", fontWeight = FontWeight.Bold, color = LimonText, fontSize = 14.sp)
-                        Spacer(Modifier.height(8.dp))
-                        uiState.completedPayments.forEach { payment ->
-                            CompletedPaymentRow(
-                                payment = payment,
-                                onCancel = { viewModel.cancelPayment(payment.id) }
-                            )
-                            Spacer(Modifier.height(4.dp))
-                        }
-                    }
+                    SplitPaymentDialog(
+                        orderTotal = orderTotal,
+                        splits = uiState.splits,
+                        completedPayments = uiState.completedPayments,
+                        totalPaid = uiState.totalPaid,
+                        remainder = uiState.remainder,
+                        buttonsEnabled = buttonsEnabled,
+                        onDismiss = { if (buttonsEnabled) viewModel.selectPaymentMode("cash") },
+                        onEnsureSplit = { viewModel.ensureOneSplitRow() },
+                        onUpdateSplit = { id, amt, method, received, change ->
+                            viewModel.updateSplit(id, amt, method, received, change)
+                        },
+                        onPaySplit = { viewModel.paySplit(it) },
+                        onCancelPayment = { viewModel.cancelPayment(it) },
+                        isRecalledOrder = uiState.isRecalledOrder,
+                        onClearPreviousPayments = { viewModel.clearPreviousPaymentsForRecalled() }
+                    )
                 }
                 Spacer(Modifier.height(24.dp))
-                val totalPaid = if (uiState.paymentMode == "split") uiState.completedPaymentsTotal else uiState.splits.sumOf { it.amount }
-                val remainder = ow.order.total - totalPaid
+                // UI: totalPaid ve remainder viewModel.uiState'ten gelir (SSOT)
+                val totalPaid = uiState.totalPaid
+                val remainder = uiState.remainder
                 // Split ilk seçenekte (henüz ödeme yokken) Balance kartı gösterme; direkt ödeme alınsın
                 val showBalanceCard = uiState.paymentMode != "split" || uiState.completedPayments.isNotEmpty()
                 if (showBalanceCard) {
@@ -306,16 +299,6 @@ fun PaymentScreen(
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = LimonPrimary)
                     ) {
                         Text("Clear previous payments (change payment method)")
-                    }
-                }
-                if (remainder < -0.01) {
-                    Spacer(Modifier.height(12.dp))
-                    OutlinedButton(
-                        onClick = { viewModel.fixNegativeBalance() },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = LimonError)
-                    ) {
-                        Text("Fix Overpayment (Remove excess payments)")
                     }
                 }
                 Spacer(Modifier.height(16.dp))
@@ -366,6 +349,7 @@ fun PaymentScreen(
                     Button(
                         onClick = { viewModel.completePayment() },
                         modifier = Modifier.fillMaxWidth(),
+                        enabled = buttonsEnabled,
                         colors = ButtonDefaults.buttonColors(containerColor = LimonSuccess)
                     ) {
                         Text("Complete Payment", color = Color.Black, fontWeight = FontWeight.Bold)
@@ -382,6 +366,132 @@ fun PaymentScreen(
                 onDismiss = { viewModel.dismissDiscountRequestDialog() },
                 onSubmit = { pct, amt, note -> viewModel.requestDiscount(pct, amt, note) }
             )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SplitPaymentDialog(
+    orderTotal: Double,
+    splits: List<PaymentSplit>,
+    completedPayments: List<PaymentEntity>,
+    totalPaid: Double,
+    remainder: Double,
+    buttonsEnabled: Boolean,
+    onDismiss: () -> Unit,
+    onEnsureSplit: () -> Unit,
+    onUpdateSplit: (id: String, amount: Double, method: String, received: Double, change: Double) -> Unit,
+    onPaySplit: (id: String) -> Unit,
+    onCancelPayment: (id: String) -> Unit,
+    isRecalledOrder: Boolean,
+    onClearPreviousPayments: () -> Unit
+) {
+    LaunchedEffect(splits.size) {
+        if (splits.isEmpty()) onEnsureSplit()
+    }
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = LimonBackground
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = LimonText)
+                    }
+                    Text("Split payment", fontWeight = FontWeight.Bold, color = LimonPrimary, fontSize = 18.sp)
+                    Spacer(Modifier.width(48.dp))
+                }
+                Spacer(Modifier.height(8.dp))
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = LimonSurface),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Total:", fontWeight = FontWeight.Bold, color = LimonText, fontSize = 16.sp)
+                            Text(CurrencyUtils.format(orderTotal), fontWeight = FontWeight.Bold, color = LimonPrimary, fontSize = 18.sp)
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Amount Paid:", color = LimonTextSecondary, fontSize = 14.sp)
+                            Text(CurrencyUtils.format(totalPaid), color = LimonText, fontSize = 14.sp)
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Balance:", color = LimonTextSecondary, fontSize = 14.sp)
+                            Text(
+                                CurrencyUtils.format(remainder),
+                                color = when {
+                                    kotlin.math.abs(remainder) < 0.01 -> LimonSuccess
+                                    remainder < 0 -> LimonError
+                                    else -> LimonPrimary
+                                },
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                splits.firstOrNull()?.let { split ->
+                    SplitRow(
+                        split = split,
+                        orderTotal = orderTotal,
+                        otherSplitsTotal = totalPaid - splits.sumOf { it.amount },
+                        isFirstSplit = completedPayments.isEmpty(),
+                        buttonsEnabled = buttonsEnabled,
+                        onUpdate = { amt, method, received, change ->
+                            onUpdateSplit(split.id, amt, method, received, change)
+                        },
+                        onRemove = { },
+                        onPay = { onPaySplit(split.id) },
+                        showRemove = false
+                    )
+                }
+                if (completedPayments.isNotEmpty()) {
+                    Spacer(Modifier.height(16.dp))
+                    Text("Previous payments", fontWeight = FontWeight.Bold, color = LimonText, fontSize = 14.sp)
+                    Spacer(Modifier.height(8.dp))
+                    completedPayments.forEach { payment ->
+                        CompletedPaymentRow(payment = payment, onCancel = { onCancelPayment(payment.id) }, cancelEnabled = buttonsEnabled)
+                        Spacer(Modifier.height(4.dp))
+                    }
+                }
+                if (isRecalledOrder && completedPayments.isNotEmpty()) {
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedButton(
+                        onClick = onClearPreviousPayments,
+                        enabled = buttonsEnabled,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = LimonPrimary)
+                    ) {
+                        Text("Clear previous payments (change payment method)")
+                    }
+                }
+            }
         }
     }
 }
@@ -454,7 +564,8 @@ private fun PaymentOrderItemRow(item: OrderItemEntity) {
 @Composable
 private fun CompletedPaymentRow(
     payment: PaymentEntity,
-    onCancel: () -> Unit
+    onCancel: () -> Unit,
+    cancelEnabled: Boolean = true
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -478,9 +589,9 @@ private fun CompletedPaymentRow(
                 )
                 Text(CurrencyUtils.format(payment.amount), color = LimonText, fontSize = 14.sp)
             }
-            TextButton(onClick = onCancel) {
-                Text("Cancel", color = LimonError, fontSize = 14.sp)
-            }
+                    TextButton(onClick = onCancel, enabled = cancelEnabled) {
+                        Text("Cancel", color = LimonError, fontSize = 14.sp)
+                    }
         }
     }
 }
@@ -492,6 +603,7 @@ private fun SplitRow(
     orderTotal: Double,
     otherSplitsTotal: Double = 0.0,
     isFirstSplit: Boolean = false,
+    buttonsEnabled: Boolean = true,
     onUpdate: (amount: Double, method: String, received: Double, change: Double) -> Unit,
     onRemove: () -> Unit,
     onPay: () -> Unit = {},
@@ -525,6 +637,7 @@ private fun SplitRow(
                     ) {
                         FilterChip(
                             selected = method == "cash",
+                            enabled = buttonsEnabled,
                             onClick = {
                                 method = "cash"
                                 // İkinci/üçüncü split: amount otomatik gelmesin, sadece Balance butonuna basınca dolsun
@@ -538,6 +651,7 @@ private fun SplitRow(
                         )
                         FilterChip(
                             selected = method == "card",
+                            enabled = buttonsEnabled,
                             onClick = {
                                 method = "card"
                                 // İkinci/üçüncü split: amount otomatik gelmesin, sadece Balance butonuna basınca dolsun
@@ -565,6 +679,7 @@ private fun SplitRow(
                         )
                         OutlinedTextField(
                             value = amountStr,
+                            enabled = buttonsEnabled,
                             onValueChange = {
                                 val raw = it.toDoubleOrNull() ?: 0.0
                                 val v = raw.coerceIn(0.0, balanceAmount)
@@ -598,6 +713,7 @@ private fun SplitRow(
                                     val received = if (method == "cash") balanceAmount else 0.0
                                     onUpdate(balanceAmount, method, received, 0.0)
                                 },
+                                enabled = buttonsEnabled,
                                 modifier = Modifier.heightIn(min = 48.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = LimonPrimary)
                             ) {
@@ -606,6 +722,7 @@ private fun SplitRow(
                         }
                         Button(
                             onClick = onPay,
+                            enabled = buttonsEnabled,
                             modifier = Modifier.heightIn(min = 48.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = LimonSuccess)
                         ) {

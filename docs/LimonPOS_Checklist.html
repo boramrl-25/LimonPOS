@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LimonPOS System Checklist</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 24px;
+      color: #1e293b;
+      line-height: 1.5;
+    }
+    h1 {
+      font-size: 24px;
+      border-bottom: 2px solid #0ea5e9;
+      padding-bottom: 8px;
+      margin-bottom: 8px;
+    }
+    h1 span { font-size: 20px; color: #64748b; }
+    h2 {
+      font-size: 16px;
+      color: #0ea5e9;
+      margin-top: 28px;
+      margin-bottom: 12px;
+    }
+    h2 span { font-size: 14px; color: #94a3b8; font-weight: normal; }
+    ul { list-style: none; padding: 0; margin: 0; }
+    li {
+      padding: 8px 0;
+      border-bottom: 1px dotted #e2e8f0;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    li:last-child { border-bottom: none; }
+    input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      flex-shrink: 0;
+      margin-top: 2px;
+      cursor: pointer;
+      accent-color: #0ea5e9;
+    }
+    .en { font-weight: 500; }
+    .ar {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      color: #64748b;
+      font-size: 0.95em;
+      direction: rtl;
+    }
+    @media print {
+      body { padding: 16px; }
+      h2 { margin-top: 20px; page-break-after: avoid; }
+      li { page-break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <h1>LimonPOS System Checklist <span>قائمة فحص نظام LimonPOS</span></h1>
+
+  <h2>1. Create order, send to kitchen, KDS <span>إنشاء طلب، إرسال للمطبخ، شاشة المطبخ</span></h2>
+  <ul>
+    <li><input type="checkbox"> <span class="en">Create order</span> <span class="ar">إنشاء طلب</span></li>
+    <li><input type="checkbox"> <span class="en">Send to kitchen</span> <span class="ar">إرسال للمطبخ</span></li>
+    <li><input type="checkbox"> <span class="en">Check KDS: items displayed?</span> <span class="ar">التحقق: هل تظهر المنتجات؟</span></li>
+    <li><input type="checkbox"> <span class="en">Check KDS: tap items – responding?</span> <span class="ar">التحقق: الضغط - هل KDS يعمل؟</span></li>
+  </ul>
+
+  <h2>2. Order, cart, KDS – Delivered / Ready <span>الطلب، السلة – وصل للمائدة / جاهز</span></h2>
+  <ul>
+    <li><input type="checkbox"> <span class="en">Enter order, send to kitchen</span> <span class="ar">إدخال طلب، إرسال للمطبخ</span></li>
+    <li><input type="checkbox"> <span class="en">Open cart</span> <span class="ar">فتح السلة</span></li>
+    <li><input type="checkbox"> <span class="en">Add 4 items, mark 2 as Delivered</span> <span class="ar">4 منتجات، 2 كـ وصل للمائدة</span></li>
+    <li><input type="checkbox"> <span class="en">Check all items in KDS</span> <span class="ar">التحقق من ظهور كل المنتجات</span></li>
+    <li><input type="checkbox"> <span class="en">Can mark Preparing / Ready?</span> <span class="ar">تحديد تحضير / جاهز؟</span></li>
+  </ul>
+
+  <h2>3. Void <span>إلغاء الطلب</span></h2>
+  <ul>
+    <li><input type="checkbox"> <span class="en">Enter order, send, void item</span> <span class="ar">إدخال طلب، إرسال، إلغاء منتج</span></li>
+    <li><input type="checkbox"> <span class="en">Voided (not back in cart)</span> <span class="ar">تم الإلغاء وليس في السلة</span></li>
+    <li><input type="checkbox"> <span class="en">Web dashboard: void visible?</span> <span class="ar">لوحة الويب: هل يظهر الإلغاء؟</span></li>
+    <li><input type="checkbox"> <span class="en">If not, Refresh and check</span> <span class="ar">إن لم يظهر، تحديث والتحقق</span></li>
+  </ul>
+
+  <h2>4. Payment – Cash / Card / Split <span>الدفع – نقد / بطاقة / تقسيم</span></h2>
+  <ul>
+    <li><input type="checkbox"> <span class="en">Cash payment – verify</span> <span class="ar">دفع نقدي – التحقق</span></li>
+    <li><input type="checkbox"> <span class="en">Card payment – verify</span> <span class="ar">دفع بالبطاقة – التحقق</span></li>
+    <li><input type="checkbox"> <span class="en">Split payment – verify</span> <span class="ar">دفع مقسّم – التحقق</span></li>
+    <li><input type="checkbox"> <span class="en">Different table per method</span> <span class="ar">طاولة مختلفة لكل طريقة</span></li>
+    <li><input type="checkbox"> <span class="en">Check Closed Tables</span> <span class="ar">التحقق من الطاولات المغلقة</span></li>
+    <li><input type="checkbox"> <span class="en">Verify on web</span> <span class="ar">التحقق من الويب</span></li>
+  </ul>
+
+  <h2>5. Discount & table transfer <span>الخصم ونقل الطاولة</span></h2>
+  <ul>
+    <li><input type="checkbox"> <span class="en">Apply discount, close</span> <span class="ar">تطبيق خصم، إغلاق</span></li>
+    <li><input type="checkbox"> <span class="en">Verify discount on web</span> <span class="ar">التحقق من الخصم على الويب</span></li>
+    <li><input type="checkbox"> <span class="en">Table transfer</span> <span class="ar">نقل الطاولة</span></li>
+    <li><input type="checkbox"> <span class="en">Repeat with supervisor login</span> <span class="ar">تكرار بتسجيل المشرف</span></li>
+  </ul>
+
+  <h2>6. Closed Table – Refund <span>الطاولة المغلقة – استرداد</span></h2>
+  <ul>
+    <li><input type="checkbox"> <span class="en">Single item refund – verify</span> <span class="ar">استرداد منتج – التحقق</span></li>
+    <li><input type="checkbox"> <span class="en">Full bill refund – verify</span> <span class="ar">استرداد كامل – التحقق</span></li>
+    <li><input type="checkbox"> <span class="en">Manually tally receipts</span> <span class="ar">جمع الإيصالات يدوياً</span></li>
+    <li><input type="checkbox"> <span class="en">Check dashboard totals</span> <span class="ar">التحقق من إجماليات لوحة التحكم</span></li>
+  </ul>
+
+  <h2>7. Printers & routing <span>الطابعات والتوجيه</span></h2>
+  <ul>
+    <li><input type="checkbox"> <span class="en">Send to printers</span> <span class="ar">إرسال للطابعات</span></li>
+    <li><input type="checkbox"> <span class="en">Verify KDS and printer</span> <span class="ar">التحقق من KDS والطابعة</span></li>
+    <li><input type="checkbox"> <span class="en">Correct product → correct printer</span> <span class="ar">المنتج الصحيح → الطابعة الصحيحة</span></li>
+  </ul>
+
+  <h2>8. Menu & prices <span>القائمة والأسعار</span></h2>
+  <ul>
+    <li><input type="checkbox"> <span class="en">Menu product prices</span> <span class="ar">أسعار المنتجات</span></li>
+    <li><input type="checkbox"> <span class="en">Modifiers</span> <span class="ar">الإضافات</span></li>
+  </ul>
+
+  <h2>9. Split payment (extra) <span>الدفع المقسّم (إضافي)</span></h2>
+  <ul>
+    <li><input type="checkbox"> <span class="en">Cash + Card split</span> <span class="ar">نقد + بطاقة مقسّم</span></li>
+    <li><input type="checkbox"> <span class="en">Closed Tables & web verify</span> <span class="ar">الطاولات المغلقة والويب</span></li>
+  </ul>
+
+  <h2>10. Recall bill (extra) <span>استدعاء الفاتورة (إضافي)</span></h2>
+  <ul>
+    <li><input type="checkbox"> <span class="en">Recall from Closed Table</span> <span class="ar">استدعاء من الطاولات المغلقة</span></li>
+    <li><input type="checkbox"> <span class="en">Change/cancel payment – verify</span> <span class="ar">تغيير/إلغاء الدفع – التحقق</span></li>
+  </ul>
+
+  <h2>11. Print bill (extra) <span>طباعة الفاتورة (إضافي)</span></h2>
+  <ul>
+    <li><input type="checkbox"> <span class="en">Print bill before payment</span> <span class="ar">طباعة الفاتورة قبل الدفع</span></li>
+    <li><input type="checkbox"> <span class="en">Verify items & totals on receipt</span> <span class="ar">التحقق من المنتجات والمجاميع</span></li>
+  </ul>
+
+  <h2>12. Offline & sync (extra) <span>عدم الاتصال والمزامنة (إضافي)</span></h2>
+  <ul>
+    <li><input type="checkbox"> <span class="en">Order offline, sync</span> <span class="ar">طلب دون اتصال، مزامنة</span></li>
+    <li><input type="checkbox"> <span class="en">Verify on backend</span> <span class="ar">التحقق على الخادم</span></li>
+  </ul>
+
+  <h2>13. Role permissions (extra) <span>صلاحيات الأدوار (إضافي)</span></h2>
+  <ul>
+    <li><input type="checkbox"> <span class="en">Test as waiter</span> <span class="ar">الاختبار كموظف</span></li>
+    <li><input type="checkbox"> <span class="en">Test as supervisor</span> <span class="ar">الاختبار كمشرف</span></li>
+    <li><input type="checkbox"> <span class="en">Test as admin</span> <span class="ar">الاختبار كمدير</span></li>
+  </ul>
+
+  <p style="margin-top:32px; color:#94a3b8; font-size:12px;">
+    Open in browser → tick boxes → File → Print → Save as PDF
+  </p>
+</body>
+</html>
