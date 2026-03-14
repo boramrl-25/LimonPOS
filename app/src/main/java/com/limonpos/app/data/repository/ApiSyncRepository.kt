@@ -130,6 +130,67 @@ class ApiSyncRepository @Inject constructor(
         }
     }
 
+    /** Lightweight sync for KDS: tables + orders. Uses dashboard/open-orders for order IDs (API source of truth). */
+    suspend fun syncTablesAndOrdersForKds(): Boolean {
+        if (!isOnline()) return false
+        restoreAuthTokenIfNeeded()
+        return try {
+            syncTables()
+            syncOrdersFromOpenOrdersApi()
+            syncOrdersFromApi()
+            true
+        } catch (e: Exception) {
+            Log.e("ApiSync", "syncTablesAndOrdersForKds error: ${e.message}", e)
+            false
+        }
+    }
+
+    /** Fetches order IDs from dashboard/open-orders (API source of truth) and syncs each order. */
+    private suspend fun syncOrdersFromOpenOrdersApi() {
+        val res = apiService.getOpenOrders()
+        if (!res.isSuccessful) return
+        val list = res.body() ?: return
+        val orderIds = list.mapNotNull { it.orderId }.filter { it.isNotBlank() }.distinct()
+        for (orderId in orderIds) {
+            try {
+                val r = apiService.getOrder(orderId)
+                if (!r.isSuccessful) continue
+                val dto = r.body() ?: continue
+                val items = dto.items ?: emptyList()
+                val voidedIds = voidLogDao.getVoidedItemIdsForOrder(dto.id).toSet()
+                val filteredItems = items.filter { item ->
+                    item.id !in voidedIds && (item.clientLineId == null || item.clientLineId !in voidedIds)
+                }
+                val localItems = orderItemDao.getOrderItems(dto.id).first()
+                val localOrder = orderDao.getOrderById(dto.id)
+                val resolvedOrderStatus = when {
+                    localOrder?.status == "sent" && (dto.status == "open" || dto.status.isNullOrBlank()) -> "sent"
+                    else -> dto.status ?: localOrder?.status ?: "open"
+                }
+                val orderEntity = OrderEntity(
+                    id = dto.id,
+                    tableId = dto.tableId,
+                    tableNumber = dto.tableNumber,
+                    waiterId = dto.waiterId,
+                    waiterName = dto.waiterName,
+                    status = resolvedOrderStatus,
+                    subtotal = dto.subtotal,
+                    taxAmount = dto.taxAmount,
+                    discountPercent = dto.discountPercent,
+                    discountAmount = dto.discountAmount,
+                    total = dto.total,
+                    createdAt = dto.createdAt,
+                    paidAt = dto.paidAt,
+                    syncStatus = "SYNCED"
+                )
+                orderDao.insertOrder(orderEntity)
+                upsertOrderItemsFromApi(dto.id, filteredItems, localItems)
+            } catch (e: Exception) {
+                Log.e("ApiSync", "syncOrdersFromOpenOrdersApi error for $orderId: ${e.message}")
+            }
+        }
+    }
+
     private suspend fun tryDeltaSync(sinceMs: Long): Boolean {
         return try {
             val res = apiService.getSyncDelta(sinceMs)
@@ -706,10 +767,9 @@ class ApiSyncRepository @Inject constructor(
             val isReservedFromApi = dto.status == "reserved" || res != null
             val apiSaysFree = dto.status == "free"
             val useLocalOccupied = !isReservedFromApi && localOccupiedRow != null && localOccupiedRow.currentOrderId != null && (dto.currentOrderId.isNullOrBlank() || apiSaysFree)
-            // Local table is free but API says occupied: prefer local (don't reopen - API may not have our close yet)
-            val apiSaysOccupied = !dto.currentOrderId.isNullOrBlank()
-            val localSaysFree = localAny != null && localAny.currentOrderId.isNullOrBlank()
-            val useLocalFree = !isReservedFromApi && localSaysFree && apiSaysOccupied
+            // Trust API when it says occupied - so other devices' occupied tables are visible (multi-app sync).
+            // Previously preferred local free over API occupied, which broke app-to-app visibility.
+            val useLocalFree = false
             TableEntity(
                 id = dto.id,
                 number = dto.number.toString(),
@@ -1485,6 +1545,9 @@ class ApiSyncRepository @Inject constructor(
     /** Ensures order + items exist on API, then marks order as sent to kitchen. Call before local print. */
     suspend fun ensureOrderAndSendToKitchen(orderId: String): Boolean {
         if (!isOnline()) return false
+        val order = orderDao.getOrderById(orderId) ?: return false
+        val table = tableDao.getTableById(order.tableId)
+        if (table != null) pushTableState(table) // Ensure table with currentOrderId is on API so other devices' KDS can sync
         ensureOrderExistsOnApi(orderId) ?: return false
         return pushSendToKitchen(orderId)
     }

@@ -48,6 +48,11 @@ data class AddOrderItemRequest(
     @SerializedName("client_line_id") val clientLineId: String? = null
 )
 
+/** Dashboard open-orders response: order_id list for KDS sync */
+data class OpenOrderSummaryDto(
+    @SerializedName("order_id") val orderId: String
+)
+
 /** KDS: push item status (preparing / ready) to backend for sync */
 data class OrderItemStatusRequest(
     @SerializedName("status") val status: String

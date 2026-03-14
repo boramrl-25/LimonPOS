@@ -341,9 +341,24 @@ app.get("/api/export", authMiddleware, async (req, res) => {
 
 app.post("/api/auth/login", async (req, res) => {
   await ensurePrismaReady();
-  const pin = String((req.body || {}).pin || "").trim();
+  const body = req.body || {};
+  const pin = String(body.pin || "").trim();
+  const deviceId = String(body.device_id || body.deviceId || "").trim();
   const user = await store.getUserByIdOrPin(pin);
   if (!user || !user.active) return res.status(401).json({ error: "Invalid PIN" });
+  if (deviceId) {
+    const now = Date.now();
+    const devices = await store.getDevices();
+    const otherDeviceOnline = devices.some(
+      (d) => d.user_id === user.id && d.id !== deviceId && (now - (d.last_seen || 0)) <= HEARTBEAT_TIMEOUT_MS
+    );
+    if (otherDeviceOnline) {
+      return res.status(409).json({
+        error: "user_already_logged_in",
+        message: "Bu kullanıcı başka bir cihazda açık. Aynı anda sadece bir cihazda giriş yapılabilir.",
+      });
+    }
+  }
   const perms = JSON.parse(user.permissions || "[]");
   const canAccessSettings = user.can_access_settings != null ? !!user.can_access_settings : (user.role === "admin" || user.role === "manager" || perms.includes("web_settings"));
   const canAccessAppSettings = userCanAccessAppSettings(user);

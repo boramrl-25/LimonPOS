@@ -129,7 +129,8 @@ class KdsServer @Inject constructor(
                                             allItems
                                         } else {
                                             allItems.filter { item ->
-                                                val product = productDao.getProductById(item.productId) ?: return@filter false
+                                                val product = productDao.getProductById(item.productId)
+                                                if (product == null) return@filter true // Show synced items from other devices even if product not in catalog
                                                 val effectivePrinterIds = printerService.parsePrinterIds(product.printers)
                                                     .ifEmpty {
                                                         val category = categoryDao.getCategoryById(product.categoryId)

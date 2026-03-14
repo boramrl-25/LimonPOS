@@ -91,6 +91,9 @@ interface ApiService {
     @DELETE("products/{id}")
     suspend fun deleteProduct(@Path("id") id: String): Response<Unit>
 
+    @GET("dashboard/open-orders")
+    suspend fun getOpenOrders(): Response<List<OpenOrderSummaryDto>>
+
     @GET("orders/{id}")
     suspend fun getOrder(@Path("id") id: String): Response<OrderDto>
 

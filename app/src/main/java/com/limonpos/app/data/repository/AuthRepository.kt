@@ -6,6 +6,7 @@ import com.limonpos.app.data.remote.ApiService
 import com.limonpos.app.data.remote.AuthTokenProvider
 import com.google.gson.Gson
 import com.limonpos.app.data.remote.dto.CashDrawerVerifyRequest
+import com.limonpos.app.data.prefs.ServerPreferences
 import com.limonpos.app.data.remote.dto.LoginRequest
 import com.limonpos.app.data.remote.dto.UserDto
 import com.limonpos.app.util.SessionManager
@@ -28,7 +29,8 @@ class AuthRepository @Inject constructor(
     private val sessionManager: SessionManager,
     private val apiService: ApiService,
     private val authTokenProvider: AuthTokenProvider,
-    private val printerWarningHolder: PrinterWarningHolder
+    private val printerWarningHolder: PrinterWarningHolder,
+    private val serverPreferences: ServerPreferences
 ) {
     private val _loginScreenKey = MutableStateFlow(0)
     val loginScreenKey: Flow<Int> = _loginScreenKey
@@ -44,7 +46,13 @@ class AuthRepository @Inject constructor(
         }
         // Önce API ile dene — Web'de On olan kullanıcılar sync beklemeden giriş yapabilsin
         try {
-            val response = apiService.login(LoginRequest(pin = pin))
+            val deviceId = serverPreferences.getDeviceId()
+            val response = apiService.login(LoginRequest(pin = pin, deviceId = deviceId))
+            if (response.code() == 409) {
+                val msg = response.errorBody()?.string()?.let { parseApiErrorMessage(it) }
+                    ?: "Bu kullanıcı başka bir cihazda açık."
+                return Result.failure(Exception(msg))
+            }
             if (response.isSuccessful) {
                 val body = response.body()
                 val dto = body?.user
@@ -67,7 +75,8 @@ class AuthRepository @Inject constructor(
         authTokenProvider.setToken(user.pin)
         scope.launch {
             try {
-                val response = apiService.login(LoginRequest(pin = pin))
+                val deviceId = serverPreferences.getDeviceId()
+                val response = apiService.login(LoginRequest(pin = pin, deviceId = deviceId))
                 if (response.isSuccessful) response.body()?.token?.let { authTokenProvider.setToken(it) }
             } catch (_: Exception) { }
         }
