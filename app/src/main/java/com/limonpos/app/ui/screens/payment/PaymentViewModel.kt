@@ -128,6 +128,9 @@ class PaymentViewModel @Inject constructor(
                     _uiState.update { it.copy(redirectToOrder = true) }
                     return@launch
                 }
+                if (apiSyncRepository.isOnline()) {
+                    apiSyncRepository.refreshOrderFromApi(order.id)
+                }
                 orderRepository.refreshOrderTotals(order.id)
                 val isRecalled = orderRepository.isOrderRecalled(order.id)
                 orderRepository.getOrderWithItems(order.id).first()?.let { ow ->
@@ -339,7 +342,7 @@ class PaymentViewModel @Inject constructor(
                         message = "Payment received"
                     )
                 }
-                val isFullyPaid = orderTotal > 0.01 && (MoneyUtils.greaterThan(sumPaid, orderTotal - 0.01) || MoneyUtils.equals(sumPaid, orderTotal))
+                val isFullyPaid = orderTotal > 0.01 && newBalance < 0.02
                 if (!isFullyPaid) {
                 viewModelScope.launch(Dispatchers.IO) {
                     val cashierPrinters = printerRepository.getAllPrinters().first()

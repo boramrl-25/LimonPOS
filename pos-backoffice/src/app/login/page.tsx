@@ -20,10 +20,10 @@ function LoginForm() {
       router.refresh();
     } catch (e) {
       const msg = (e as Error).message || "";
-      if (msg.includes("fetch") || msg.includes("Failed") || msg.includes("timeout") || msg.includes("Network"))
-        setError("Cannot reach API. Check https://api.the-limon.com/api is up and CORS allows this site.");
+      if (msg.includes("API") || msg.includes("fetch") || msg.includes("Failed") || msg.includes("timeout") || msg.includes("Network") || msg.includes("ulaşılamıyor"))
+        setError("API'ye ulaşılamadı. İnternet bağlantısını kontrol edin, tekrar deneyin.");
       else
-        setError("Invalid PIN. Setup: 1234");
+        setError("Geçersiz PIN. Setup: 1234");
     }
   }
 
@@ -41,7 +41,14 @@ function LoginForm() {
           className="w-full px-4 py-3 rounded-lg bg-slate-800 border border-slate-600 text-white placeholder-slate-500 focus:outline-none focus:border-sky-500"
           autoFocus
         />
-        {error && <p className="mt-2 text-sm text-red-400">{error}</p>}
+        {error && (
+          <p className="mt-2 text-sm text-red-400">
+            {error}
+            {error.includes("ulaşılamadı") && (
+              <span className="block mt-1 text-sky-400 text-xs">Bağlantı düzelince tekrar Login deneyin.</span>
+            )}
+          </p>
+        )}
         <button type="submit" className="w-full mt-4 py-3 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium">
           Login
         </button>

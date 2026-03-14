@@ -52,14 +52,13 @@ const app = express();
 // PORT env'den alınır; 0.0.0.0 ile dış erişime açılır.
 const PORT = Number(process.env.PORT) || 3002;
 
-// CORS: file:// (origin null), localhost, 127.0.0.1 + tüm origins; Authorization header allow
+// CORS: allow all origins for reliability (pos.the-limon.com, vercel, etc.). Reflect request origin when present.
 app.use(cors({
-  origin: (origin, cb) => {
-    const ok = !origin || origin === "null" || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
-    cb(null, ok ? (origin || true) : true);
-  },
+  origin: true,
   credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "Accept"],
+  optionsSuccessStatus: 200,
 }));
 app.use(express.json());
 

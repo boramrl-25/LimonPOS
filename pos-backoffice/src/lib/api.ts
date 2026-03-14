@@ -1,21 +1,27 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api2.the-limon.com/api";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.the-limon.com/api";
 const TOKEN_KEY = "limonpos_admin_token";
 const USER_KEY = "limonpos_admin_user";
-const FETCH_TIMEOUT_MS = 15000;
+const FETCH_TIMEOUT_MS = 25000;
+const FETCH_RETRY_COUNT = 2;
 
-async function fetchWithTimeout(url: string, opts: RequestInit = {}): Promise<Response> {
+async function fetchWithTimeout(url: string, opts: RequestInit = {}, retriesLeft = FETCH_RETRY_COUNT): Promise<Response> {
   const ctrl = new AbortController();
   const id = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
   try {
     const res = await fetch(url, { ...opts, signal: ctrl.signal });
     return res;
   } catch (e) {
+    const isNetworkError = (e as Error).name === "AbortError" || (e as Error).message?.includes("fetch") || (e as Error).message?.includes("Failed to fetch");
+    if (isNetworkError && retriesLeft > 0) {
+      await new Promise((r) => setTimeout(r, 1500));
+      return fetchWithTimeout(url, { ...opts, signal: undefined } as RequestInit, retriesLeft - 1);
+    }
     if ((e as Error).name === "AbortError") {
       const isLocal = typeof API_URL === "string" && API_URL.includes("localhost");
       throw new Error(
         isLocal
           ? "Backend yanıt vermiyor. Lokal backend çalışıyor mu? (cd backend && npm run dev, port 3002)"
-          : "Backend yanıt vermiyor (timeout). api.the-limon.com veya sunucu çalışıyor mu kontrol edin."
+          : "API'ye ulaşılamıyor. İnternet bağlantısını ve api.the-limon.com erişimini kontrol edin."
       );
     }
     throw e;

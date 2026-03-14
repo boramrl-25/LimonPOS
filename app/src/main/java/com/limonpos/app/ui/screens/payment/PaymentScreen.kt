@@ -327,7 +327,15 @@ fun PaymentScreen(
                                 Text("Send discount request", color = Color.Black)
                             }
                         } else {
-                            Text("Discount applied.", color = LimonSuccess, fontSize = 12.sp)
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                Text("Discount applied.", color = LimonSuccess, fontSize = 12.sp)
+                                Spacer(Modifier.width(8.dp))
+                                OutlinedButton(onClick = { viewModel.refreshOrderFromApi() }, modifier = Modifier.heightIn(min = 32.dp)) {
+                                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Sync", fontSize = 12.sp)
+                                }
+                            }
                         }
                     }
                 }
