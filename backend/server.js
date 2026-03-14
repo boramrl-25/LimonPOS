@@ -1535,7 +1535,7 @@ app.get("/api/security/user-shifts", authMiddleware, async (req, res) => {
   });
 });
 
-// Kitchen orders: KDS için - tüm cihazlardan mutfağa gönderilmiş siparişler (API kaynağı, sync gerektirmez)
+// Kitchen orders: KDS için - masadaki tüm ürünler (status filtresi yok, masada ne varsa KDS'e gider)
 app.get("/api/kitchen/orders", authMiddleware, async (req, res) => {
   await ensurePrismaReady();
   const printerFilter = (req.query.printers || "").toString().trim();
@@ -1546,17 +1546,15 @@ app.get("/api/kitchen/orders", authMiddleware, async (req, res) => {
   const products = await store.getAllProducts();
   const categories = await store.getAllCategories();
   const toMs = (v) => (v == null ? null : v instanceof Date ? v.getTime() : Number(v));
-  const KDS_STATUSES = ["sent", "preparing", "ready", "delivered"];
   const list = [];
   for (const o of orders) {
-    if (o.status !== "sent" || !orderIdsLinked.has(o.id)) continue;
-    const items = orderItems
-      .filter((i) => i.order_id === o.id && KDS_STATUSES.includes(i.status || ""))
-      .filter((i) => i.sent_at != null || i.status === "preparing" || i.status === "ready" || i.status === "delivered");
+    if (!orderIdsLinked.has(o.id)) continue;
+    if (o.status === "paid" || o.status === "closed") continue;
+    let items = orderItems.filter((i) => i.order_id === o.id);
     if (printerFilter && printerFilter !== "all") {
       const printerIds = new Set(printerFilter.split(",").map((p) => p.trim()).filter(Boolean));
       if (printerIds.size > 0) {
-        const filtered = items.filter((i) => {
+        items = items.filter((i) => {
           const prod = products.find((p) => p.id === i.product_id);
           const printerIdsStr = prod?.printers ? (Array.isArray(prod.printers) ? prod.printers.join(",") : String(prod.printers)) : "";
           const cat = prod ? categories.find((c) => c.id === prod.category_id) : null;
@@ -1565,9 +1563,7 @@ app.get("/api/kitchen/orders", authMiddleware, async (req, res) => {
           if (allPrinters.length === 0) return true;
           return allPrinters.some((pid) => printerIds.has(pid));
         });
-        if (filtered.length === 0) continue;
-        items.length = 0;
-        items.push(...filtered);
+        if (items.length === 0) continue;
       }
     }
     if (items.length === 0) continue;
