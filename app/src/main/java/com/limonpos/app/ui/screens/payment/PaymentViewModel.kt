@@ -108,15 +108,12 @@ class PaymentViewModel @Inject constructor(
     val receiptPrintWarningState: StateFlow<ReceiptPrintWarningState?> = receiptPrintWarningHolder.state
 
     init {
-        loadOrder()
-        syncToBackend()
-    }
-
-    private fun syncToBackend() {
         viewModelScope.launch {
+            // Fix: Sync first, then load — so B device gets order from API before loadOrder runs
             if (apiSyncRepository.isOnline()) {
                 apiSyncRepository.syncFromApi()
             }
+            loadOrder()
         }
     }
 

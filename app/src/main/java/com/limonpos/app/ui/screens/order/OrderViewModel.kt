@@ -127,8 +127,8 @@ class OrderViewModel @Inject constructor(
 
     init {
         loadTable()
-        refreshOrderId()
         loadCategoriesWithProducts()
+        // Fix: Sync first, then refreshOrderId — so B device gets order from API before loading
         viewModelScope.launch {
             if (apiSyncRepository.isOnline()) {
                 _uiState.update { it.copy(syncInProgress = true) }
@@ -141,6 +141,7 @@ class OrderViewModel @Inject constructor(
                     loadCategoriesWithProducts()
                 }
             }
+            refreshOrderId()
         }
         // Full sync every 12s so table/order changes (e.g. B paid while A has table open) propagate quickly
         viewModelScope.launch {
@@ -151,6 +152,7 @@ class OrderViewModel @Inject constructor(
                         val ok = apiSyncRepository.syncFromApi()
                         if (!ok) _uiState.update { it.copy(syncError = apiSyncRepository.lastSyncError ?: "Sync error") }
                         loadTable() // refresh table status (e.g. closed by another user)
+                        refreshOrderId() // reload order after sync (e.g. B gets A's order)
                         loadCategoriesWithProducts()
                     }
                 } catch (e: Exception) {

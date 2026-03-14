@@ -130,15 +130,15 @@ class ApiSyncRepository @Inject constructor(
         }
     }
 
-    /** Fetch KDS orders directly from API - no sync, all devices see same data. Also upserts to local DB for Start/Ready actions. */
+    /** Fetch KDS orders from API, upsert to local (merge status), then return from LOCAL so Ready/Delivered is reflected. */
     suspend fun fetchKitchenOrdersFromApi(printers: String? = null): List<KitchenOrderDto>? {
         if (!isOnline()) return null
         return try {
             restoreAuthTokenIfNeeded()
             val res = apiService.getKitchenOrders(printers)
-            val list = if (res.isSuccessful) res.body() else null
-            if (!list.isNullOrEmpty()) {
-                for (ko in list) {
+            val apiList = if (res.isSuccessful) res.body() else null
+            if (!apiList.isNullOrEmpty()) {
+                for (ko in apiList) {
                     val fullOrder = apiService.getOrder(ko.id).body() ?: continue
                     val items = fullOrder.items ?: emptyList()
                     val orderEntity = OrderEntity(
@@ -161,19 +161,34 @@ class ApiSyncRepository @Inject constructor(
                     val localItems = orderItemDao.getOrderItems(fullOrder.id).first()
                     upsertOrderItemsFromApi(fullOrder.id, items, localItems)
                 }
+                // Return from LOCAL so Ready/Delivered (from this device) is shown — fix slow disappear / reappear
+                apiList.mapNotNull { ko ->
+                    val order = orderDao.getOrderById(ko.id) ?: return@mapNotNull null
+                    val localItems = orderItemDao.getOrderItems(ko.id).first()
+                    KitchenOrderDto(
+                        id = order.id,
+                        tableNumber = order.tableNumber,
+                        waiterName = order.waiterName,
+                        status = order.status,
+                        createdAt = order.createdAt,
+                        items = localItems.map { KitchenOrderItemDto(it.id, it.productName, it.quantity, it.notes, it.status, it.sentAt) }
+                    )
+                }
+            } else {
+                apiList
             }
-            list
         } catch (e: Exception) {
             Log.e("ApiSync", "fetchKitchenOrdersFromApi error: ${e.message}")
             null
         }
     }
 
-    /** Lightweight sync for KDS: tables + orders. Uses dashboard/open-orders for order IDs (API source of truth). */
+    /** Lightweight sync for KDS: tables + orders. Push Ready/Delivered first so API has it; then pull. */
     suspend fun syncTablesAndOrdersForKds(): Boolean {
         if (!isOnline()) return false
         restoreAuthTokenIfNeeded()
         return try {
+            pushOrderItemStatusUpdates() // Push KDS Ready/Delivered so other devices see it; fix slow disappear
             syncTables()
             syncOrdersFromOpenOrdersApi()
             syncOrdersFromApi()
@@ -805,7 +820,10 @@ class ApiSyncRepository @Inject constructor(
             val res = dto.reservation
             val isReservedFromApi = dto.status == "reserved" || res != null
             val apiSaysFree = dto.status == "free"
-            val useLocalOccupied = !isReservedFromApi && localOccupiedRow != null && localOccupiedRow.currentOrderId != null && (dto.currentOrderId.isNullOrBlank() || apiSaysFree)
+            // Fix: Only prefer local occupied when WE opened it and haven't pushed yet (PENDING).
+            // When API says free (another device closed), trust API — avoid orphan "occupied" with no order.
+            val useLocalOccupied = !isReservedFromApi && apiSaysFree && localOccupiedRow != null && localOccupiedRow.currentOrderId != null &&
+                localOccupiedRow.syncStatus == "PENDING"
             // Trust API when it says occupied - so other devices' occupied tables are visible (multi-app sync).
             // Previously preferred local free over API occupied, which broke app-to-app visibility.
             val useLocalFree = false
