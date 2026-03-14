@@ -94,6 +94,9 @@ interface ApiService {
     @GET("dashboard/open-orders")
     suspend fun getOpenOrders(): Response<List<OpenOrderSummaryDto>>
 
+    @GET("kitchen/orders")
+    suspend fun getKitchenOrders(@Query("printers") printers: String? = null): Response<List<KitchenOrderDto>>
+
     @GET("orders/{id}")
     suspend fun getOrder(@Path("id") id: String): Response<OrderDto>
 

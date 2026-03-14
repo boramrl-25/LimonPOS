@@ -1535,6 +1535,62 @@ app.get("/api/security/user-shifts", authMiddleware, async (req, res) => {
   });
 });
 
+// Kitchen orders: KDS için - tüm cihazlardan mutfağa gönderilmiş siparişler (API kaynağı, sync gerektirmez)
+app.get("/api/kitchen/orders", authMiddleware, async (req, res) => {
+  await ensurePrismaReady();
+  const printerFilter = (req.query.printers || "").toString().trim();
+  const tables = await store.getTables();
+  const orderIdsLinked = new Set(tables.filter((t) => t.current_order_id).map((t) => t.current_order_id));
+  const orders = await store.getOrders();
+  const orderItems = await store.getAllOrderItems();
+  const products = await store.getAllProducts();
+  const categories = await store.getAllCategories();
+  const toMs = (v) => (v == null ? null : v instanceof Date ? v.getTime() : Number(v));
+  const KDS_STATUSES = ["sent", "preparing", "ready", "delivered"];
+  const list = [];
+  for (const o of orders) {
+    if (o.status !== "sent" || !orderIdsLinked.has(o.id)) continue;
+    const items = orderItems
+      .filter((i) => i.order_id === o.id && KDS_STATUSES.includes(i.status || ""))
+      .filter((i) => i.sent_at != null || i.status === "preparing" || i.status === "ready" || i.status === "delivered");
+    if (printerFilter && printerFilter !== "all") {
+      const printerIds = new Set(printerFilter.split(",").map((p) => p.trim()).filter(Boolean));
+      if (printerIds.size > 0) {
+        const filtered = items.filter((i) => {
+          const prod = products.find((p) => p.id === i.product_id);
+          const printerIdsStr = prod?.printers ? (Array.isArray(prod.printers) ? prod.printers.join(",") : String(prod.printers)) : "";
+          const cat = prod ? categories.find((c) => c.id === prod.category_id) : null;
+          const catPrinters = cat?.printers ? (Array.isArray(cat.printers) ? cat.printers.join(",") : String(cat.printers)) : "";
+          const allPrinters = (printerIdsStr + "," + catPrinters).split(",").map((x) => x.trim()).filter(Boolean);
+          if (allPrinters.length === 0) return true;
+          return allPrinters.some((pid) => printerIds.has(pid));
+        });
+        if (filtered.length === 0) continue;
+        items.length = 0;
+        items.push(...filtered);
+      }
+    }
+    if (items.length === 0) continue;
+    list.push({
+      id: o.id,
+      tableNumber: o.table_number || "",
+      waiterName: o.waiter_name || "",
+      status: o.status,
+      createdAt: toMs(o.created_at) || 0,
+      items: items.map((i) => ({
+        id: i.id,
+        productName: i.product_name || "",
+        quantity: i.quantity || 0,
+        notes: i.notes || "",
+        status: i.status || "sent",
+        sentAt: toMs(i.sent_at),
+      })),
+    });
+  }
+  list.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+  res.json(list);
+});
+
 // Open orders: only orders that are linked to a table (current_order_id). App ile uyumlu.
 app.get("/api/dashboard/open-orders", authMiddleware, async (req, res) => {
   await ensurePrismaReady();

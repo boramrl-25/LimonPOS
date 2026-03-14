@@ -9,6 +9,7 @@ import com.limonpos.app.data.local.dao.PaymentDao
 import com.limonpos.app.data.local.dao.ProductDao
 import com.limonpos.app.data.local.dao.TableDao
 import com.limonpos.app.data.local.dao.UserDao
+import com.limonpos.app.data.repository.ApiSyncRepository
 import com.limonpos.app.data.repository.OrderRepository
 import com.limonpos.app.data.repository.PrinterRepository
 import com.limonpos.app.data.repository.TableRepository
@@ -84,6 +85,7 @@ class KdsServer @Inject constructor(
     private val orderDao: OrderDao,
     private val orderItemDao: OrderItemDao,
     private val orderRepository: OrderRepository,
+    private val apiSyncRepository: ApiSyncRepository,
     private val tableDao: TableDao,
     private val tableRepository: TableRepository,
     private val productDao: ProductDao,
@@ -117,12 +119,20 @@ class KdsServer @Inject constructor(
                             newFixedLengthResponse(Response.Status.OK, "text/html; charset=utf-8", KdsServer.FLOOR_PLAN_HTML)
                         uri == "/kitchen-orders" && session.method == Method.GET -> {
                             val printerFilter = queryParams["printers"]?.takeIf { it.isNotBlank() }
-                            val selectedPrinterIds = when {
-                                printerFilter == null || printerFilter.equals("all", ignoreCase = true) -> null
-                                else -> printerFilter.split(",").map { it.trim() }.filter { it.isNotBlank() }.toSet()
+                            val apiOrders = runBlocking {
+                                apiSyncRepository.fetchKitchenOrdersFromApi(
+                                    if (printerFilter == null || printerFilter.equals("all", ignoreCase = true)) null
+                                    else printerFilter
+                                )
                             }
-                            val orders = try {
+                            val orders = if (!apiOrders.isNullOrEmpty()) {
+                                apiOrders
+                            } else try {
                                 runBlocking {
+                                    val selectedPrinterIds = when {
+                                        printerFilter == null || printerFilter.equals("all", ignoreCase = true) -> null
+                                        else -> printerFilter.split(",").map { it.trim() }.filter { it.isNotBlank() }.toSet()
+                                    }
                                     orderDao.getOrdersSentToKitchen().first().mapNotNull { order ->
                                         val allItems = orderItemDao.getOrderItems(order.id).first()
                                         val items = if (selectedPrinterIds == null) {

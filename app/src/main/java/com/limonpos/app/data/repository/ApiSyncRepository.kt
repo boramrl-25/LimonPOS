@@ -130,6 +130,45 @@ class ApiSyncRepository @Inject constructor(
         }
     }
 
+    /** Fetch KDS orders directly from API - no sync, all devices see same data. Also upserts to local DB for Start/Ready actions. */
+    suspend fun fetchKitchenOrdersFromApi(printers: String? = null): List<KitchenOrderDto>? {
+        if (!isOnline()) return null
+        return try {
+            restoreAuthTokenIfNeeded()
+            val res = apiService.getKitchenOrders(printers)
+            val list = if (res.isSuccessful) res.body() else null
+            if (!list.isNullOrEmpty()) {
+                for (ko in list) {
+                    val fullOrder = apiService.getOrder(ko.id).body() ?: continue
+                    val items = fullOrder.items ?: emptyList()
+                    val orderEntity = OrderEntity(
+                        id = fullOrder.id,
+                        tableId = fullOrder.tableId,
+                        tableNumber = fullOrder.tableNumber,
+                        waiterId = fullOrder.waiterId,
+                        waiterName = fullOrder.waiterName,
+                        status = fullOrder.status ?: "sent",
+                        subtotal = fullOrder.subtotal,
+                        taxAmount = fullOrder.taxAmount,
+                        discountPercent = fullOrder.discountPercent,
+                        discountAmount = fullOrder.discountAmount,
+                        total = fullOrder.total,
+                        createdAt = fullOrder.createdAt,
+                        paidAt = fullOrder.paidAt,
+                        syncStatus = "SYNCED"
+                    )
+                    orderDao.insertOrder(orderEntity)
+                    val localItems = orderItemDao.getOrderItems(fullOrder.id).first()
+                    upsertOrderItemsFromApi(fullOrder.id, items, localItems)
+                }
+            }
+            list
+        } catch (e: Exception) {
+            Log.e("ApiSync", "fetchKitchenOrdersFromApi error: ${e.message}")
+            null
+        }
+    }
+
     /** Lightweight sync for KDS: tables + orders. Uses dashboard/open-orders for order IDs (API source of truth). */
     suspend fun syncTablesAndOrdersForKds(): Boolean {
         if (!isOnline()) return false

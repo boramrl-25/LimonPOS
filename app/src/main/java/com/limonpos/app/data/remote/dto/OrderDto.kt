@@ -48,6 +48,25 @@ data class AddOrderItemRequest(
     @SerializedName("client_line_id") val clientLineId: String? = null
 )
 
+/** API kitchen/orders response - KDS format */
+data class KitchenOrderDto(
+    @SerializedName("id") val id: String,
+    @SerializedName("tableNumber") val tableNumber: String,
+    @SerializedName("waiterName") val waiterName: String,
+    @SerializedName("status") val status: String,
+    @SerializedName("createdAt") val createdAt: Long,
+    @SerializedName("items") val items: List<KitchenOrderItemDto>
+)
+
+data class KitchenOrderItemDto(
+    @SerializedName("id") val id: String,
+    @SerializedName("productName") val productName: String,
+    @SerializedName("quantity") val quantity: Int,
+    @SerializedName("notes") val notes: String,
+    @SerializedName("status") val status: String,
+    @SerializedName("sentAt") val sentAt: Long?
+)
+
 /** Dashboard open-orders response: order_id list for KDS sync */
 data class OpenOrderSummaryDto(
     @SerializedName("order_id") val orderId: String
