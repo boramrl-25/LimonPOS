@@ -45,6 +45,8 @@ export default function UsersSettingsPage() {
   const [newRoleLabel, setNewRoleLabel] = useState("");
   const [newRoleLabelTr, setNewRoleLabelTr] = useState("");
   const [addingRole, setAddingRole] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [zohoStatus, setZohoStatus] = useState<{ enabled: boolean; configured: boolean } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -124,6 +126,8 @@ export default function UsersSettingsPage() {
   }
 
   async function save() {
+    setSaveError(null);
+    setSaving(true);
     try {
       const payload = {
         name: form.name,
@@ -143,7 +147,11 @@ export default function UsersSettingsPage() {
       await load();
       setEditing(undefined);
     } catch (e) {
-      alert((e as Error).message);
+      const msg = (e as Error).message || "Kaydetme hatası";
+      setSaveError(msg);
+      alert(msg);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -566,9 +574,10 @@ export default function UsersSettingsPage() {
                 </div>
               </div>
             </div>
+            {saveError && <p className="text-red-400 text-sm mt-2">{saveError}</p>}
             <div className="flex gap-2 mt-6">
-              <button onClick={save} className="flex-1 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium">Save</button>
-              <button onClick={() => setEditing(undefined)} className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white">Cancel</button>
+              <button type="button" onClick={save} disabled={saving} className="flex-1 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white font-medium">{saving ? "Kaydediliyor..." : "Save"}</button>
+              <button type="button" onClick={() => setEditing(undefined)} disabled={saving} className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white disabled:opacity-50">Cancel</button>
             </div>
           </div>
         </div>

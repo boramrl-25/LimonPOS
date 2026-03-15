@@ -28,6 +28,7 @@ import com.limonpos.app.data.repository.PrinterRepository
 import com.limonpos.app.data.repository.ProductRepository
 import com.limonpos.app.data.repository.TableRepository
 import com.limonpos.app.di.ApplicationScope
+import com.limonpos.app.service.KdsRefreshHolder
 import com.limonpos.app.service.PrinterService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
@@ -97,7 +98,8 @@ class OrderViewModel @Inject constructor(
     private val voidRequestRepository: VoidRequestRepository,
     private val modifierGroupDao: ModifierGroupDao,
     private val modifierOptionDao: ModifierOptionDao,
-    private val overdueWarningHolder: OverdueWarningHolder
+    private val overdueWarningHolder: OverdueWarningHolder,
+    private val kdsRefreshHolder: KdsRefreshHolder
 ) : ViewModel() {
 
     private val tableId: String = checkNotNull(savedStateHandle["tableId"]) { "tableId required" }
@@ -143,10 +145,10 @@ class OrderViewModel @Inject constructor(
             }
             refreshOrderId()
         }
-        // Full sync every 12s so table/order changes (e.g. B paid while A has table open) propagate quickly
+        // Full sync every 3s so table/order changes (e.g. B paid, A's order on KDS) propagate quickly
         viewModelScope.launch {
             while (true) {
-                delay(12000)
+                delay(3000)
                 try {
                     if (apiSyncRepository.isOnline()) {
                         val ok = apiSyncRepository.syncFromApi()
@@ -520,6 +522,7 @@ class OrderViewModel @Inject constructor(
             try {
                 // Mark as sent immediately so UI updates instantly (cart shows "sent")
                 orderRepository.markItemsAsSent(orderId, pendingItemIds)
+                kdsRefreshHolder.requestRefresh() // So KDS on this device (if open) refreshes immediately
                 val updated = withContext(Dispatchers.IO) {
                     orderRepository.getOrderWithItems(orderId).first()
                 }
@@ -527,11 +530,13 @@ class OrderViewModel @Inject constructor(
                     _uiState.update { it.copy(orderWithItems = updated) }
                 }
 
-                // In background: push to API, then print (no need to mark again)
-                applicationScope.launch {
+                // Önce API'ye push et (B cihazı KDS'de görsün), sonra yazdır
+                viewModelScope.launch {
                     try {
                         if (apiSyncRepository.isOnline()) {
-                            apiSyncRepository.ensureOrderAndSendToKitchen(orderId)
+                            withContext(Dispatchers.IO) {
+                                apiSyncRepository.ensureOrderAndSendToKitchen(orderId)
+                            }
                         }
                         when (val result = kitchenPrintHelper.printItemsAlreadyMarkedSent(orderId, pendingItemIds)) {
                             is KitchenPrintResult.Success -> {

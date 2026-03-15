@@ -37,10 +37,10 @@ class KdsViewModel @Inject constructor(
                 apiSyncRepository.syncTablesAndOrdersForKds()
             }
         }
-        // Force sync every 2s so B (KDS) gets A's orders quickly; also pushes Ready/Delivered
+        // Force sync every 1.5s so B (KDS) gets A's orders quickly; also pushes Ready/Delivered
         viewModelScope.launch {
             while (true) {
-                delay(2000)
+                delay(1500)
                 if (apiSyncRepository.isOnline()) {
                     apiSyncRepository.syncTablesAndOrdersForKds()
                 }

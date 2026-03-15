@@ -119,11 +119,21 @@ class KdsServer @Inject constructor(
                             newFixedLengthResponse(Response.Status.OK, "text/html; charset=utf-8", KdsServer.FLOOR_PLAN_HTML)
                         uri == "/kitchen-orders" && session.method == Method.GET -> {
                             val printerFilter = queryParams["printers"]?.takeIf { it.isNotBlank() }
-                            val apiOrders = runBlocking {
+                            var apiOrders = runBlocking {
                                 apiSyncRepository.fetchKitchenOrdersFromApi(
                                     if (printerFilter == null || printerFilter.equals("all", ignoreCase = true)) null
                                     else printerFilter
                                 )
+                            }
+                            // B cihazında API boş dönebilir (A henüz push etmemiş veya tablo bağlı değil). Sync yapıp local'den oku.
+                            if (apiOrders.isNullOrEmpty()) {
+                                runBlocking { apiSyncRepository.syncTablesAndOrdersForKds() }
+                                apiOrders = runBlocking {
+                                    apiSyncRepository.fetchKitchenOrdersFromApi(
+                                        if (printerFilter == null || printerFilter.equals("all", ignoreCase = true)) null
+                                        else printerFilter
+                                    )
+                                }
                             }
                             val orders = if (!apiOrders.isNullOrEmpty()) {
                                 apiOrders
@@ -706,7 +716,7 @@ async function loadKitchen() {
       else if (hasPreparing) html += '<div style="margin-top:12px"><button class="kds-btn-order-ready" onclick="orderReady(\'' + o.id + '\')">✓ Order Ready</button></div>';
       html += '</div>';
     }
-    document.getElementById('kitchen-orders').innerHTML = html || '<p style="color:#94a3b8">No pending orders</p>';
+    document.getElementById('kitchen-orders').innerHTML = html || '<p style="color:#94a3b8">No pending orders</p><p style="color:#64748b;font-size:12px;margin-top:8px">A ve B tablette Ayarlar → Sunucu adresi aynı olmalı (örn. http://LAPTOP_IP:3002/api/)</p>';
     var pendEl = document.getElementById('kds-pending-count');
     var prepEl = document.getElementById('kds-preparing-count');
     var delEl = document.getElementById('kds-delayed-count');
@@ -715,7 +725,7 @@ async function loadKitchen() {
     if (delEl) delEl.textContent = delayedCount;
   } catch (e) {
     var el = document.getElementById('kitchen-orders');
-    if (el) el.innerHTML = '<p style="color:#94a3b8">No pending orders</p>';
+    if (el) el.innerHTML = '<p style="color:#94a3b8">No pending orders</p><p style="color:#64748b;font-size:12px;margin-top:8px">A ve B tablette Ayarlar → Sunucu adresi aynı olmalı.</p>';
   }
 }
 function startAll(orderId) { fetch(base + '/kitchen-orders/orders/' + encodeURIComponent(orderId) + '/start-all', { method: 'POST' }).then(function() { loadKitchen(); }); }
@@ -763,7 +773,7 @@ function showPage(id) {
 var urlParams = new URLSearchParams(window.location.search);
 updateKdsSpeakerUI();
 if (urlParams.get('page') === 'settings') showPage('settings'); else loadKdsPrinters();
-setInterval(function() { if (document.getElementById('kds') && document.getElementById('kds').classList.contains('active')) loadKitchen(); }, 2000);
+setInterval(function() { if (document.getElementById('kds') && document.getElementById('kds').classList.contains('active')) loadKitchen(); }, 1500);
 setInterval(function() { if (document.getElementById('kds') && document.getElementById('kds').classList.contains('active')) checkLateAndShowPopup(); }, 10 * 60 * 1000);
 </script>
 </body>

@@ -16,11 +16,11 @@ async function fetchWithTimeout(url: string, opts: RequestInit = {}, retriesLeft
       await new Promise((r) => setTimeout(r, 1500));
       return fetchWithTimeout(url, { ...opts, signal: undefined } as RequestInit, retriesLeft - 1);
     }
-    if ((e as Error).name === "AbortError") {
-      const isLocal = typeof API_URL === "string" && API_URL.includes("localhost");
+    const isLocal = typeof API_URL === "string" && API_URL.includes("localhost");
+    if ((e as Error).name === "AbortError" || (e as Error).message === "Failed to fetch") {
       throw new Error(
         isLocal
-          ? "Backend yanıt vermiyor. Lokal backend çalışıyor mu? (cd backend && npm run dev, port 3002)"
+          ? "Backend kapalı veya yanıt vermiyor. Backend klasöründe 'node server.js' çalıştırın (port 3002)."
           : "API'ye ulaşılamıyor. İnternet bağlantısını ve api.the-limon.com erişimini kontrol edin."
       );
     }

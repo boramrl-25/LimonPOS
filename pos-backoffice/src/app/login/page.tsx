@@ -1,15 +1,14 @@
 "use client";
 
-import { useState, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { login } from "@/lib/api";
 
 function LoginForm() {
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const redirectTo = searchParams.get("redirect") || "/";
+  const redirectTo = typeof window !== "undefined" ? (new URLSearchParams(window.location.search).get("redirect") || "/") : "/";
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -58,9 +57,14 @@ function LoginForm() {
 }
 
 export default function LoginPage() {
-  return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-black text-slate-400">Loading...</div>}>
-      <LoginForm />
-    </Suspense>
-  );
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+  if (!mounted) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-black text-slate-400">Yükleniyor...</div>
+    );
+  }
+  return <LoginForm />;
 }

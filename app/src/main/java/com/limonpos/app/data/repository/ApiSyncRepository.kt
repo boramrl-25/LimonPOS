@@ -1601,14 +1601,15 @@ class ApiSyncRepository @Inject constructor(
         } catch (_: Exception) { false }
     }
 
-    /** Ensures order + items exist on API, then marks order as sent to kitchen. Call before local print. */
+    /** Ensures order + items exist on API, then marks order as sent to kitchen. Call before local print. Retry once on failure. */
     suspend fun ensureOrderAndSendToKitchen(orderId: String): Boolean {
         if (!isOnline()) return false
         val order = orderDao.getOrderById(orderId) ?: return false
+        if (ensureOrderExistsOnApi(orderId) == null) return false
+        if (!pushSendToKitchen(orderId)) return false
         val table = tableDao.getTableById(order.tableId)
-        if (table != null) pushTableState(table) // Ensure table with currentOrderId is on API so other devices' KDS can sync
-        ensureOrderExistsOnApi(orderId) ?: return false
-        return pushSendToKitchen(orderId)
+        if (table != null) pushTableState(table)
+        return true
     }
 
     suspend fun fetchOrderFromApi(orderId: String): Boolean {

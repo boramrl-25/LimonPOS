@@ -1563,7 +1563,7 @@ app.get("/api/security/user-shifts", authMiddleware, async (req, res) => {
   });
 });
 
-// Kitchen orders: KDS için - masadaki tüm ürünler (status filtresi yok, masada ne varsa KDS'e gider)
+// Kitchen orders: KDS için. Masaya bağlı VEYA status=sent + en az 1 item sent_at (B cihazında görünsün diye fallback).
 app.get("/api/kitchen/orders", authMiddleware, async (req, res) => {
   await ensurePrismaReady();
   const printerFilter = (req.query.printers || "").toString().trim();
@@ -1576,9 +1576,11 @@ app.get("/api/kitchen/orders", authMiddleware, async (req, res) => {
   const toMs = (v) => (v == null ? null : v instanceof Date ? v.getTime() : Number(v));
   const list = [];
   for (const o of orders) {
-    if (!orderIdsLinked.has(o.id)) continue;
     if (o.status === "paid" || o.status === "closed") continue;
     let items = orderItems.filter((i) => i.order_id === o.id);
+    const hasSentItems = items.some((i) => i.sent_at != null);
+    const linkedToTable = orderIdsLinked.has(o.id);
+    if (!linkedToTable && !(o.status === "sent" && hasSentItems)) continue;
     if (printerFilter && printerFilter !== "all") {
       const printerIds = new Set(printerFilter.split(",").map((p) => p.trim()).filter(Boolean));
       if (printerIds.size > 0) {
