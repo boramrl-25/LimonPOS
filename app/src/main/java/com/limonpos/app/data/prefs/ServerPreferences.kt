@@ -25,6 +25,8 @@ class ServerPreferences @Inject constructor(
 ) {
     private object Keys {
         val API_BASE_URL = stringPreferencesKey("api_base_url")
+        val API_BASE_URL_SECONDARY = stringPreferencesKey("api_base_url_secondary")
+        val API_BASE_URL_TERTIARY = stringPreferencesKey("api_base_url_tertiary")
         val DEVICE_ID = stringPreferencesKey("device_id")
     }
 
@@ -49,8 +51,29 @@ class ServerPreferences @Inject constructor(
         resolveBaseUrl(it[Keys.API_BASE_URL])
     }
 
+    val secondaryBaseUrl: Flow<String> = context.serverDataStore.data.map { prefs ->
+        val v = prefs[Keys.API_BASE_URL_SECONDARY]
+        if (v.isNullOrBlank() || isBlockedUrl(v)) "" else resolveBaseUrl(v)
+    }
+    val tertiaryBaseUrl: Flow<String> = context.serverDataStore.data.map { prefs ->
+        val v = prefs[Keys.API_BASE_URL_TERTIARY]
+        if (v.isNullOrBlank() || isBlockedUrl(v)) "" else resolveBaseUrl(v)
+    }
+
     suspend fun getBaseUrl(): String {
         return resolveBaseUrl(context.serverDataStore.data.first()[Keys.API_BASE_URL])
+    }
+
+    /** Hibrit mimari: Primary → Secondary → Tertiary (Cloud) sırayla denenir. Boş olanlar atlanır. */
+    suspend fun getBaseUrlList(): List<String> {
+        val primary = getBaseUrl()
+        val secondary = getSecondaryBaseUrl()
+        val tertiary = getTertiaryBaseUrl()
+        return listOfNotNull(
+            primary,
+            secondary.takeIf { it.isNotBlank() && it != primary },
+            tertiary.takeIf { it.isNotBlank() && it != primary && it != secondary }
+        )
     }
 
     suspend fun setBaseUrl(url: String) {
@@ -79,6 +102,45 @@ class ServerPreferences @Inject constructor(
             }
         }
         context.serverDataStore.edit { it[Keys.API_BASE_URL] = normalized }
+    }
+
+    suspend fun setSecondaryBaseUrl(url: String?) {
+        val normalized = url?.trim()?.let { normalizeUrl(it) } ?: ""
+        context.serverDataStore.edit {
+            if (normalized.isBlank()) it.remove(Keys.API_BASE_URL_SECONDARY)
+            else it[Keys.API_BASE_URL_SECONDARY] = normalized
+        }
+    }
+
+    suspend fun setTertiaryBaseUrl(url: String?) {
+        val normalized = url?.trim()?.let { normalizeUrl(it) } ?: ""
+        context.serverDataStore.edit {
+            if (normalized.isBlank()) it.remove(Keys.API_BASE_URL_TERTIARY)
+            else it[Keys.API_BASE_URL_TERTIARY] = normalized
+        }
+    }
+
+    suspend fun getSecondaryBaseUrl(): String {
+        val v = context.serverDataStore.data.first()[Keys.API_BASE_URL_SECONDARY]
+        return if (v.isNullOrBlank() || isBlockedUrl(v)) "" else resolveBaseUrl(v)
+    }
+    suspend fun getTertiaryBaseUrl(): String {
+        val v = context.serverDataStore.data.first()[Keys.API_BASE_URL_TERTIARY]
+        return if (v.isNullOrBlank() || isBlockedUrl(v)) "" else resolveBaseUrl(v)
+    }
+
+    private fun normalizeUrl(trimmed: String): String = when {
+        trimmed.isBlank() -> ""
+        isBlockedUrl(trimmed) -> ""
+        trimmed.equals("localhost", ignoreCase = true) ||
+        trimmed.equals("localhost:3000", ignoreCase = true) ||
+        trimmed.equals("http://localhost", ignoreCase = true) ||
+        trimmed.equals("http://localhost:3000", ignoreCase = true) ||
+        trimmed.equals("http://localhost/", ignoreCase = true) ||
+        trimmed.equals("http://localhost:3000/", ignoreCase = true) -> DEFAULT_BASE_URL
+        trimmed.startsWith("http://") || trimmed.startsWith("https://") ->
+            if (trimmed.endsWith("/")) trimmed else "$trimmed/"
+        else -> "http://${trimmed.removeSuffix("/")}:3002/api/"
     }
 
     /** Stable device id for heartbeat; generated once per install. */

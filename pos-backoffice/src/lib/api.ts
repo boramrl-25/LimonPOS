@@ -947,6 +947,31 @@ export async function restoreOrderItem(id: string): Promise<{ ok: boolean; order
   return res.json();
 }
 
+/** Hibrit mimari: Zorunlu Güncelle — Cihazlara katalog güncelleme sinyali gönderir */
+export async function broadcastCatalogUpdate(): Promise<{ ok: boolean; message: string }> {
+  const res = await fetchWithTimeout(`${API_URL}/admin/broadcast-catalog-update`, {
+    method: "POST",
+    headers: headers(),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Broadcast failed");
+  return data;
+}
+
+/** Hibrit mimari: Gün sonu audit raporu (source: app vs local_backend) */
+export async function getAuditReport(): Promise<{
+  date: string;
+  totalOrders: number;
+  appCount: number;
+  localBackendCount: number;
+  byDevice: Record<string, number>;
+  note: string;
+}> {
+  const res = await fetchWithTimeout(`${API_URL}/admin/audit-report`, { headers: headers() });
+  if (!res.ok) throw new Error("Failed to fetch audit report");
+  return res.json();
+}
+
 export async function getSyncErrors(): Promise<Array<{ id: string; source: string; entity_type: string; entity_id: string | null; message: string | null; createdAt: string }>> {
   const res = await fetchWithTimeout(`${API_URL}/recovery/sync-errors`, { headers: headers() });
   if (!res.ok) throw new Error("Failed to fetch sync errors");

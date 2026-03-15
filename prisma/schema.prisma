@@ -146,6 +146,8 @@ model Order {
   created_at       DateTime?
   paid_at          DateTime?
   zoho_receipt_id  String?
+  source           String?   @default("app")  // "app" | "local_backend" - audit
+  device_id        String?   // cihaz id - audit
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
   deletedAt        DateTime?
@@ -187,6 +189,8 @@ model Payment {
   received_amount Float?
   change_amount   Float?   @default(0)
   user_id         String?
+  source          String?  @default("app")   // "app" | "local_backend" - audit
+  device_id       String?  // cihaz id - audit
   created_at      DateTime?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt

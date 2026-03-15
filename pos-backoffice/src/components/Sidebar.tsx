@@ -15,6 +15,7 @@ import {
   Map,
   LogOut,
   FileText,
+  FileCheck,
   Receipt,
   TrendingUp,
   XCircle,
@@ -49,6 +50,7 @@ const reportItems = [
   { href: "/reports/refunds", label: "Refund Report", icon: RotateCcw },
   { href: "/reports/category-sales", label: "Category Sales", icon: BarChart2 },
   { href: "/reports/product-sales", label: "Product Sales", icon: ShoppingBag },
+  { href: "/reports/audit", label: "Audit Raporu", icon: FileCheck },
 ];
 
 export default function Sidebar({ onClose }: { onClose?: () => void }) {

@@ -1,7 +1,10 @@
 package com.limonpos.app
 
 import android.app.Application
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
+import com.google.firebase.messaging.FirebaseMessaging
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
@@ -13,6 +16,8 @@ import com.limonpos.app.data.repository.ReservationReminderHolder
 import com.limonpos.app.data.repository.ReservationStatusHelper
 import com.limonpos.app.data.repository.TableRepository
 import com.limonpos.app.data.repository.UpcomingReservationAlert
+import com.limonpos.app.sync.CheckBackWorker
+import com.limonpos.app.util.FcmTokenHolder
 import com.limonpos.app.di.ApplicationScope
 import com.limonpos.app.util.NetworkMonitor
 import dagger.hilt.android.HiltAndroidApp
@@ -41,7 +46,9 @@ class LimonPOSApp : Application() {
     override fun onCreate() {
         super.onCreate()
         databaseSeeder.seedIfEmpty()
+        CheckBackWorker.enqueue(this)
         startCloudSyncWhenOnline()
+        fetchFcmToken()
         startOverdueCheckLoop()
         startReservationReminderLoop()
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
@@ -102,6 +109,19 @@ class LimonPOSApp : Application() {
                     Log.e("LimonPOSApp", "Reservation reminder check error: ${e.message}")
                 }
                 kotlinx.coroutines.delay(45 * 1000L)
+            }
+        }
+    }
+
+    /** FCM token al; heartbeat ile backend'e gönderilecek (Force Update push için). */
+    private fun fetchFcmToken() {
+        Handler(Looper.getMainLooper()).post {
+            try {
+                FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
+                    if (!token.isNullOrBlank()) FcmTokenHolder.setToken(token)
+                }.addOnFailureListener { e -> Log.e("LimonPOSApp", "FCM token failed: ${e.message}") }
+            } catch (e: Exception) {
+                Log.e("LimonPOSApp", "FCM token error: ${e.message}")
             }
         }
     }

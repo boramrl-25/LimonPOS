@@ -27,6 +27,16 @@ class ServerSettingsViewModel @Inject constructor(
         SharingStarted.WhileSubscribed(5000),
         ServerPreferences.DEFAULT_BASE_URL
     )
+    val secondaryBaseUrl = serverPreferences.secondaryBaseUrl.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        ""
+    )
+    val tertiaryBaseUrl = serverPreferences.tertiaryBaseUrl.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        ""
+    )
 
     private val _message = MutableStateFlow<String?>(null)
     val message = _message.asStateFlow()
@@ -34,11 +44,13 @@ class ServerSettingsViewModel @Inject constructor(
     private val _testing = MutableStateFlow(false)
     val testing = _testing.asStateFlow()
 
-    fun saveUrl(url: String) {
+    fun saveUrl(url: String, secondary: String? = null, tertiary: String? = null) {
         viewModelScope.launch {
             try {
                 serverPreferences.setBaseUrl(url)
-                _message.update { "Saved. Restart app to apply." }
+                serverPreferences.setSecondaryBaseUrl(secondary)
+                serverPreferences.setTertiaryBaseUrl(tertiary)
+                _message.update { "Saved. Changes apply immediately." }
             } catch (e: Exception) {
                 _message.update { "Error: ${e.message}" }
             }

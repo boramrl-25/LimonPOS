@@ -21,6 +21,12 @@ class SyncPreferences @Inject constructor(
 ) {
     private object Keys {
         val LAST_SYNC_TIMESTAMP = longPreferencesKey("last_sync_timestamp")
+        val LAST_LOCAL_SALES_CLEARED_AT = longPreferencesKey("last_local_sales_cleared_at")
+    }
+
+    companion object {
+        /** Cooldown after clear local sales: don't repopulate from API for 3 minutes. */
+        private const val SALES_CLEARED_COOLDOWN_MS = 3 * 60 * 1000L
     }
 
     suspend fun getLastSyncTimestamp(): Long {
@@ -29,5 +35,15 @@ class SyncPreferences @Inject constructor(
 
     suspend fun setLastSyncTimestamp(timestampMs: Long) {
         context.syncDataStore.edit { it[Keys.LAST_SYNC_TIMESTAMP] = timestampMs }
+    }
+
+    suspend fun setLastLocalSalesClearedAt(timestampMs: Long) {
+        context.syncDataStore.edit { it[Keys.LAST_LOCAL_SALES_CLEARED_AT] = timestampMs }
+    }
+
+    suspend fun isInSalesClearedCooldown(): Boolean {
+        val clearedAt = context.syncDataStore.data.first()[Keys.LAST_LOCAL_SALES_CLEARED_AT] ?: 0L
+        if (clearedAt <= 0) return false
+        return (System.currentTimeMillis() - clearedAt) < SALES_CLEARED_COOLDOWN_MS
     }
 }

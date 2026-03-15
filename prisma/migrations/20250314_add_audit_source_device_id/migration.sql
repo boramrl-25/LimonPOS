@@ -1,0 +1,7 @@
+-- AlterTable
+ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "source" TEXT DEFAULT 'app';
+ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "device_id" TEXT;
+
+-- AlterTable
+ALTER TABLE "Payment" ADD COLUMN IF NOT EXISTS "source" TEXT DEFAULT 'app';
+ALTER TABLE "Payment" ADD COLUMN IF NOT EXISTS "device_id" TEXT;

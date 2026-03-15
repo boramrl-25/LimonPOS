@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import { ArrowLeft, Plus, Trash2, BookOpen, RefreshCw, Search, FileSpreadsheet, FileDown } from "lucide-react";
 import * as XLSX from "xlsx";
-import { getProducts, getCategories, getPrinters, getModifierGroups, createProduct, updateProduct, deleteProduct, setProductShowInTill, getZohoItems, syncZohoBooks, checkZohoConnection, clearAndSyncProducts, getPendingZohoRemovalProducts, confirmProductRemoval } from "@/lib/api";
+import { getProducts, getCategories, getPrinters, getModifierGroups, createProduct, updateProduct, deleteProduct, setProductShowInTill, getZohoItems, syncZohoBooks, checkZohoConnection, clearAndSyncProducts, getPendingZohoRemovalProducts, confirmProductRemoval, broadcastCatalogUpdate } from "@/lib/api";
 
 type Product = {
   id: string;
@@ -59,6 +59,7 @@ export default function ProductsPage() {
   const [removalLoading, setRemovalLoading] = useState(false);
   const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(new Set());
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [forceUpdateLoading, setForceUpdateLoading] = useState(false);
   const [importConflictModal, setImportConflictModal] = useState<{
     conflicts: { name: string; existing: Product; row: Record<string, unknown> }[];
     rows: Record<string, unknown>[];
@@ -830,6 +831,24 @@ export default function ProductsPage() {
           </button>
           <button onClick={syncFromZoho} disabled={syncLoading} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-medium" title="Apply Zoho changes (products sync from Zoho)">
             <RefreshCw className={`w-4 h-4 ${syncLoading ? "animate-spin" : ""}`} /> Zoho Sync
+          </button>
+          <button
+            onClick={async () => {
+              setForceUpdateLoading(true);
+              try {
+                await broadcastCatalogUpdate();
+                alert("Zorunlu güncelleme sinyali gönderildi. Cihazlar kısa süre içinde güncelleyecek.");
+              } catch (e) {
+                alert((e as Error).message);
+              } finally {
+                setForceUpdateLoading(false);
+              }
+            }}
+            disabled={forceUpdateLoading}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white font-medium"
+            title="Hibrit mimari: Tüm cihazlara katalog güncelleme sinyali gönderir"
+          >
+            <RefreshCw className={`w-4 h-4 ${forceUpdateLoading ? "animate-spin" : ""}`} /> Zorunlu Güncelle
           </button>
           <button onClick={() => openEdit()} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium">
             <Plus className="w-4 h-4" /> New Product

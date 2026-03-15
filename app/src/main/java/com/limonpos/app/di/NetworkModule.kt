@@ -5,7 +5,8 @@ import com.limonpos.app.data.prefs.ServerPreferences
 import com.limonpos.app.data.remote.ApiService
 import com.limonpos.app.data.remote.LongOrIsoDateAdapter
 import com.limonpos.app.data.remote.AuthInterceptor
-import com.limonpos.app.data.remote.BaseUrlInterceptor
+import com.limonpos.app.data.remote.DeviceIdInterceptor
+import com.limonpos.app.data.remote.FailoverInterceptor
 import com.limonpos.app.data.remote.RetryInterceptor
 import dagger.Module
 import dagger.Provides
@@ -26,11 +27,13 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideOkHttpClient(
-        baseUrlInterceptor: BaseUrlInterceptor,
+        failoverInterceptor: FailoverInterceptor,
+        deviceIdInterceptor: DeviceIdInterceptor,
         authInterceptor: AuthInterceptor,
         retryInterceptor: RetryInterceptor
     ): OkHttpClient = OkHttpClient.Builder()
-        .addInterceptor(baseUrlInterceptor)
+        .addInterceptor(failoverInterceptor)
+        .addInterceptor(deviceIdInterceptor)
         .addInterceptor(retryInterceptor)
         .addInterceptor(authInterceptor)
         .addInterceptor(HttpLoggingInterceptor().apply {

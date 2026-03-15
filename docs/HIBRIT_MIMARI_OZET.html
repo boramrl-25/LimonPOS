@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LimonPOS — Hibrit Mimari Özeti</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 24px; background: #0f172a; color: #e2e8f0; max-width: 900px; margin-left: auto; margin-right: auto; }
+    h1 { color: #f59e0b; font-size: 1.75rem; margin-bottom: 8px; }
+    h2 { color: #fbbf24; font-size: 1.25rem; margin-top: 32px; margin-bottom: 12px; border-bottom: 1px solid #334155; padding-bottom: 8px; }
+    h3 { color: #94a3b8; font-size: 1rem; margin-top: 20px; }
+    pre { background: #1e293b; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 13px; border: 1px solid #334155; }
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 14px; }
+    th, td { border: 1px solid #334155; padding: 10px 12px; text-align: left; }
+    th { background: #1e293b; color: #f59e0b; }
+    tr:nth-child(even) { background: #1e293b33; }
+    ul { line-height: 1.7; color: #cbd5e1; }
+    .subtitle { color: #94a3b8; font-size: 0.95rem; margin-bottom: 24px; }
+    .diagram { background: #1e293b; padding: 20px; border-radius: 8px; font-family: monospace; font-size: 12px; line-height: 1.6; white-space: pre; overflow-x: auto; margin: 16px 0; border: 1px solid #334155; }
+    .highlight { color: #f59e0b; }
+    .ok { color: #22c55e; }
+  </style>
+</head>
+<body>
+
+<h1>LimonPOS — Hibrit Mimari Özeti</h1>
+<p class="subtitle">Offline öncelikli, cloud yedekli, audit destekli mimari</p>
+
+<h2>1. Genel Yapı</h2>
+<div class="diagram">┌─────────────────────────────────────────────────────────────────────────────┐
+│                          YEREL AĞ (WiFi)                                    │
+│  ┌─────────┐     ┌─────────────────┐     ┌─────────┐                       │
+│  │  App    │◄───►│ LOCAL BACKEND   │◄───►│  KDS    │                       │
+│  │  (POS)  │     │  (Primary)      │     │         │                       │
+│  └────┬────┘     └────────┬────────┘     └─────────┘                       │
+│       │                   │                                                 │
+└───────┼───────────────────┼─────────────────────────────────────────────────┘
+        │                   │
+        │    İnternet       │
+        └───────┬───────────┘
+                ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          CLOUD / BACKOFFICE API                             │
+└─────────────────────────────────────────────────────────────────────────────┘</div>
+
+<h2>2. API Bağlantı Önceliği (Failover)</h2>
+<table>
+  <thead>
+    <tr><th>#</th><th>Hedef</th><th>Ne zaman?</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>1</td><td>Local Backend A (örn. 192.168.1.10)</td><td>Öncelikli</td></tr>
+    <tr><td>2</td><td>Local Backend B (örn. 192.168.1.11)</td><td>A ulaşılamazsa</td></tr>
+    <tr><td>3</td><td>Cloud API</td><td>A ve B ulaşılamazsa, internet varsa</td></tr>
+  </tbody>
+</table>
+
+<h2>3. Veri GÖNDERME (App → Cloud)</h2>
+<table>
+  <thead>
+    <tr><th>Kim</th><th>Nereye</th><th>Amaç</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>App</td><td>Local Backend</td><td>Ana işlem (sipariş, ödeme, masa)</td></tr>
+    <tr><td>App</td><td>Cloud API</td><td>Yedek + audit</td></tr>
+    <tr><td>Local Backend</td><td>Cloud API</td><td>Ana kaynak (asıl veri)</td></tr>
+  </tbody>
+</table>
+<p><strong>Kural:</strong> Gün içinde baz alınan veri <span class="highlight">Local Backend</span> verisidir.</p>
+
+<h2>4. Gün Sonu Audit (Cloud)</h2>
+<table>
+  <thead>
+    <tr><th>Adım</th><th>Ne olur</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Gün içinde</td><td>App ve Local Backend verileri Cloud’da birikir</td></tr>
+    <tr><td>Gün sonunda (örn. 23:00)</td><td>Karşılaştırma job’u çalışır</td></tr>
+    <tr><td>Sonuç</td><td>Fark varsa fark raporu oluşturulur</td></tr>
+    <tr><td>Kaynak</td><td>Raporlama için asıl veri = Local Backend</td></tr>
+  </tbody>
+</table>
+
+<h2>5. Veri ALMA (Backoffice → App)</h2>
+<table>
+  <thead>
+    <tr><th>Akış</th><th>Açıklama</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Backoffice → Cloud</td><td>Ürün, fiyat, ayar değişiklikleri Cloud’a kaydedilir</td></tr>
+    <tr><td>Cloud → Local Backend</td><td>Local Backend periyodik sync ile Cloud’dan çeker</td></tr>
+    <tr><td>Cloud → App</td><td>Local ulaşılamazsa App direkt Cloud’dan çeker (fallback)</td></tr>
+  </tbody>
+</table>
+<p><strong>İki paralel yol:</strong> App veriyi Local Backend veya Cloud’dan alabilir; önce Local denenir.</p>
+
+<h3>5a. Zorunlu Tetikleyici (Force Update)</h3>
+<p>Cloud’da yapılan fiyat/katalog değişikliğinin tabletlere <strong>anında</strong> yansıması için periyodik sync beklenmez. Backoffice değişiklik kaydettiğinde Cloud, cihazlara "hemen güncelle" sinyali gönderir.</p>
+<table>
+  <thead>
+    <tr><th>Yöntem</th><th>Açıklama</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>Push (FCM)</strong></td><td>Backoffice kaydedince Cloud, FCM ile "catalog_updated" gönderir → App hemen sync başlatır</td></tr>
+    <tr><td><strong>Manuel buton</strong></td><td>Backoffice’de "Zorunlu Güncelle" butonu → Cloud API çağrısı → Cihazlar bir sonraki kısa polling’de sync alır</td></tr>
+  </tbody>
+</table>
+<p><strong>Sonuç:</strong> Yeni fiyatlar periyodik sync (5–15 dk) beklenmeden anında veya kısa sürede tabletlere yansır.</p>
+
+<h2>6. Donanım</h2>
+<table>
+  <thead>
+    <tr><th>Bileşen</th><th>Cihaz</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Local Backend</td><td>PC veya Raspberry Pi (aynı WiFi’da)</td></tr>
+    <tr><td>Yedek Local Backend</td><td>İkinci cihaz (isteğe bağlı)</td></tr>
+    <tr><td>App / KDS</td><td>Tablet / telefon</td></tr>
+  </tbody>
+</table>
+
+<h2>7. Senaryolar</h2>
+<table>
+  <thead>
+    <tr><th>Senaryo</th><th>Ne olur</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>İnternet yok</td><td>App + KDS, Local Backend ile çalışır <span class="ok">✓</span></td></tr>
+    <tr><td>Local Backend bozuk, internet var</td><td>App + KDS, Cloud API’ye geçer <span class="ok">✓</span></td></tr>
+    <tr><td>Her ikisi de çalışıyor</td><td>Local öncelikli, Cloud yedek</td></tr>
+    <tr><td>Backoffice ürün/fiyat değiştirdi</td><td>Cloud’a kaydeder → Local sync alır → App alır (veya App direkt Cloud’dan)</td></tr>
+  </tbody>
+</table>
+
+<h2>8. App'ler Neden Doğrudan Haberleşmesin?</h2>
+<p>App'ler teknik olarak doğrudan (P2P) haberleşebilir. Ancak 3+ cihaz, tutarlılık ve conflict yönetimi için <strong>Backend üzerinden</strong> haberleşmek daha uygundur.</p>
+<table>
+  <thead>
+    <tr><th>Mimari</th><th>Ne zaman?</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>App ↔ App (doğrudan)</td><td>2–3 cihaz, basit senaryo; conflict zor</td></tr>
+    <tr><td>App ↔ Backend ↔ App</td><td>3+ cihaz, tek merkez, conflict kolay <span class="ok">✓</span></td></tr>
+    <tr><td>Hibrit</td><td>Backend merkez + sadece "veri değişti" uyarısı için App↔App (isteğe bağlı)</td></tr>
+  </tbody>
+</table>
+<p><strong>Karar:</strong> Bu mimaride App'ler Backend üzerinden haberleşir; doğrudan App↔App yok.</p>
+
+<h2>9. Özet Kurallar</h2>
+<ul>
+  <li><strong>Local Backend</strong> = Yerel merkez (App + KDS buradan beslenir)</li>
+  <li><strong>Cloud</strong> = Backoffice merkezi</li>
+  <li><strong>3 seviye failover:</strong> Local A → Local B → Cloud</li>
+  <li><strong>Yukarı (veri gönderme):</strong> App + Local Backend → Cloud (audit için)</li>
+  <li><strong>Aşağı (veri alma):</strong> Backoffice → Cloud → Local Backend + App (iki yol, fallback)</li>
+  <li><strong>Zorunlu Tetikleyici (Force Update):</strong> Fiyat/katalog değişince Cloud, cihazlara anında güncelleme sinyali gönderir (FCM veya manuel)</li>
+  <li><strong>Gün sonu:</strong> Cloud, App vs Local verilerini karşılaştırır, fark raporu üretir</li>
+  <li><strong>Kaynak olarak:</strong> Local Backend (gün içi veri için)</li>
+  <li><strong>App haberleşmesi:</strong> App ↔ App doğrudan yok; hepsi Backend üzerinden</li>
+</ul>
+
+<hr style="border: none; border-top: 1px solid #334155; margin: 40px 0;">
+<p style="color: #64748b; font-size: 12px;">LimonPOS — Hibrit Mimari Dokümanı</p>
+
+</body>
+</html>

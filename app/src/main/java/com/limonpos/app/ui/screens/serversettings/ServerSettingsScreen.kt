@@ -30,12 +30,18 @@ fun ServerSettingsScreen(
     onBack: () -> Unit
 ) {
     val baseUrl by viewModel.baseUrl.collectAsState()
+    val secondaryBaseUrl by viewModel.secondaryBaseUrl.collectAsState()
+    val tertiaryBaseUrl by viewModel.tertiaryBaseUrl.collectAsState()
     val message by viewModel.message.collectAsState()
     val testing by viewModel.testing.collectAsState()
     var inputUrl by remember { mutableStateOf(baseUrl) }
+    var inputSecondary by remember { mutableStateOf(secondaryBaseUrl) }
+    var inputTertiary by remember { mutableStateOf(tertiaryBaseUrl) }
 
-    LaunchedEffect(baseUrl) {
+    LaunchedEffect(baseUrl, secondaryBaseUrl, tertiaryBaseUrl) {
         inputUrl = baseUrl
+        inputSecondary = secondaryBaseUrl
+        inputTertiary = tertiaryBaseUrl
     }
 
     LaunchedEffect(message) {
@@ -79,7 +85,7 @@ fun ServerSettingsScreen(
                 .padding(24.dp)
         ) {
             Text(
-                "This backend shares data with Zoho Books. Update the computer IP when WiFi changes.",
+                "Primary (Local A) tried first. Secondary (Local B) and Tertiary (Cloud) used if primary fails.",
                 color = LimonTextSecondary,
                 fontSize = 14.sp,
                 modifier = Modifier.padding(bottom = 16.dp)
@@ -87,7 +93,43 @@ fun ServerSettingsScreen(
             OutlinedTextField(
                 value = inputUrl,
                 onValueChange = { inputUrl = it },
-                label = { Text("API Server URL", color = LimonTextSecondary) },
+                label = { Text("Primary API URL (Local A)", color = LimonTextSecondary) },
+                placeholder = { Text(ServerPreferences.DEFAULT_BASE_URL, color = LimonTextSecondary.copy(alpha = 0.6f)) },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = LimonText,
+                    unfocusedTextColor = LimonText,
+                    focusedBorderColor = LimonPrimary,
+                    unfocusedBorderColor = LimonTextSecondary.copy(alpha = 0.5f),
+                    focusedLabelColor = LimonPrimary,
+                    cursorColor = LimonPrimary
+                )
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            OutlinedTextField(
+                value = inputSecondary,
+                onValueChange = { inputSecondary = it },
+                label = { Text("Secondary (Local B) – optional", color = LimonTextSecondary) },
+                placeholder = { Text("http://192.168.1.101:3002/api/", color = LimonTextSecondary.copy(alpha = 0.6f)) },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = LimonText,
+                    unfocusedTextColor = LimonText,
+                    focusedBorderColor = LimonPrimary,
+                    unfocusedBorderColor = LimonTextSecondary.copy(alpha = 0.5f),
+                    focusedLabelColor = LimonPrimary,
+                    cursorColor = LimonPrimary
+                )
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedTextField(
+                value = inputTertiary,
+                onValueChange = { inputTertiary = it },
+                label = { Text("Tertiary (Cloud) – optional", color = LimonTextSecondary) },
                 placeholder = { Text(ServerPreferences.DEFAULT_BASE_URL, color = LimonTextSecondary.copy(alpha = 0.6f)) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
@@ -136,7 +178,13 @@ fun ServerSettingsScreen(
                     Text(if (testing) "Testing…" else "Test connection")
                 }
                 Button(
-                    onClick = { viewModel.saveUrl(inputUrl) },
+                    onClick = {
+                        viewModel.saveUrl(
+                            inputUrl,
+                            inputSecondary.ifBlank { null },
+                            inputTertiary.ifBlank { null }
+                        )
+                    },
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.buttonColors(containerColor = LimonPrimary)
                 ) {

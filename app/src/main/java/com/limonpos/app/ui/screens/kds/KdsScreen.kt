@@ -63,10 +63,20 @@ fun KdsScreen(
 
     Scaffold(contentWindowInsets = WindowInsets(0, 0, 0, 0)) { padding ->
         if (kdsUrl != null) {
+            val webViewRef = remember { mutableStateOf<WebView?>(null) }
+            LaunchedEffect(viewModel.refreshRequests) {
+                viewModel.refreshRequests.collect {
+                    webViewRef.value?.evaluateJavascript(
+                        "if(typeof loadKitchen==='function')loadKitchen();",
+                        null
+                    )
+                }
+            }
             AndroidView(
                 factory = { ctx ->
                     try {
                         WebView(ctx).apply {
+                            webViewRef.value = this
                             webViewClient = WebViewClient()
                             settings.javaScriptEnabled = true
                             loadUrl(kdsUrl!!)
@@ -80,6 +90,7 @@ fun KdsScreen(
                         }
                     }
                 },
+                update = { view -> if (view is WebView) webViewRef.value = view },
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)

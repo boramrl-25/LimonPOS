@@ -24,7 +24,8 @@ data class CashDrawerVerifyResponse(
 data class HeartbeatRequest(
     @SerializedName("device_id") val deviceId: String,
     @SerializedName("device_name") val deviceName: String? = null,
-    @SerializedName("app_version") val appVersion: String? = null
+    @SerializedName("app_version") val appVersion: String? = null,
+    @SerializedName("fcm_token") val fcmToken: String? = null
 )
 
 data class HeartbeatResponse(

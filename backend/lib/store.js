@@ -478,6 +478,8 @@ function normalizeOrderData(data) {
     created_at: data.created_at instanceof Date ? data.created_at : (data.created_at ? new Date(data.created_at) : new Date()),
     paid_at: data.paid_at instanceof Date ? data.paid_at : (data.paid_at ? new Date(data.paid_at) : null),
     zoho_receipt_id: data.zoho_receipt_id != null ? str(data.zoho_receipt_id) : null,
+    source: data.source != null ? str(data.source) : "app",
+    device_id: data.device_id != null ? str(data.device_id) : null,
   };
 }
 
@@ -538,6 +540,8 @@ function normalizePaymentData(data) {
     change_amount: num(data.change_amount, 0),
     user_id: data.user_id != null ? str(data.user_id) : null,
     created_at: data.created_at instanceof Date ? data.created_at : (data.created_at ? new Date(data.created_at) : new Date()),
+    source: data.source != null ? str(data.source) : "app",
+    device_id: data.device_id != null ? str(data.device_id) : null,
   };
 }
 
@@ -555,7 +559,7 @@ export async function createPayment(data) {
  * @param {string} opts.userId
  * @param {number} opts.now - timestamp ms
  */
-export async function completePaymentTransaction({ orderId, paymentPayloads, userId, now }) {
+export async function completePaymentTransaction({ orderId, paymentPayloads, userId, now, source = "app", deviceId = null }) {
   return prisma.$transaction(async (tx) => {
     for (const p of paymentPayloads) {
       const amount = Number(p.amount) || 0;
@@ -570,6 +574,8 @@ export async function completePaymentTransaction({ orderId, paymentPayloads, use
           change_amount: Number(p.change_amount ?? 0) || 0,
           user_id: userId || null,
           created_at: new Date(now),
+          source: source || "app",
+          device_id: deviceId,
         },
       });
     }
@@ -1071,4 +1077,37 @@ export async function getTodaySalesSummary() {
   const range = await getTodayRange();
   const summary = await getSalesSummaryForRange(range.startTs, range.endTs);
   return { ...summary, todayTs: range.startTs, todayEndTs: range.endTs };
+}
+
+/**
+ * Hibrit mimari gün sonu audit: Bugünkü siparişleri source (app | local_backend) ve device_id'ye göre raporlar.
+ * Raporlama için asıl veri = Local Backend (source=local_backend).
+ */
+export async function runDailyAuditReport() {
+  const range = await getTodayRange();
+  const orders = await prisma.order.findMany({
+    where: {
+      deletedAt: null,
+      createdAt: { gte: new Date(range.startTs), lt: new Date(range.endTs) },
+    },
+  });
+  const bySource = { app: [], local_backend: [] };
+  const byDevice = {};
+  for (const o of orders) {
+    const src = o.source || "app";
+    if (bySource[src]) bySource[src].push(o.id); else bySource[src] = [o.id];
+    const did = o.device_id || "unknown";
+    if (!byDevice[did]) byDevice[did] = [];
+    byDevice[did].push(o.id);
+  }
+  return {
+    date: new Date(range.startTs).toISOString().slice(0, 10),
+    startTs: range.startTs,
+    endTs: range.endTs,
+    totalOrders: orders.length,
+    appCount: (bySource.app || []).length,
+    localBackendCount: (bySource.local_backend || []).length,
+    byDevice: Object.fromEntries(Object.entries(byDevice).map(([k, v]) => [k, v.length])),
+    note: "Raporlama için asıl veri = Local Backend (source=local_backend)",
+  };
 }

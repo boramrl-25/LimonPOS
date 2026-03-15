@@ -35,6 +35,7 @@ function getClosedBusinessDayKeyForAutoClose(nowUtc, openingTime, closingTime, o
   return `${y}-${m}-${day}`;
 }
 import { fetchReconciliationEmails, aggregateReconciliationByDate } from "./reconciliation.js";
+import { sendCatalogUpdatedToDevices } from "./lib/fcm.js";
 import { WebSocketServer } from "ws";
 
 // Production: yakalanmamış hatalar loglansın
@@ -115,12 +116,48 @@ const authMiddleware = (req, res, next) => {
   }).catch(() => res.status(401).json({ error: "Unauthorized" }));
 };
 
+/** Hibrit mimari audit: X-Device-Id, X-Source (app | local_backend) */
+function getAuditFromRequest(req) {
+  const deviceId = (req.headers["x-device-id"] || req.body?.device_id || "").trim() || null;
+  const source = (req.headers["x-source"] || req.body?.source || "app").toLowerCase();
+  return { deviceId, source: ["app", "local_backend"].includes(source) ? source : "app" };
+}
+
 // Health check (no auth)
 app.get("/", (req, res) => {
   res.status(200).send("OK");
 });
 app.get("/api/health", (req, res) => {
   res.json({ ok: true, message: "LimonPOS API", ts: Date.now() });
+});
+
+// Hibrit mimari: Force Update — Backoffice "Zorunlu Güncelle" (WebSocket + FCM)
+app.post("/api/admin/broadcast-catalog-update", authMiddleware, async (req, res) => {
+  if (req.user?.role !== "admin" && req.user?.role !== "manager") {
+    return res.status(403).json({ error: "Permission denied" });
+  }
+  broadcastRealtimeEvent({ type: "catalog_updated", ts: Date.now() });
+  let fcmResult = { sent: 0, failed: 0 };
+  try {
+    await ensurePrismaReady();
+    const devices = await store.getDevices();
+    fcmResult = await sendCatalogUpdatedToDevices(devices);
+    if (fcmResult.sent > 0) console.log("[broadcast] FCM catalog_updated sent to", fcmResult.sent, "devices");
+  } catch (e) {
+    console.error("[broadcast] FCM error:", e?.message || e);
+  }
+  console.log("[broadcast] catalog_updated — WebSocket + FCM");
+  res.json({ ok: true, message: "catalog_updated broadcast sent", fcmSent: fcmResult.sent, fcmFailed: fcmResult.failed });
+});
+
+// Hibrit mimari: Gün sonu audit raporu
+app.get("/api/admin/audit-report", authMiddleware, async (req, res) => {
+  if (req.user?.role !== "admin" && req.user?.role !== "manager") {
+    return res.status(403).json({ error: "Permission denied" });
+  }
+  await ensurePrismaReady();
+  const report = await store.runDailyAuditReport();
+  res.json(report);
 });
 
 // Debug: Android'den gelen veriler DB'ye nasıl yansımış? Son N sipariş + item + payment.
@@ -346,19 +383,7 @@ app.post("/api/auth/login", async (req, res) => {
   const deviceId = String(body.device_id || body.deviceId || "").trim();
   const user = await store.getUserByIdOrPin(pin);
   if (!user || !user.active) return res.status(401).json({ error: "Invalid PIN" });
-  if (deviceId) {
-    const now = Date.now();
-    const devices = await store.getDevices();
-    const otherDeviceOnline = devices.some(
-      (d) => d.user_id === user.id && d.id !== deviceId && (now - (d.last_seen || 0)) <= HEARTBEAT_TIMEOUT_MS
-    );
-    if (otherDeviceOnline) {
-      return res.status(409).json({
-        error: "user_already_logged_in",
-        message: "Bu kullanıcı başka bir cihazda açık. Aynı anda sadece bir cihazda giriş yapılabilir.",
-      });
-    }
-  }
+  // Removed: single-device-per-user restriction — multiple devices can have same user logged in
   const perms = JSON.parse(user.permissions || "[]");
   const canAccessSettings = user.can_access_settings != null ? !!user.can_access_settings : (user.role === "admin" || user.role === "manager" || perms.includes("web_settings"));
   const canAccessAppSettings = userCanAccessAppSettings(user);
@@ -434,6 +459,9 @@ app.post("/api/devices/heartbeat", authMiddleware, async (req, res) => {
     last_seen: now,
     user_id: req.user?.id || existing?.user_id || null,
   };
+  if (body.fcm_token != null && String(body.fcm_token).trim()) {
+    device.fcm_token = String(body.fcm_token).trim();
+  }
   const seqRaw = body.local_sequence ?? body.sequence ?? body.localSequence ?? null;
   if (seqRaw != null) {
     const seq = Number(seqRaw) || 0;
@@ -2694,6 +2722,7 @@ app.post("/api/orders", authMiddleware, async (req, res) => {
     const discountAmount = Number(body.discount_amount ?? body.discountAmount ?? 0) || 0;
     const total = Number(body.total ?? body.total_price ?? body.totalAmount ?? body.totalPrice ?? 0) || 0;
 
+    const audit = getAuditFromRequest(req);
     const orderId = body.id || body.order_id || `ord_${uuid().slice(0, 12)}`;
     const order = await store.createOrder({
       id: orderId,
@@ -2710,6 +2739,8 @@ app.post("/api/orders", authMiddleware, async (req, res) => {
       created_at: body.created_at ? new Date(body.created_at) : new Date(),
       paid_at: body.paid_at ? new Date(body.paid_at) : null,
       zoho_receipt_id: body.zoho_receipt_id ?? null,
+      source: audit.source,
+      device_id: audit.deviceId,
     });
     if (tbl) {
       await store.updateTable(tableId, {
@@ -3023,6 +3054,7 @@ app.post("/api/payments", authMiddleware, async (req, res) => {
     await ensurePrismaReady();
     const user = req.user;
     const body = req.body || {};
+    const audit = getAuditFromRequest(req);
     console.log("ANDROID_RAW_DATA [POST /api/payments]:", JSON.stringify(body));
 
     const userId = req.query.user_id ?? req.user?.id ?? body.user_id ?? body.userId ?? null;
@@ -3090,6 +3122,7 @@ app.post("/api/payments", authMiddleware, async (req, res) => {
       try {
         const tables = await store.getTables();
         const tbl = tables.find((t) => t.id === tableId);
+        const audit = getAuditFromRequest(req);
         const orderPayload = {
           id: orderId,
           table_id: tableId,
@@ -3105,6 +3138,8 @@ app.post("/api/payments", authMiddleware, async (req, res) => {
           created_at: new Date(),
           paid_at: new Date(now),
           zoho_receipt_id: null,
+          source: audit.source,
+          device_id: audit.deviceId,
         };
         await store.createOrder(orderPayload);
         await store.updateTable(tableId, {
@@ -3148,20 +3183,14 @@ app.post("/api/payments", authMiddleware, async (req, res) => {
           const totPaid = paymentPayloads.reduce((s, p) => s + p.amount, 0);
           const totOrd = order2.total || 0;
           if (Math.abs(totPaid - totOrd) < 0.01) {
-            await store.completePaymentTransaction({ orderId, paymentPayloads, userId, now });
+            await store.completePaymentTransaction({ orderId, paymentPayloads, userId, now, source: audit.source, deviceId: audit.deviceId });
           } else {
-            // Partial/split payment: only add payments, do NOT mark order paid
             for (const p of paymentPayloads) {
               const payMethod = (String(p.method || "cash").toLowerCase().trim() === "card") ? "card" : "cash";
               await store.createPayment({
-                id: p.id,
-                order_id: orderId,
-                amount: p.amount,
-                method: payMethod,
-                received_amount: p.received_amount ?? p.amount,
-                change_amount: p.change_amount ?? 0,
-                user_id: userId,
-                created_at: new Date(now),
+                id: p.id, order_id: orderId, amount: p.amount, method: payMethod,
+                received_amount: p.received_amount ?? p.amount, change_amount: p.change_amount ?? 0,
+                user_id: userId, created_at: new Date(now), source: audit.source, device_id: audit.deviceId,
               });
             }
           }
@@ -3181,23 +3210,16 @@ app.post("/api/payments", authMiddleware, async (req, res) => {
   if (order && paymentPayloads.length > 0) {
     if (totalMatch) {
       await store.completePaymentTransaction({
-        orderId,
-        paymentPayloads,
-        userId,
-        now,
+        orderId, paymentPayloads, userId, now, source: audit.source, deviceId: audit.deviceId,
       });
     } else {
-      // Partial/split payment: only add payments, do NOT mark order paid until full amount received
       for (const p of paymentPayloads) {
         await store.createPayment({
-          id: p.id,
-          order_id: orderId,
-          amount: Number(p.amount) || 0,
+          id: p.id, order_id: orderId, amount: Number(p.amount) || 0,
           method: String(p.method || "cash").toLowerCase() === "card" ? "card" : "cash",
           received_amount: Number(p.received_amount ?? p.amount) || p.amount,
-          change_amount: Number(p.change_amount ?? 0) || 0,
-          user_id: userId || null,
-          created_at: new Date(now),
+          change_amount: Number(p.change_amount ?? 0) || 0, user_id: userId || null,
+          created_at: new Date(now), source: audit.source, device_id: audit.deviceId,
         });
       }
     }
@@ -3648,6 +3670,23 @@ const HOST = process.env.HOST || "0.0.0.0"; // Dış erişim için 0.0.0.0 gerek
 const DATA_DIR = process.env.DATA_DIR;
 
 let lastAutoCloseRunTs = 0;
+let lastAuditRunDate = ""; // YYYY-MM-DD
+
+async function runDailyAuditIfDue() {
+  const now = new Date();
+  const hour = now.getUTCHours();
+  const min = now.getUTCMinutes();
+  const dayStr = now.toISOString().slice(0, 10);
+  if (hour !== 23 || min > 5 || lastAuditRunDate === dayStr) return;
+  try {
+    await store.ensurePrismaReady();
+    const report = await store.runDailyAuditReport();
+    lastAuditRunDate = dayStr;
+    console.log("[audit] Gün sonu rapor:", JSON.stringify(report));
+  } catch (e) {
+    console.error("[audit] runDailyAuditReport error:", e?.message || e);
+  }
+}
 
 async function runAutoCloseIfDue() {
   try {
@@ -3743,6 +3782,7 @@ async function startServer() {
     ensurePrismaReady().then(() => console.log("[startup] ensurePrismaReady OK")).catch((e) => console.error("[startup] ensurePrismaReady failed:", e?.message || e));
     setInterval(() => runAutoCloseIfDue().catch((e) => console.error("[auto-close]", e?.message)), 60 * 1000);
     setInterval(() => fetchReconciliationEmails().catch((e) => console.error("[reconciliation]", e?.message)), 5 * 60 * 1000);
+    setInterval(() => runDailyAuditIfDue().catch((e) => console.error("[audit]", e?.message)), 60 * 60 * 1000);
   });
   const wss = new WebSocketServer({ server, path: "/ws" });
   wss.on("connection", (ws) => {

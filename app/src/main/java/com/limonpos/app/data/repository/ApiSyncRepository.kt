@@ -17,6 +17,7 @@ import com.limonpos.app.data.prefs.SyncPreferences
 import com.limonpos.app.data.remote.ApiService
 import com.limonpos.app.data.remote.AuthTokenProvider
 import com.limonpos.app.data.remote.dto.*
+import com.limonpos.app.util.FcmTokenHolder
 import com.limonpos.app.util.NetworkMonitor
 import com.limonpos.app.util.SessionManager
 import kotlinx.coroutines.flow.Flow
@@ -413,7 +414,8 @@ class ApiSyncRepository @Inject constructor(
             val request = HeartbeatRequest(
                 deviceId = deviceId,
                 deviceName = Build.MODEL?.takeIf { it.isNotBlank() } ?: "Android POS",
-                appVersion = null
+                appVersion = null,
+                fcmToken = FcmTokenHolder.token
             )
             val res = apiService.sendHeartbeat(request)
             if (!res.isSuccessful) {
