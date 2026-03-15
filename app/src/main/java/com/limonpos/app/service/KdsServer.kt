@@ -14,8 +14,10 @@ import com.limonpos.app.data.repository.OrderRepository
 import com.limonpos.app.data.repository.PrinterRepository
 import com.limonpos.app.data.repository.TableRepository
 import fi.iki.elonen.NanoHTTPD
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Calendar
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -119,43 +121,47 @@ class KdsServer @Inject constructor(
                             newFixedLengthResponse(Response.Status.OK, "text/html; charset=utf-8", KdsServer.FLOOR_PLAN_HTML)
                         uri == "/kitchen-orders" && session.method == Method.GET -> {
                             val printerFilter = queryParams["printers"]?.takeIf { it.isNotBlank() }
-                            val apiOrders = runBlocking {
-                                apiSyncRepository.fetchKitchenOrdersFromApi(
-                                    if (printerFilter == null || printerFilter.equals("all", ignoreCase = true)) null
-                                    else printerFilter
-                                )
+                            val apiOrders = runBlocking(Dispatchers.IO) {
+                                withTimeoutOrNull(10_000L) {
+                                    apiSyncRepository.fetchKitchenOrdersFromApi(
+                                        if (printerFilter == null || printerFilter.equals("all", ignoreCase = true)) null
+                                        else printerFilter
+                                    )
+                                } ?: null
                             }
                             val orders = if (!apiOrders.isNullOrEmpty()) {
                                 apiOrders
                             } else try {
-                                runBlocking {
-                                    val selectedPrinterIds = when {
-                                        printerFilter == null || printerFilter.equals("all", ignoreCase = true) -> null
-                                        else -> printerFilter.split(",").map { it.trim() }.filter { it.isNotBlank() }.toSet()
-                                    }
-                                    orderDao.getOrdersSentToKitchen().first().mapNotNull { order ->
-                                        val allItems = orderItemDao.getOrderItems(order.id).first()
-                                        val items = if (selectedPrinterIds == null) {
-                                            allItems
-                                        } else {
-                                            allItems.filter { item ->
-                                                val product = productDao.getProductById(item.productId)
-                                                if (product == null) return@filter true // Show synced items from other devices even if product not in catalog
-                                                val effectivePrinterIds = printerService.parsePrinterIds(product.printers)
-                                                    .ifEmpty {
-                                                        val category = categoryDao.getCategoryById(product.categoryId)
-                                                        category?.let { printerService.parsePrinterIds(it.printers) } ?: emptyList()
+                                runBlocking(Dispatchers.IO) {
+                                    withTimeoutOrNull(10_000L) {
+                                        val selectedPrinterIds = when {
+                                            printerFilter == null || printerFilter.equals("all", ignoreCase = true) -> null
+                                            else -> printerFilter.split(",").map { it.trim() }.filter { it.isNotBlank() }.toSet()
+                                        }
+                                        orderDao.getOrdersSentToKitchen().first().mapNotNull { order ->
+                                            val allItems = orderItemDao.getOrderItems(order.id).first()
+                                            val items = if (selectedPrinterIds == null) {
+                                                allItems
+                                            } else {
+                                                allItems.filter { item ->
+                                                    val product = productDao.getProductById(item.productId)
+                                                    if (product == null) return@filter true // Show synced items from other devices even if product not in catalog
+                                                    val effectivePrinterIds = printerService.parsePrinterIds(product.printers)
+                                                        .ifEmpty {
+                                                            val category = categoryDao.getCategoryById(product.categoryId)
+                                                            category?.let { printerService.parsePrinterIds(it.printers) } ?: emptyList()
+                                                        }
+                                                    when {
+                                                        effectivePrinterIds.isEmpty() -> false
+                                                        else -> effectivePrinterIds.any { it in selectedPrinterIds }
                                                     }
-                                                when {
-                                                    effectivePrinterIds.isEmpty() -> false
-                                                    else -> effectivePrinterIds.any { it in selectedPrinterIds }
                                                 }
                                             }
+                                            if (items.isEmpty()) null
+                                            else KdsOrderDto(order.id, order.tableNumber, order.waiterName, order.status, order.createdAt,
+                                                items.map { KdsItemDto(it.id, it.productName, it.quantity, it.notes, it.status, it.sentAt) })
                                         }
-                                        if (items.isEmpty()) null
-                                        else KdsOrderDto(order.id, order.tableNumber, order.waiterName, order.status, order.createdAt,
-                                            items.map { KdsItemDto(it.id, it.productName, it.quantity, it.notes, it.status, it.sentAt) })
-                                    }
+                                    } ?: emptyList()
                                 }
                             } catch (_: Exception) { emptyList<Any>() }
                             newFixedLengthResponse(Response.Status.OK, "application/json", gson.toJson(orders))

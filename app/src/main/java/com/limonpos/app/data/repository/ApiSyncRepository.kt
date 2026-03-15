@@ -155,31 +155,37 @@ class ApiSyncRepository @Inject constructor(
             val res = apiService.getKitchenOrders(printers)
             val apiList = if (res.isSuccessful) res.body() else null
             if (!apiList.isNullOrEmpty()) {
-                for (ko in apiList) {
-                    val fullOrder = apiService.getOrder(ko.id).body() ?: continue
-                    val items = fullOrder.items ?: emptyList()
-                    val orderEntity = OrderEntity(
-                        id = fullOrder.id,
-                        tableId = fullOrder.tableId,
-                        tableNumber = fullOrder.tableNumber,
-                        waiterId = fullOrder.waiterId,
-                        waiterName = fullOrder.waiterName,
-                        status = fullOrder.status ?: "sent",
-                        subtotal = fullOrder.subtotal,
-                        taxAmount = fullOrder.taxAmount,
-                        discountPercent = fullOrder.discountPercent,
-                        discountAmount = fullOrder.discountAmount,
-                        total = fullOrder.total,
-                        createdAt = fullOrder.createdAt,
-                        paidAt = fullOrder.paidAt,
-                        syncStatus = "SYNCED"
-                    )
-                    orderDao.insertOrder(orderEntity)
-                    val localItems = orderItemDao.getOrderItems(fullOrder.id).first()
-                    upsertOrderItemsFromApi(fullOrder.id, items, localItems)
+                val limitedList = if (apiList.size > 10) apiList.take(10) else apiList
+                for (ko in limitedList) {
+                    try {
+                        val fullOrder = apiService.getOrder(ko.id).body() ?: continue
+                        val items = fullOrder.items ?: emptyList()
+                        val orderEntity = OrderEntity(
+                            id = fullOrder.id,
+                            tableId = fullOrder.tableId,
+                            tableNumber = fullOrder.tableNumber,
+                            waiterId = fullOrder.waiterId,
+                            waiterName = fullOrder.waiterName,
+                            status = fullOrder.status ?: "sent",
+                            subtotal = fullOrder.subtotal,
+                            taxAmount = fullOrder.taxAmount,
+                            discountPercent = fullOrder.discountPercent,
+                            discountAmount = fullOrder.discountAmount,
+                            total = fullOrder.total,
+                            createdAt = fullOrder.createdAt,
+                            paidAt = fullOrder.paidAt,
+                            syncStatus = "SYNCED"
+                        )
+                        orderDao.insertOrder(orderEntity)
+                        val localItems = orderItemDao.getOrderItems(fullOrder.id).first()
+                        upsertOrderItemsFromApi(fullOrder.id, items, localItems)
+                    } catch (e: Exception) {
+                        Log.e("ApiSync", "fetchKitchenOrders: error for ${ko.id}: ${e.message}")
+                        continue
+                    }
                 }
                 // Return from LOCAL so Ready/Delivered (from this device) is shown — fix slow disappear / reappear
-                apiList.mapNotNull { ko ->
+                limitedList.mapNotNull { ko ->
                     val order = orderDao.getOrderById(ko.id) ?: return@mapNotNull null
                     val localItems = orderItemDao.getOrderItems(ko.id).first()
                     KitchenOrderDto(
@@ -870,11 +876,13 @@ class ApiSyncRepository @Inject constructor(
                 waiterId = when {
                     useLocalFree -> null
                     useLocalOccupied -> localOccupiedRow!!.waiterId
+                    dto.waiterId.isNullOrBlank() && localAny?.waiterId != null -> localAny.waiterId
                     else -> dto.waiterId
                 },
                 waiterName = when {
                     useLocalFree -> null
                     useLocalOccupied -> localOccupiedRow!!.waiterName
+                    dto.waiterName.isNullOrBlank() && localAny?.waiterName != null -> localAny.waiterName
                     else -> dto.waiterName
                 },
                 openedAt = when {

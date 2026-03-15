@@ -548,8 +548,13 @@ class OrderViewModel @Inject constructor(
                 viewModelScope.launch {
                     try {
                         if (apiSyncRepository.isOnline()) {
-                            withContext(Dispatchers.IO) {
+                            val apiSuccess = withContext(Dispatchers.IO) {
                                 apiSyncRepository.ensureOrderAndSendToKitchen(orderId)
+                            }
+                            if (!apiSuccess) {
+                                _uiState.update {
+                                    it.copy(syncError = "Mutfağa gönderildi (yerel). Sunucu senkronizasyonu başarısız — birkaç saniye içinde tekrar denenecek.")
+                                }
                             }
                         }
                         when (val result = kitchenPrintHelper.printItemsAlreadyMarkedSent(orderId, pendingItemIds)) {

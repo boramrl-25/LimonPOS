@@ -380,11 +380,10 @@ class FloorPlanViewModel @Inject constructor(
                 val order = orderRepository.createOrder(tableId, guestCount, uid, uname)
                 tableRepository.occupyTable(tableId, order.id, guestCount, uid, uname)
                 _uiState.update { it.copy(showOpenTableDialog = null) }
-                onNavigateToOrder(tableId)
                 if (apiSyncRepository.isOnline()) {
                     apiSyncRepository.pushTableStatesNow()
-                    apiSyncRepository.syncFromApi()
                 }
+                onNavigateToOrder(tableId)
             } catch (e: Exception) {
                 _uiState.update { it.copy(showOpenTableDialog = null) }
             }

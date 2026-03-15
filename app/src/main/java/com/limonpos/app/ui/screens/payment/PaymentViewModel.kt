@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -114,6 +115,18 @@ class PaymentViewModel @Inject constructor(
                 apiSyncRepository.syncFromApi()
             }
             loadOrder()
+        }
+        viewModelScope.launch {
+            while (true) {
+                delay(5000)
+                if (apiSyncRepository.isOnline()) {
+                    apiSyncRepository.syncLightweight()
+                    val order = orderRepository.getActiveOrderByTable(tableId)
+                    if (order != null) {
+                        apiSyncRepository.refreshOrderFromApi(order.id)
+                    }
+                }
+            }
         }
     }
 
