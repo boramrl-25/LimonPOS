@@ -121,7 +121,7 @@ class PaymentViewModel @Inject constructor(
         viewModelScope.launch {
             val order = orderRepository.getActiveOrderByTable(tableId)
             if (order != null) {
-                if (order.status != "sent") {
+                if (order.status == "paid" || order.status == "closed") {
                     _uiState.update { it.copy(redirectToOrder = true) }
                     return@launch
                 }

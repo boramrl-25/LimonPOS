@@ -130,7 +130,7 @@ class FloorPlanViewModel @Inject constructor(
     val canCancelReservation: StateFlow<Boolean> = _canCancelReservation.asStateFlow()
 
     companion object {
-        private const val POLL_INTERVAL_MS = 25_000L
+        private const val POLL_INTERVAL_MS = 8_000L
     }
 
     init {
@@ -145,7 +145,7 @@ class FloorPlanViewModel @Inject constructor(
             while (true) {
                 delay(POLL_INTERVAL_MS)
                 if (apiSyncRepository.isOnline()) {
-                    apiSyncRepository.syncFromApi()
+                    apiSyncRepository.syncLightweight()
                 }
             }
         }

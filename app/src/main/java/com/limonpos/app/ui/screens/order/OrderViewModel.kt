@@ -145,20 +145,34 @@ class OrderViewModel @Inject constructor(
             }
             refreshOrderId()
         }
-        // Full sync every 3s so table/order changes (e.g. B paid, A's order on KDS) propagate quickly
+        // Hafif sync (sadece tablolar + siparişler) ~800ms; tam sync 8s — çok daha hızlı güncelleme
         viewModelScope.launch {
             while (true) {
-                delay(3000)
+                delay(800)
+                try {
+                    if (apiSyncRepository.isOnline()) {
+                        apiSyncRepository.syncTablesAndOrdersForKds()
+                        loadTable()
+                        refreshOrderId()
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("OrderViewModel", "Light sync error: ${e.message}", e)
+                }
+            }
+        }
+        viewModelScope.launch {
+            while (true) {
+                delay(8000)
                 try {
                     if (apiSyncRepository.isOnline()) {
                         val ok = apiSyncRepository.syncFromApi()
                         if (!ok) _uiState.update { it.copy(syncError = apiSyncRepository.lastSyncError ?: "Sync error") }
-                        loadTable() // refresh table status (e.g. closed by another user)
-                        refreshOrderId() // reload order after sync (e.g. B gets A's order)
+                        loadTable()
+                        refreshOrderId()
                         loadCategoriesWithProducts()
                     }
                 } catch (e: Exception) {
-                    android.util.Log.e("OrderViewModel", "Background sync error: ${e.message}", e)
+                    android.util.Log.e("OrderViewModel", "Full sync error: ${e.message}", e)
                     _uiState.update { it.copy(syncError = e.message ?: "Sync error") }
                 }
             }

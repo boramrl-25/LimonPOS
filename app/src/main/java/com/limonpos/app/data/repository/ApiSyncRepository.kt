@@ -131,6 +131,22 @@ class ApiSyncRepository @Inject constructor(
         }
     }
 
+    /** Lightweight sync: only tables + orders (no catalog). For FloorPlan / fast polling. */
+    suspend fun syncLightweight(): Boolean {
+        if (!isOnline()) return false
+        restoreAuthTokenIfNeeded()
+        return try {
+            pushOrderItemStatusUpdates()
+            pushPendingTableCloses()
+            syncTables()
+            syncOrdersFromApi()
+            true
+        } catch (e: Exception) {
+            Log.e("ApiSync", "syncLightweight error: ${e.message}", e)
+            false
+        }
+    }
+
     /** Fetch KDS orders from API, upsert to local (merge status), then return from LOCAL so Ready/Delivered is reflected. */
     suspend fun fetchKitchenOrdersFromApi(printers: String? = null): List<KitchenOrderDto>? {
         if (!isOnline()) return null

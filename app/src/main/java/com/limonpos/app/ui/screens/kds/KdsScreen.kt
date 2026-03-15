@@ -39,6 +39,7 @@ fun KdsScreen(
     onSync: () -> Unit = {}
 ) {
     val kdsUrl by viewModel.kdsUrl.collectAsState()
+    val kdsDiagnostic by viewModel.kdsDiagnostic.collectAsState()
 
     val view = LocalView.current
     DisposableEffect(Unit) {
@@ -63,6 +64,16 @@ fun KdsScreen(
 
     Scaffold(contentWindowInsets = WindowInsets(0, 0, 0, 0)) { padding ->
         if (kdsUrl != null) {
+            if (kdsDiagnostic.isNotBlank()) {
+                Surface(color = Color.Black.copy(alpha = 0.85f), modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        kdsDiagnostic,
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                    )
+                }
+            }
             val webViewRef = remember { mutableStateOf<WebView?>(null) }
             LaunchedEffect(viewModel.refreshRequests) {
                 viewModel.refreshRequests.collect {

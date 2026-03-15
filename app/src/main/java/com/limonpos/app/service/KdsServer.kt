@@ -119,21 +119,11 @@ class KdsServer @Inject constructor(
                             newFixedLengthResponse(Response.Status.OK, "text/html; charset=utf-8", KdsServer.FLOOR_PLAN_HTML)
                         uri == "/kitchen-orders" && session.method == Method.GET -> {
                             val printerFilter = queryParams["printers"]?.takeIf { it.isNotBlank() }
-                            var apiOrders = runBlocking {
+                            val apiOrders = runBlocking {
                                 apiSyncRepository.fetchKitchenOrdersFromApi(
                                     if (printerFilter == null || printerFilter.equals("all", ignoreCase = true)) null
                                     else printerFilter
                                 )
-                            }
-                            // B cihazında API boş dönebilir (A henüz push etmemiş veya tablo bağlı değil). Sync yapıp local'den oku.
-                            if (apiOrders.isNullOrEmpty()) {
-                                runBlocking { apiSyncRepository.syncTablesAndOrdersForKds() }
-                                apiOrders = runBlocking {
-                                    apiSyncRepository.fetchKitchenOrdersFromApi(
-                                        if (printerFilter == null || printerFilter.equals("all", ignoreCase = true)) null
-                                        else printerFilter
-                                    )
-                                }
                             }
                             val orders = if (!apiOrders.isNullOrEmpty()) {
                                 apiOrders
@@ -773,7 +763,7 @@ function showPage(id) {
 var urlParams = new URLSearchParams(window.location.search);
 updateKdsSpeakerUI();
 if (urlParams.get('page') === 'settings') showPage('settings'); else loadKdsPrinters();
-setInterval(function() { if (document.getElementById('kds') && document.getElementById('kds').classList.contains('active')) loadKitchen(); }, 1500);
+setInterval(function() { if (document.getElementById('kds') && document.getElementById('kds').classList.contains('active')) loadKitchen(); }, 800);
 setInterval(function() { if (document.getElementById('kds') && document.getElementById('kds').classList.contains('active')) checkLateAndShowPopup(); }, 10 * 60 * 1000);
 </script>
 </body>
