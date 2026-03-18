@@ -193,6 +193,7 @@ model Payment {
   user_id         String?
   source          String?  @default("app")   // "app" | "local_backend" - audit
   device_id       String?  // cihaz id - audit
+  cloudSyncedAt   DateTime? // null = henüz cloud'a gönderilmedi
   created_at      DateTime?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
