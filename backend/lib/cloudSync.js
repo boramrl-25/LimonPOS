@@ -92,6 +92,7 @@ export async function pullCatalogFromCloud() {
     printers        = [],
     paymentMethods  = [],
     users           = [],
+    tables          = [],
     settings,
   } = data;
 
@@ -132,11 +133,25 @@ export async function pullCatalogFromCloud() {
     await prisma.user.upsert({ where: { id }, create: { id, ...rest }, update: rest }).catch(() => {});
   }
 
+  // Masalar (floor plan) — cloud'dan local'e uygula
+  for (const t of tables) {
+    const { id, createdAt, updatedAt, orders, currentOrder, ...rest } = t;
+    if (!id) continue;
+    // status/current_order_id gibi canlı alanları güncelleme — sadece layout bilgisi
+    const { status, current_order_id, guest_count, waiter_id, waiter_name, opened_at, ...layoutRest } = rest;
+    await prisma.table.upsert({
+      where: { id },
+      create: { id, ...rest },
+      update: layoutRest,
+    }).catch(() => {});
+  }
+
   // Ayarlar — sadece katalog/görünüm alanlarını güncelle
   if (settings) {
     const CATALOG_KEYS = [
       "company_name", "company_address", "receipt_header", "receipt_footer_message",
       "kitchen_header", "receipt_item_size", "currency_code", "vat_percent",
+      "floor_plan_sections",
     ];
     const filtered = Object.fromEntries(
       Object.entries(settings).filter(([k]) => CATALOG_KEYS.includes(k))
@@ -149,9 +164,9 @@ export async function pullCatalogFromCloud() {
   console.log(
     `[CloudSync] ✓ Katalog çekildi: ${categories.length} kategori, ` +
     `${products.length} ürün, ${modifierGroups.length} modifier, ` +
-    `${printers.length} yazıcı`
+    `${printers.length} yazıcı, ${tables.length} masa`
   );
-  return { ok: true, categories: categories.length, products: products.length, users: users.length };
+  return { ok: true, categories: categories.length, products: products.length, users: users.length, tables: tables.length };
 }
 
 // ── 2. Satışlar: Local → Cloud ──────────────────────────────

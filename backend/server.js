@@ -3970,7 +3970,7 @@ const syncKeyMiddleware = (req, res, next) => {
  */
 app.get("/api/sync/catalog-snapshot", syncKeyMiddleware, async (req, res) => {
   await ensurePrismaReady();
-  const [categories, products, modifierGroups, printers, paymentMethods, settings, users] = await Promise.all([
+  const [categories, products, modifierGroups, printers, paymentMethods, settings, users, tables] = await Promise.all([
     store.getAllCategories(),
     store.getAllProducts(),
     store.getModifierGroups(),
@@ -3978,8 +3978,9 @@ app.get("/api/sync/catalog-snapshot", syncKeyMiddleware, async (req, res) => {
     store.getAllPaymentMethods(),
     store.getSettings(),
     store.getAllUsers(),
+    prisma.table.findMany({ where: { deletedAt: null } }),
   ]);
-  res.json({ categories, products, modifierGroups, printers, paymentMethods, settings, users });
+  res.json({ categories, products, modifierGroups, printers, paymentMethods, settings, users, tables });
 });
 
 /**
