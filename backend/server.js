@@ -1,10 +1,12 @@
 import "dotenv/config";
-console.log("[startup] Node", process.version, "PORT=" + (process.env.PORT || "3002"), "DATA_DIR=" + (process.env.DATA_DIR || "(not set)"));
+console.log("[startup] Node", process.version, "PORT=" + (process.env.PORT || "3002"), "DATA_DIR=" + (process.env.DATA_DIR || "(not set)"), "ROLE=" + (process.env.ROLE || "cloud"));
 import express from "express";
 import cors from "cors";
 import { v4 as uuid } from "uuid";
 import * as store from "./lib/store.js";
 import { pushToZohoBooks, getZohoItems, getZohoItemGroups, getZohoContacts, syncFromZoho } from "./zoho.js";
+import { startSyncLoop, pullCatalogFromCloud, pushSalesToCloud, forcePull, getSyncStatus } from "./lib/cloudSync.js";
+import { prisma } from "./lib/prisma.js";
 import {
   getBusinessDayRange,
   getBusinessDayKey,
@@ -2679,14 +2681,115 @@ app.patch("/api/orders/:id", authMiddleware, async (req, res) => {
   await ensurePrismaReady();
   const orderId = req.params.id;
   const body = req.body || {};
-  const order = await store.getOrderById(orderId);
-  if (!order) return res.status(404).json({ error: "Order not found" });
+  const existing = await store.getOrderById(orderId);
+  if (!existing) return res.status(404).json({ error: "Order not found" });
+
   const updates = {};
   if (body.table_id != null) updates.table_id = body.table_id;
   if (body.table_number != null) updates.table_number = body.table_number;
-  if (Object.keys(updates).length === 0) return res.json(order);
-  const updated = await store.updateOrder(orderId, updates);
-  res.json(updated);
+  if (body.status != null) updates.status = body.status;
+
+  // Değişiklik yoksa mevcut order'ı full detayla döndür (items dahil).
+  if (Object.keys(updates).length === 0) {
+    const rawItems = await store.getOrderItems(orderId);
+    const products = await store.getAllProducts();
+    const s = await store.getSettings();
+    const defaultOverdue = Math.min(1440, Math.max(1, (s?.overdue_undelivered_minutes ?? 10) | 0));
+    const toTs = (v) => (v == null ? null : v instanceof Date ? v.getTime() : Number(v));
+    const items = rawItems.map((i) => {
+      const product = i.product_id ? products.find((p) => p.id === i.product_id) : null;
+      const overdue_undelivered_minutes = product?.overdue_undelivered_minutes != null ? product.overdue_undelivered_minutes : defaultOverdue;
+      return {
+        id: i.id,
+        order_id: i.order_id,
+        product_id: i.product_id,
+        product_name: i.product_name ?? "",
+        quantity: Number(i.quantity) || 0,
+        price: Number(i.price) || 0,
+        notes: i.notes ?? "",
+        status: i.status ?? "pending",
+        sent_at: toTs(i.sent_at),
+        delivered_at: toTs(i.delivered_at),
+        client_line_id: i.client_line_id ?? null,
+        overdue_undelivered_minutes,
+      };
+    });
+    const payments = Array.isArray(existing.payments) ? existing.payments : (await store.getPayments()).filter((p) => p.order_id === existing.id);
+    const allVoids = await store.getVoidLogs();
+    const voids = allVoids.filter((v) => v.order_id === existing.id);
+    const { orderItems, created_at, paid_at, createdAt, ...orderRest } = existing;
+    const createdAtMs = created_at ? toTs(created_at) : toTs(createdAt);
+    const paidAtMs = paid_at ? toTs(paid_at) : null;
+    return res.json({ ...orderRest, created_at: createdAtMs, paid_at: paidAtMs, items, payments, voids });
+  }
+
+  try {
+    const now = new Date();
+    const isSentTransition = updates.status === "sent" && existing.status !== "sent";
+
+    if (isSentTransition) {
+      // Sipariş status'ü "sent" oluyorsa: order + pending item'lar aynı transaction içinde güncellensin.
+      await prisma.$transaction(async (tx) => {
+        await tx.order.update({
+          where: { id: orderId },
+          data: {
+            ...updates,
+          },
+        });
+
+        await tx.orderItem.updateMany({
+          where: {
+            order_id: orderId,
+            status: "pending",
+            sent_at: null,
+          },
+          data: {
+            status: "sent",
+            sent_at: now,
+          },
+        });
+      });
+    } else {
+      // Status "sent" değilse normal update.
+      await store.updateOrder(orderId, updates);
+    }
+
+    // Her durumda güncel order'ı items ile birlikte döndür.
+    const order = await store.getOrderById(orderId);
+    const rawItems = await store.getOrderItems(orderId);
+    const products = await store.getAllProducts();
+    const s = await store.getSettings();
+    const defaultOverdue = Math.min(1440, Math.max(1, (s?.overdue_undelivered_minutes ?? 10) | 0));
+    const toTs = (v) => (v == null ? null : v instanceof Date ? v.getTime() : Number(v));
+    const items = rawItems.map((i) => {
+      const product = i.product_id ? products.find((p) => p.id === i.product_id) : null;
+      const overdue_undelivered_minutes = product?.overdue_undelivered_minutes != null ? product.overdue_undelivered_minutes : defaultOverdue;
+      return {
+        id: i.id,
+        order_id: i.order_id,
+        product_id: i.product_id,
+        product_name: i.product_name ?? "",
+        quantity: Number(i.quantity) || 0,
+        price: Number(i.price) || 0,
+        notes: i.notes ?? "",
+        status: i.status ?? "pending",
+        sent_at: toTs(i.sent_at),
+        delivered_at: toTs(i.delivered_at),
+        client_line_id: i.client_line_id ?? null,
+        overdue_undelivered_minutes,
+      };
+    });
+    const payments = Array.isArray(order.payments) ? order.payments : (await store.getPayments()).filter((p) => p.order_id === order.id);
+    const allVoids = await store.getVoidLogs();
+    const voids = allVoids.filter((v) => v.order_id === order.id);
+    const { orderItems, created_at, paid_at, createdAt, ...orderRest } = order;
+    const createdAtMs = created_at ? toTs(created_at) : toTs(createdAt);
+    const paidAtMs = paid_at ? toTs(paid_at) : null;
+    res.json({ ...orderRest, created_at: createdAtMs, paid_at: paidAtMs, items, payments, voids });
+  } catch (e) {
+    console.error("PATCH /api/orders/:id failed", e);
+    res.status(500).json({ error: "order_update_failed", message: e?.message || "Failed to update order" });
+  }
 });
 
 app.post("/api/orders", authMiddleware, async (req, res) => {
@@ -2826,21 +2929,45 @@ app.post("/api/orders/:id/items", authMiddleware, async (req, res) => {
     const quantity = Number(body.quantity ?? 1) || 1;
     const price = Number(body.price ?? body.unit_price ?? body.unitPrice ?? 0) || 0;
 
+    // Sipariş zaten "sent" mi? Öyleyse yeni/güncellenen item'lar da "sent" olmalı.
+    const parentOrder = await store.getOrderById(orderId);
+    const orderAlreadySent = parentOrder?.status === "sent";
+    const now = new Date();
+
     const orderItems = await store.getOrderItems(orderId);
     if (clientLineId) {
       const existing = orderItems.find((i) => i.client_line_id === clientLineId);
       if (existing) {
+        // status: gelen "sent" ise güncelle; mevcut "sent" ise koru; sipariş "sent" ise koru; yoksa pending
+        const incomingStatus = body.status ?? null;
+        const resolvedStatus =
+          incomingStatus === "sent" ? "sent"
+          : existing.status === "sent" ? "sent"
+          : orderAlreadySent ? "sent"
+          : incomingStatus ?? existing.status ?? "pending";
+        const incomingSentAt = body.sent_at ? new Date(body.sent_at) : null;
+        const resolvedSentAt = resolvedStatus === "sent"
+          ? (incomingSentAt ?? existing.sent_at ?? now)
+          : existing.sent_at;
         const updated = await store.updateOrderItem(existing.id, {
           product_id: productId,
           product_name: productName,
           quantity,
           price,
           notes: body.notes ?? existing.notes ?? "",
+          status: resolvedStatus,
+          sent_at: resolvedSentAt,
         });
         await recalcOrderTotal(orderId);
         return res.json({ ...updated, order_id: orderId });
       }
     }
+
+    // Yeni item: sipariş zaten "sent" ise bu item da "sent" olarak kaydedilsin.
+    const newItemStatus = body.status === "sent" ? "sent" : orderAlreadySent ? "sent" : "pending";
+    const newItemSentAt = newItemStatus === "sent"
+      ? (body.sent_at ? new Date(body.sent_at) : now)
+      : null;
 
     const itemId = body.id ?? body.item_id ?? `item_${uuid().slice(0, 8)}`;
     const newItem = await store.createOrderItem({
@@ -2851,8 +2978,8 @@ app.post("/api/orders/:id/items", authMiddleware, async (req, res) => {
       quantity,
       price,
       notes: body.notes ?? "",
-      status: body.status ?? "pending",
-      sent_at: body.sent_at ? new Date(body.sent_at) : null,
+      status: newItemStatus,
+      sent_at: newItemSentAt,
       client_line_id: clientLineId,
     });
     await recalcOrderTotal(orderId);
@@ -2871,8 +2998,27 @@ app.put("/api/orders/:orderId/items/:itemId", authMiddleware, async (req, res) =
   const items = await store.getOrderItems(orderId);
   const item = items.find((i) => i.id === itemId);
   if (!item) return res.status(404).json({ error: "Not found" });
+  // Sipariş zaten "sent" ise item da "sent" olmalı
+  const parentOrder = await store.getOrderById(orderId);
+  const orderAlreadySent = parentOrder?.status === "sent";
+  const incomingStatus = body.status ?? null;
+  const resolvedStatus =
+    incomingStatus === "sent" ? "sent"
+    : item.status === "sent" ? "sent"
+    : orderAlreadySent ? "sent"
+    : incomingStatus ?? item.status ?? "pending";
+  const incomingSentAt = body.sent_at ? new Date(body.sent_at) : null;
+  const resolvedSentAt = resolvedStatus === "sent"
+    ? (incomingSentAt ?? item.sent_at ?? new Date())
+    : item.sent_at;
   const updated = await store.updateOrderItem(itemId, {
-    product_id: body.product_id || null, product_name: body.product_name, quantity: body.quantity ?? 1, price: body.price ?? 0, notes: body.notes || "",
+    product_id: body.product_id || null,
+    product_name: body.product_name,
+    quantity: body.quantity ?? 1,
+    price: body.price ?? 0,
+    notes: body.notes || "",
+    status: resolvedStatus,
+    sent_at: resolvedSentAt,
   });
   await recalcOrderTotal(orderId);
   res.json(updated);
@@ -2891,15 +3037,51 @@ app.delete("/api/orders/:orderId/items/:itemId", authMiddleware, async (req, res
 
 app.post("/api/orders/:id/send", authMiddleware, async (req, res) => {
   await ensurePrismaReady();
-  const now = Date.now();
-  const items = await store.getOrderItems(req.params.id);
-  for (const i of items) {
-    await store.updateOrderItem(i.id, { status: "sent", sent_at: new Date(now) });
+  const orderId = req.params.id;
+  const now = new Date();
+
+  try {
+    // Tek transaction içinde: order.status = "sent" + ilgili item'ların status/sent_at güncellemesi.
+    await prisma.$transaction(async (tx) => {
+      await tx.order.update({
+        where: { id: orderId },
+        data: { status: "sent" },
+      });
+
+      await tx.orderItem.updateMany({
+        where: {
+          order_id: orderId,
+          // Yalnızca henüz gönderilmemiş satırlar: pending + sent_at=null
+          status: "pending",
+          sent_at: null,
+        },
+        data: {
+          status: "sent",
+          sent_at: now,
+        },
+      });
+    });
+
+    // Güncel durumu dön: KDS / diğer cihazlar doğru state'i görsün.
+    // created_at ve paid_at'i Android'in beklediği ms cinsinden döndür (raw Prisma Date nesnesi değil).
+    const order = await store.getOrderById(orderId);
+    const itemsList = await store.getOrderItems(orderId);
+    const { created_at, paid_at, ...orderRest } = order || {};
+    const createdAtMs = created_at ? (created_at instanceof Date ? created_at.getTime() : new Date(created_at).getTime()) : null;
+    const paidAtMs = paid_at ? (paid_at instanceof Date ? paid_at.getTime() : new Date(paid_at).getTime()) : null;
+    const normalizedItems = (itemsList || []).map((it) => {
+      const { sent_at, delivered_at, ...itRest } = it;
+      return {
+        ...itRest,
+        sent_at: sent_at ? (sent_at instanceof Date ? sent_at.getTime() : new Date(sent_at).getTime()) : null,
+        delivered_at: delivered_at ? (delivered_at instanceof Date ? delivered_at.getTime() : new Date(delivered_at).getTime()) : null,
+      };
+    });
+    res.json({ ...orderRest, created_at: createdAtMs, paid_at: paidAtMs, items: normalizedItems });
+  } catch (e) {
+    console.error("POST /api/orders/:id/send failed", e);
+    res.status(500).json({ error: "send_failed", message: e?.message || "Failed to mark order as sent" });
   }
-  await store.updateOrder(req.params.id, { status: "sent" });
-  const order = await store.getOrderById(req.params.id);
-  const itemsList = await store.getOrderItems(req.params.id);
-  res.json({ ...order, items: itemsList });
 });
 
 // Discount request (app): waiter requests discount; web approves
@@ -3769,6 +3951,197 @@ function broadcastRealtimeEvent(event) {
   }
 }
 
+// ============================================================
+// HİBRİT MİMARİ — CLOUD SYNC ENDPOINT'LERİ
+// ============================================================
+
+/** Sync key doğrulama middleware — sadece bilinen backend'ler erişsin */
+const syncKeyMiddleware = (req, res, next) => {
+  const key = process.env.CLOUD_SYNC_KEY || "";
+  if (!key) return res.status(503).json({ error: "sync_not_configured", message: "CLOUD_SYNC_KEY tanımlı değil" });
+  if (req.headers["x-sync-key"] !== key) return res.status(401).json({ error: "invalid_sync_key" });
+  next();
+};
+
+/**
+ * GET /api/sync/catalog-snapshot
+ * Cloud backend üzerinde çalışır. Local backend bu endpoint'i
+ * çağırarak tüm katalog verisini tek seferde çeker.
+ */
+app.get("/api/sync/catalog-snapshot", syncKeyMiddleware, async (req, res) => {
+  await ensurePrismaReady();
+  const [categories, products, modifierGroups, printers, paymentMethods, settings, users] = await Promise.all([
+    store.getAllCategories(),
+    store.getAllProducts(),
+    store.getModifierGroups(),
+    store.getPrinters(),
+    store.getAllPaymentMethods(),
+    store.getSettings(),
+    store.getAllUsers(),
+  ]);
+  res.json({ categories, products, modifierGroups, printers, paymentMethods, settings, users });
+});
+
+/**
+ * POST /api/sync/receive-sales
+ * Cloud backend üzerinde çalışır. Local backend ödeme tamamlanan
+ * siparişleri buraya gönderir; cloud bunları kendi DB'sine upsert eder.
+ * Body: { orders: [ {id, table_id, ..., orderItems: [], payments: [] } ] }
+ */
+app.post("/api/sync/receive-sales", syncKeyMiddleware, async (req, res) => {
+  await ensurePrismaReady();
+  const { orders = [] } = req.body || {};
+  if (!Array.isArray(orders)) return res.status(400).json({ error: "orders must be an array" });
+
+  const results = { upserted: 0, errors: [] };
+
+  for (const order of orders) {
+    try {
+      const { orderItems = [], payments = [], ...orderData } = order;
+      // Order upsert (cloudSyncedAt kaydını görmezden gel — cloud kendi DB'sinde işaretle)
+      const { cloudSyncedAt, createdAt, updatedAt, deletedAt, tablesAsCurrent, table, waiter, ...cleanOrder } = orderData;
+
+      try {
+        await prisma.order.upsert({
+          where: { id: cleanOrder.id },
+          create: { ...cleanOrder, cloudSyncedAt: new Date() },
+          update: { ...cleanOrder, cloudSyncedAt: new Date() },
+        });
+      } catch (e) {
+        // Tablo foreign key ihlali — ignore, satışı yine de logla
+        console.warn(`[sync/receive-sales] Order ${cleanOrder.id} upsert warn: ${e.message}`);
+      }
+
+      // OrderItems upsert
+      for (const item of orderItems) {
+        const { createdAt: _ca, updatedAt: _ua, order: _o, product: _pr, voidLogs: _vl, ...cleanItem } = item;
+        await prisma.orderItem.upsert({
+          where: { id: cleanItem.id },
+          create: cleanItem,
+          update: cleanItem,
+        }).catch(() => {});
+      }
+
+      // Payments upsert
+      for (const pay of payments) {
+        const { cloudSyncedAt: _cs, createdAt: _ca, updatedAt: _ua, order: _o, user: _u, ...cleanPay } = pay;
+        await prisma.payment.upsert({
+          where: { id: cleanPay.id },
+          create: { ...cleanPay, cloudSyncedAt: new Date() },
+          update: { ...cleanPay, cloudSyncedAt: new Date() },
+        }).catch(() => {});
+      }
+
+      results.upserted++;
+    } catch (err) {
+      results.errors.push({ order_id: order?.id, error: err.message });
+    }
+  }
+
+  console.log(`[sync/receive-sales] ${results.upserted} sipariş alındı, ${results.errors.length} hata`);
+  res.json({ ok: true, ...results });
+});
+
+/**
+ * POST /api/sync/receive-live-orders
+ * Cloud backend üzerinde çalışır. Local backend açık/aktif siparişleri
+ * (status=open|sent) ve masa durumlarını her ~10s'de bir buraya gönderir.
+ * Cloud DB upsert eder → pos.the-limon.com/pos gerçek zamanlı görür.
+ * Body: { orders: [...], tables: [...] }
+ */
+app.post("/api/sync/receive-live-orders", syncKeyMiddleware, async (req, res) => {
+  await ensurePrismaReady();
+  const { orders = [], tables = [] } = req.body || {};
+  if (!Array.isArray(orders) || !Array.isArray(tables)) {
+    return res.status(400).json({ error: "orders and tables must be arrays" });
+  }
+
+  const results = { ordersUpserted: 0, tablesUpdated: 0, errors: [] };
+
+  // ── Açık siparişler + kalemleri upsert ───────────────────
+  for (const order of orders) {
+    try {
+      const { orderItems = [], payments = [], ...orderData } = order;
+      const { cloudSyncedAt, createdAt, updatedAt, deletedAt, tablesAsCurrent, table, waiter, ...cleanOrder } = orderData;
+
+      // cloudSyncedAt'e dokunmuyoruz — sadece paid siparişler için geçerli
+      try {
+        await prisma.order.upsert({
+          where:  { id: cleanOrder.id },
+          create: { ...cleanOrder },
+          update: { ...cleanOrder },
+        });
+      } catch (e) {
+        console.warn(`[sync/receive-live-orders] Order ${cleanOrder.id} upsert warn: ${e.message}`);
+      }
+
+      // OrderItems
+      for (const item of orderItems) {
+        const { createdAt: _ca, updatedAt: _ua, order: _o, product: _pr, voidLogs: _vl, ...cleanItem } = item;
+        await prisma.orderItem.upsert({
+          where:  { id: cleanItem.id },
+          create: cleanItem,
+          update: cleanItem,
+        }).catch(() => {});
+      }
+
+      results.ordersUpserted++;
+    } catch (err) {
+      results.errors.push({ order_id: order?.id, error: err.message });
+    }
+  }
+
+  // ── Masa durumları upsert ─────────────────────────────────
+  for (const tableData of tables) {
+    try {
+      const {
+        createdAt, updatedAt, deletedAt,
+        currentOrder, reservations, floorSections,
+        ...cleanTable
+      } = tableData;
+
+      await prisma.table.upsert({
+        where:  { id: cleanTable.id },
+        create: { ...cleanTable },
+        update: {
+          status:           cleanTable.status,
+          current_order_id: cleanTable.current_order_id ?? null,
+        },
+      });
+      results.tablesUpdated++;
+    } catch (e) {
+      results.errors.push({ table_id: tableData?.id, error: e.message });
+    }
+  }
+
+  console.log(
+    `[sync/receive-live-orders] ${results.ordersUpserted} açık sipariş, ` +
+    `${results.tablesUpdated} masa güncellendi, ${results.errors.length} hata`
+  );
+  res.json({ ok: true, ...results });
+});
+
+/**
+ * POST /api/sync/force-pull
+ * Local backend'e "hemen katalog çek" komutu gönderir.
+ * Backoffice fiyat değiştirince Cloud bu endpoint'i local'e POST eder.
+ * ROLE=local olan makinede anlık pullCatalogFromCloud() tetikler.
+ */
+app.post("/api/sync/force-pull", syncKeyMiddleware, async (req, res) => {
+  const result = await forcePull();
+  res.json({ ok: result.ok, ...result });
+});
+
+/**
+ * GET /api/sync/status
+ * Sync durumunu döner (her iki tarafta da çalışır, auth gerekmiyor).
+ */
+app.get("/api/sync/status", authMiddleware, async (req, res) => {
+  res.json(getSyncStatus());
+});
+
+// ============================================================
+
 async function startServer() {
   // Listen first – health check için hızlı yanıt. ensureData arka planda.
   const server = app.listen(PORT, HOST, () => {
@@ -3785,6 +4158,10 @@ async function startServer() {
     setInterval(() => runAutoCloseIfDue().catch((e) => console.error("[auto-close]", e?.message)), 60 * 1000);
     setInterval(() => fetchReconciliationEmails().catch((e) => console.error("[reconciliation]", e?.message)), 5 * 60 * 1000);
     setInterval(() => runDailyAuditIfDue().catch((e) => console.error("[audit]", e?.message)), 60 * 60 * 1000);
+    // Hibrit mimari: ROLE=local ise cloud sync loop'unu başlat
+    if ((process.env.ROLE || "cloud") === "local") {
+      startSyncLoop();
+    }
   });
   const wss = new WebSocketServer({ server, path: "/ws" });
   wss.on("connection", (ws) => {
