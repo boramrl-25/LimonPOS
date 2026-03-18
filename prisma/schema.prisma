@@ -148,6 +148,7 @@ model Order {
   zoho_receipt_id  String?
   source           String?   @default("app")  // "app" | "local_backend" - audit
   device_id        String?   // cihaz id - audit
+  cloudSyncedAt    DateTime? // null = henüz cloud'a gönderilmedi
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
   deletedAt        DateTime?
@@ -172,6 +173,7 @@ model OrderItem {
   sent_at       DateTime?
   client_line_id String?  // idempotency
   delivered_at  DateTime?
+  cloudSyncedAt DateTime? // null = henüz cloud'a gönderilmedi
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   deletedAt    DateTime?
