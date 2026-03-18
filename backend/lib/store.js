@@ -136,7 +136,32 @@ export async function getTables() {
 }
 
 export async function getOrders() {
-  return prisma.order.findMany({ where: { deletedAt: null } });
+  // cloudSyncedAt kolonu bazı ortamlarda henüz yoksa sorgu crash olmasın diye
+  // sadece gerekli alanları seçiyoruz (cloudSyncedAt'i bilerek hariç tutuyoruz).
+  return prisma.order.findMany({
+    where: { deletedAt: null },
+    select: {
+      id: true,
+      table_id: true,
+      table_number: true,
+      waiter_id: true,
+      waiter_name: true,
+      status: true,
+      subtotal: true,
+      tax_amount: true,
+      discount_percent: true,
+      discount_amount: true,
+      total: true,
+      created_at: true,
+      paid_at: true,
+      zoho_receipt_id: true,
+      source: true,
+      device_id: true,
+      createdAt: true,
+      updatedAt: true,
+      deletedAt: true,
+    },
+  });
 }
 
 export async function getOrderById(id) {
@@ -156,7 +181,23 @@ export async function getAllOrderItems() {
 }
 
 export async function getPayments() {
-  return prisma.payment.findMany();
+  // cloudSyncedAt alanı bazı DB'lerde yoksa sorgu crash olmasın diye hariç tutuyoruz.
+  return prisma.payment.findMany({
+    select: {
+      id: true,
+      order_id: true,
+      amount: true,
+      method: true,
+      received_amount: true,
+      change_amount: true,
+      user_id: true,
+      source: true,
+      device_id: true,
+      created_at: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  });
 }
 
 export async function getVoidLogs() {
@@ -802,7 +843,31 @@ export async function updateTableReservation(id, payload) {
 export async function getDeletedRecords() {
   const [tables, orders, orderItems] = await Promise.all([
     prisma.table.findMany({ where: { deletedAt: { not: null } }, orderBy: { deletedAt: "desc" } }),
-    prisma.order.findMany({ where: { deletedAt: { not: null } }, orderBy: { deletedAt: "desc" } }),
+    prisma.order.findMany({
+      where: { deletedAt: { not: null } },
+      orderBy: { deletedAt: "desc" },
+      select: {
+        id: true,
+        table_id: true,
+        table_number: true,
+        waiter_id: true,
+        waiter_name: true,
+        status: true,
+        subtotal: true,
+        tax_amount: true,
+        discount_percent: true,
+        discount_amount: true,
+        total: true,
+        created_at: true,
+        paid_at: true,
+        zoho_receipt_id: true,
+        source: true,
+        device_id: true,
+        createdAt: true,
+        updatedAt: true,
+        deletedAt: true,
+      },
+    }),
     prisma.orderItem.findMany({ where: { deletedAt: { not: null } }, orderBy: { deletedAt: "desc" } }),
   ]);
   return { tables, orders, orderItems };
@@ -831,7 +896,14 @@ export async function createSyncError(data) {
 /** Clear sales by date range - all operations in single transaction for data integrity */
 export async function clearSalesByDateRangeTransaction({ startTs, endTs }) {
   return prisma.$transaction(async (tx) => {
-    const orders = await tx.order.findMany({ where: { deletedAt: null } });
+    const orders = await tx.order.findMany({
+      where: { deletedAt: null },
+      select: {
+        id: true,
+        created_at: true,
+        updatedAt: true,
+      },
+    });
     const orderIdsArr = orders.filter((o) => {
       const created = ts(o.created_at) ?? ts(o.updatedAt) ?? 0;
       return created >= startTs && created <= endTs;
@@ -1089,6 +1161,13 @@ export async function runDailyAuditReport() {
     where: {
       deletedAt: null,
       createdAt: { gte: new Date(range.startTs), lt: new Date(range.endTs) },
+    },
+    select: {
+      id: true,
+      source: true,
+      device_id: true,
+      createdAt: true,
+      deletedAt: true,
     },
   });
   const bySource = { app: [], local_backend: [] };

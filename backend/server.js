@@ -4005,8 +4005,10 @@ app.post("/api/sync/receive-sales", syncKeyMiddleware, async (req, res) => {
       try {
         await prisma.order.upsert({
           where: { id: cleanOrder.id },
-          create: { ...cleanOrder, cloudSyncedAt: new Date() },
-          update: { ...cleanOrder, cloudSyncedAt: new Date() },
+          // cloud DB'de bu alan henüz yoksa yazıp sorgulamayalım (P2022 engeli)
+          create: { ...cleanOrder },
+          update: { ...cleanOrder },
+          select: { id: true },
         });
       } catch (e) {
         // Tablo foreign key ihlali — ignore, satışı yine de logla
@@ -4020,6 +4022,7 @@ app.post("/api/sync/receive-sales", syncKeyMiddleware, async (req, res) => {
           where: { id: cleanItem.id },
           create: cleanItem,
           update: cleanItem,
+          select: { id: true },
         }).catch(() => {});
       }
 
@@ -4028,8 +4031,9 @@ app.post("/api/sync/receive-sales", syncKeyMiddleware, async (req, res) => {
         const { cloudSyncedAt: _cs, createdAt: _ca, updatedAt: _ua, order: _o, user: _u, ...cleanPay } = pay;
         await prisma.payment.upsert({
           where: { id: cleanPay.id },
-          create: { ...cleanPay, cloudSyncedAt: new Date() },
-          update: { ...cleanPay, cloudSyncedAt: new Date() },
+          create: { ...cleanPay },
+          update: { ...cleanPay },
+          select: { id: true },
         }).catch(() => {});
       }
 
@@ -4071,6 +4075,7 @@ app.post("/api/sync/receive-live-orders", syncKeyMiddleware, async (req, res) =>
           where:  { id: cleanOrder.id },
           create: { ...cleanOrder },
           update: { ...cleanOrder },
+          select: { id: true },
         });
       } catch (e) {
         console.warn(`[sync/receive-live-orders] Order ${cleanOrder.id} upsert warn: ${e.message}`);
@@ -4083,6 +4088,7 @@ app.post("/api/sync/receive-live-orders", syncKeyMiddleware, async (req, res) =>
           where:  { id: cleanItem.id },
           create: cleanItem,
           update: cleanItem,
+          select: { id: true },
         }).catch(() => {});
       }
 
