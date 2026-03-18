@@ -52,6 +52,7 @@ services:
       ZOHO_DC: "eu"
       ZOHO_CASH_ACCOUNT_ID: "864689000000493032"
       ZOHO_CARD_ACCOUNT_ID: "864689000000493048"
+      CLOUD_SYNC_KEY: "seninanahtar123"
     volumes:
       - limonpos_data:/data
     depends_on:

@@ -2,24 +2,29 @@
  * Hibrit mimari: FCM ile cihazlara catalog_updated push gönderimi.
  * GOOGLE_APPLICATION_CREDENTIALS veya FCM_SERVICE_ACCOUNT_PATH ortam değişkeni ile yapılandırın.
  * Yapılandırılmazsa FCM gönderilmez (WebSocket broadcast yeterli).
+ *
+ * NOT: firebase-admin paketi opsiyoneldir. Yüklü değilse FCM sessizce devre dışı kalır.
  */
-import { getApps, initializeApp, cert } from "firebase-admin/app";
-import { getMessaging } from "firebase-admin/messaging";
 
 let messaging = null;
+let _initAttempted = false;
 
-function initFcm() {
-  if (messaging) return messaging;
-  if (getApps().length > 0) {
-    messaging = getMessaging();
-    return messaging;
-  }
+async function initFcm() {
+  if (_initAttempted) return messaging;
+  _initAttempted = true;
+
   const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || process.env.FCM_SERVICE_ACCOUNT_PATH;
-  const credJson = process.env.FCM_SERVICE_ACCOUNT_JSON; // base64 encoded JSON
-  if (!credPath && !credJson) {
-    return null;
-  }
+  const credJson = process.env.FCM_SERVICE_ACCOUNT_JSON;
+  if (!credPath && !credJson) return null; // FCM yapılandırılmamış — sessizce atla
+
   try {
+    const { getApps, initializeApp, cert } = await import("firebase-admin/app");
+    const { getMessaging } = await import("firebase-admin/messaging");
+
+    if (getApps().length > 0) {
+      messaging = getMessaging();
+      return messaging;
+    }
     let app;
     if (credJson) {
       const decoded = Buffer.from(credJson, "base64").toString("utf-8");
@@ -32,7 +37,11 @@ function initFcm() {
     console.log("[fcm] Firebase Admin initialized");
     return messaging;
   } catch (e) {
-    console.error("[fcm] Init failed:", e?.message || e);
+    if (e?.code === "ERR_MODULE_NOT_FOUND" || e?.code === "ERR_PACKAGE_IMPORT_NOT_DEFINED") {
+      console.warn("[fcm] firebase-admin paketi yüklü değil — FCM devre dışı (npm install firebase-admin ile yüklenebilir)");
+    } else {
+      console.error("[fcm] Init failed:", e?.message || e);
+    }
     return null;
   }
 }
@@ -43,7 +52,7 @@ function initFcm() {
  * @returns {{ sent: number, failed: number }}
  */
 export async function sendCatalogUpdatedToDevices(devices) {
-  const msg = initFcm();
+  const msg = await initFcm();
   if (!msg) return { sent: 0, failed: 0 };
   const tokens = (devices || [])
     .map((d) => d.fcm_token)
