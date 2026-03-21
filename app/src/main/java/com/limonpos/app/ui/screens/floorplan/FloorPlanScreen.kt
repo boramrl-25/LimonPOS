@@ -497,7 +497,9 @@ fun FloorPlanScreen(
                     val now = System.currentTimeMillis()
                     val isOccupiedWithUpcoming = (table.status == "occupied" || table.status == "bill") &&
                         ReservationStatusHelper.isReservationUpcoming(table, now, 30)
+                    val isActiveOrderTable = table.status == "occupied" || table.status == "bill"
                     val isOtherUsersTable = viewAllOrders && currentUserId != null &&
+                        isActiveOrderTable &&
                         table.waiterId != null && table.waiterId != currentUserId
                     val itemCount = tableItemCounts[table.id] ?: 0
                     val canCloseOwnTable = (table.status == "occupied" || table.status == "bill") && !isOtherUsersTable

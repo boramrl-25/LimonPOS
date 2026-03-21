@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Restoran POS — Mimari Diyagram</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --card: #1a2332;
+      --text: #e7ecf3;
+      --muted: #8b9cb3;
+      --accent: #7dd3fc;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 2rem 1.5rem 4rem;
+    }
+    h1 {
+      font-size: 1.75rem;
+      font-weight: 600;
+      margin: 0 0 0.5rem;
+    }
+    .sub {
+      color: var(--muted);
+      margin-bottom: 2rem;
+      max-width: 52rem;
+    }
+    .panel {
+      background: var(--card);
+      border-radius: 12px;
+      padding: 1.25rem 1rem 2rem;
+      margin-bottom: 2rem;
+      border: 1px solid rgba(255,255,255,.08);
+      overflow-x: auto;
+    }
+    .panel h2 {
+      font-size: 1rem;
+      color: var(--accent);
+      margin: 0 0 1rem;
+      font-weight: 600;
+    }
+    .mermaid { text-align: center; }
+    table {
+      width: 100%;
+      max-width: 48rem;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+    th, td {
+      text-align: left;
+      padding: 0.65rem 0.75rem;
+      border-bottom: 1px solid rgba(255,255,255,.1);
+    }
+    th { color: var(--accent); font-weight: 600; }
+    footer {
+      color: var(--muted);
+      font-size: 0.8rem;
+      margin-top: 2rem;
+    }
+  </style>
+</head>
+<body>
+  <h1>Restoran POS sistemi — mimari diyagram</h1>
+  <p class="sub">
+    Her POS cihazı kendi yerel veritabanında bağımsız çalışır. KDS yalnızca yerel backend üzerinden LAN ile beslenir.
+    Bulut, internet varken merkezi senkron ve raporlama sağlar.
+  </p>
+
+  <div class="panel">
+    <h2>Bileşenler ve veri akışları</h2>
+    <pre class="mermaid">
+flowchart TB
+  subgraph LAN["Restoran LAN (yerel ağ)"]
+    subgraph POS1["POS cihazı 1"]
+      POS1_UI[Kasa / Sipariş UI]
+      POS1_DB[(POS yerel DB 1)]
+      POS1_UI <--> POS1_DB
+    end
+    subgraph POS2["POS cihazı 2"]
+      POS2_UI[Kasa / Sipariş UI]
+      POS2_DB[(POS yerel DB 2)]
+      POS2_UI <--> POS2_DB
+    end
+    subgraph POSN["POS cihazı N"]
+      POSN_UI[Kasa / Sipariş UI]
+      POSN_DB[(POS yerel DB N)]
+      POSN_UI <--> POSN_DB
+    end
+
+    subgraph KDS_ZONE["KDS bölgesi (mutfak)"]
+      KDS1[KDS ekranı 1]
+      KDS2[KDS ekranı 2]
+      KDS_LOCAL["KDS yerel backend"]
+      KDS_LOCAL_DB[(KDS yerel DB)]
+      KDS1 <--> KDS_LOCAL
+      KDS2 <--> KDS_LOCAL
+      KDS_LOCAL <--> KDS_LOCAL_DB
+    end
+
+    POS1_UI -->|"LAN: mutfak siparişleri"| KDS_LOCAL
+    POS2_UI -->|"LAN"| KDS_LOCAL
+    POSN_UI -->|"LAN"| KDS_LOCAL
+    KDS_LOCAL -->|"LAN: durum geri bildirimi"| POS1_UI
+    KDS_LOCAL -->|"LAN"| POS2_UI
+  end
+
+  subgraph INTERNET["İnternet"]
+    CLOUD["Bulut backend"]
+    subgraph CLOUD_SERVICES["Bulut"]
+      ANALYTICS[Analitik / raporlama]
+      REMOTE[Uzaktan erişim]
+    end
+    CLOUD --> ANALYTICS
+    CLOUD --> REMOTE
+  end
+
+  POS1_DB -->|"Senkron çevrimiçi"| CLOUD
+  POS2_DB -->|"Senkron"| CLOUD
+  POSN_DB -->|"Senkron"| CLOUD
+  CLOUD -->|"Katalog / ayarlar"| POS1_DB
+  CLOUD -->|" "| POS2_DB
+  CLOUD -->|" "| POSN_DB
+
+  style POS1_DB fill:#1b4332,color:#fff
+  style POS2_DB fill:#1b4332,color:#fff
+  style POSN_DB fill:#1b4332,color:#fff
+  style KDS_LOCAL fill:#5c4d00,color:#fff
+  style KDS_LOCAL_DB fill:#5c4d00,color:#fff
+  style CLOUD fill:#1d3557,color:#fff
+    </pre>
+  </div>
+
+  <div class="panel">
+    <h2>POS bağımsızlığı (yerel DB)</h2>
+    <pre class="mermaid">
+flowchart LR
+  subgraph A["POS A"]
+    DBA[(Yerel DB A)]
+  end
+  subgraph B["POS B"]
+    DBB[(Yerel DB B)]
+  end
+    </pre>
+    <p style="color:var(--muted);font-size:0.9rem;max-width:40rem;margin:0;">
+      POS A ve POS B birbirinin veritabanına doğrudan bağlanmaz; her biri kendi yerel DB ile çevrimdışı tam çalışır.
+    </p>
+  </div>
+
+  <div class="panel">
+    <h2>Bileşen özeti</h2>
+    <table>
+      <thead>
+        <tr><th>Bileşen</th><th>Rol</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>POS yerel DB (1…N)</strong></td>
+          <td>Çevrimdışı satış, müşteri, stok; cihaz başına ayrı kopya.</td>
+        </tr>
+        <tr>
+          <td><strong>KDS yerel backend + DB</strong></td>
+          <td>Sadece mutfak siparişleri; LAN; bulut gerekmez.</td>
+        </tr>
+        <tr>
+          <td><strong>Bulut backend</strong></td>
+          <td>Merkezi depo, senkron, analitik, uzaktan yönetim.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <footer>
+    Mermaid.js CDN ile çizilir. Çevrimdışı kullanım için sayfayı veya diyagramı PDF olarak kaydedebilirsiniz.
+  </footer>
+
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: "dark",
+      securityLevel: "loose",
+      flowchart: { curve: "basis", padding: 12 }
+    });
+  </script>
+</body>
+</html>

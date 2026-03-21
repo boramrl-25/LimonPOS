@@ -37,6 +37,16 @@ class ServerSettingsViewModel @Inject constructor(
         SharingStarted.WhileSubscribed(5000),
         ""
     )
+    val kdsLanBaseUrl = serverPreferences.kdsLanBaseUrl.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        ""
+    )
+    val kdsPushSecret = serverPreferences.kdsPushSecret.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        ""
+    )
 
     private val _message = MutableStateFlow<String?>(null)
     val message = _message.asStateFlow()
@@ -44,12 +54,20 @@ class ServerSettingsViewModel @Inject constructor(
     private val _testing = MutableStateFlow(false)
     val testing = _testing.asStateFlow()
 
-    fun saveUrl(url: String, secondary: String? = null, tertiary: String? = null) {
+    fun saveUrl(
+        url: String,
+        secondary: String? = null,
+        tertiary: String? = null,
+        kdsLan: String? = null,
+        kdsSecret: String? = null
+    ) {
         viewModelScope.launch {
             try {
                 serverPreferences.setBaseUrl(url)
                 serverPreferences.setSecondaryBaseUrl(secondary)
                 serverPreferences.setTertiaryBaseUrl(tertiary)
+                serverPreferences.setKdsLanBaseUrl(kdsLan)
+                serverPreferences.setKdsPushSecret(kdsSecret)
                 _message.update { "Saved. Changes apply immediately." }
             } catch (e: Exception) {
                 _message.update { "Error: ${e.message}" }

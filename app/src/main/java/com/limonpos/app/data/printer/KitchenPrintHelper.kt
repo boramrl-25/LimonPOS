@@ -6,6 +6,7 @@ import com.limonpos.app.data.repository.OrderRepository
 import com.limonpos.app.data.repository.PrinterRepository
 import com.limonpos.app.data.prefs.PrinterPreferences
 import com.limonpos.app.data.prefs.ReceiptPreferences
+import com.limonpos.app.data.remote.KdsLanPushService
 import com.limonpos.app.data.repository.ProductRepository
 import com.limonpos.app.service.PrinterService
 import kotlinx.coroutines.flow.first
@@ -19,7 +20,8 @@ class KitchenPrintHelper @Inject constructor(
     private val productRepository: ProductRepository,
     private val printerService: PrinterService,
     private val printerPreferences: PrinterPreferences,
-    private val receiptPreferences: ReceiptPreferences
+    private val receiptPreferences: ReceiptPreferences,
+    private val kdsLanPushService: KdsLanPushService
 ) {
     suspend fun sendToKitchen(orderId: String): KitchenPrintResult {
         val ow = orderRepository.getOrderWithItems(orderId).first() ?: return KitchenPrintResult.Failure(
@@ -39,6 +41,7 @@ class KitchenPrintHelper @Inject constructor(
         val pendingItemIds = pendingItems.map { it.id }
         if (allKitchenPrinters.isEmpty()) {
             orderRepository.markItemsAsSent(ow.order.id, pendingItemIds)
+            kdsLanPushService.pushOrderAfterKitchenSend(ow.order.id)
             return KitchenPrintResult.Failure(
                 message = "No kitchen printer configured",
                 orderId = orderId,
@@ -48,6 +51,7 @@ class KitchenPrintHelper @Inject constructor(
             )
         }
         orderRepository.markItemsAsSent(ow.order.id, pendingItemIds)
+        kdsLanPushService.pushOrderAfterKitchenSend(ow.order.id)
 
         val itemsByPrinter = groupItemsByEffectivePrinter(pendingItems, allKitchenPrinters)
         val itemSize = printerPreferences.getReceiptItemSize()
@@ -88,6 +92,7 @@ class KitchenPrintHelper @Inject constructor(
         )
         val itemsToPrint = ow.items.filter { it.id in itemIds }
         if (itemsToPrint.isEmpty()) return KitchenPrintResult.Success
+        kdsLanPushService.pushOrderAfterKitchenSend(ow.order.id)
         val allKitchenPrinters = printerRepository.getAllPrinters().first().filter { p ->
             p.printerType == "kitchen" && p.ipAddress.isNotBlank() && p.enabled
         }

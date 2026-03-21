@@ -1,6 +1,8 @@
 package com.limonpos.app.data.remote.dto
 
+import com.google.gson.annotations.JsonAdapter
 import com.google.gson.annotations.SerializedName
+import com.limonpos.app.data.remote.LongOrIsoDateAdapter
 
 data class OrderDto(
     @SerializedName("id") val id: String,
@@ -14,7 +16,9 @@ data class OrderDto(
     @SerializedName("discount_percent") val discountPercent: Double = 0.0,
     @SerializedName("discount_amount") val discountAmount: Double = 0.0,
     @SerializedName("total") val total: Double = 0.0,
+    @field:JsonAdapter(LongOrIsoDateAdapter::class)
     @SerializedName("created_at") val createdAt: Long,
+    @field:JsonAdapter(LongOrIsoDateAdapter::class)
     @SerializedName("paid_at") val paidAt: Long? = null,
     @SerializedName("items") val items: List<OrderItemDto>? = null
 )
@@ -28,7 +32,9 @@ data class OrderItemDto(
     @SerializedName("price") val price: Double,
     @SerializedName("notes") val notes: String = "",
     @SerializedName("status") val status: String = "pending",
+    @field:JsonAdapter(LongOrIsoDateAdapter::class)
     @SerializedName("sent_at") val sentAt: Long? = null,
+    @field:JsonAdapter(LongOrIsoDateAdapter::class)
     @SerializedName("delivered_at") val deliveredAt: Long? = null,
     @SerializedName("client_line_id") val clientLineId: String? = null
 )

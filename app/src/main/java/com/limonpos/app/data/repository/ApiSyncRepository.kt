@@ -17,6 +17,8 @@ import com.limonpos.app.data.prefs.SyncPreferences
 import com.limonpos.app.data.remote.ApiService
 import com.limonpos.app.data.remote.AuthTokenProvider
 import com.limonpos.app.data.remote.dto.*
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import com.limonpos.app.util.FcmTokenHolder
 import com.limonpos.app.util.NetworkMonitor
 import com.limonpos.app.util.SessionManager
@@ -136,6 +138,8 @@ class ApiSyncRepository @Inject constructor(
         if (!isOnline()) return false
         restoreAuthTokenIfNeeded()
         return try {
+            // Aynı ağdaki diğer cihazlar sunucudan okur; ilk push kaçtıysa periyodik tekrar dene
+            pushOpenOrdersAndTables()
             pushOrderItemStatusUpdates()
             pushPendingTableCloses()
             syncTables()
@@ -516,17 +520,20 @@ class ApiSyncRepository @Inject constructor(
     private suspend fun pushTableState(table: TableEntity) {
         if (!isOnline()) return
         try {
-            val body = mutableMapOf<String, Any?>(
-                "status" to table.status,
-                "current_order_id" to table.currentOrderId,
-                "waiter_id" to table.waiterId,
-                "waiter_name" to table.waiterName,
-                "guest_count" to table.guestCount
-            )
-            table.openedAt?.let { ms ->
-                body["opened_at"] = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US).apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }.format(java.util.Date(ms))
+            val openedAtStr = table.openedAt?.let { ms ->
+                java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US)
+                    .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }
+                    .format(java.util.Date(ms))
             }
-            val res = apiService.updateTable(table.id, body)
+            val req = TablePatchRequest(
+                status = table.status,
+                current_order_id = table.currentOrderId,
+                waiter_id = table.waiterId,
+                waiter_name = table.waiterName,
+                guest_count = table.guestCount,
+                opened_at = openedAtStr
+            )
+            val res = apiService.updateTable(table.id, req)
             if (!res.isSuccessful) Log.e("ApiSync", "updateTable ${table.id} failed: ${res.code()}")
         } catch (e: Exception) {
             Log.e("ApiSync", "pushTableState error: ${e.message}")
@@ -538,13 +545,13 @@ class ApiSyncRepository @Inject constructor(
         if (!isOnline()) return Result.success(Unit)
         return try {
             restoreAuthTokenIfNeeded()
-            val sourceBody = mapOf<String, Any?>(
-                "status" to "free",
-                "current_order_id" to null,
-                "guest_count" to 0,
-                "waiter_id" to null,
-                "waiter_name" to null,
-                "opened_at" to null
+            val sourceBody = TablePatchRequest(
+                status = "free",
+                current_order_id = null,
+                guest_count = 0,
+                waiter_id = null,
+                waiter_name = null,
+                opened_at = null
             )
             val srcRes = apiService.updateTable(sourceTableId, sourceBody)
             if (!srcRes.isSuccessful) {
@@ -556,16 +563,19 @@ class ApiSyncRepository @Inject constructor(
             }
             val targetTable = tableDao.getTableById(targetTableId)
             if (targetTable != null) {
-                val targetBody = mutableMapOf<String, Any?>(
-                    "status" to targetTable.status,
-                    "current_order_id" to targetTable.currentOrderId,
-                    "waiter_id" to targetTable.waiterId,
-                    "waiter_name" to targetTable.waiterName,
-                    "guest_count" to targetTable.guestCount
-                )
-                targetTable.openedAt?.let { ms ->
-                    targetBody["opened_at"] = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US).apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }.format(java.util.Date(ms))
+                val tgtOpenedAt = targetTable.openedAt?.let { ms ->
+                    java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US)
+                        .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }
+                        .format(java.util.Date(ms))
                 }
+                val targetBody = TablePatchRequest(
+                    status = targetTable.status,
+                    current_order_id = targetTable.currentOrderId,
+                    waiter_id = targetTable.waiterId,
+                    waiter_name = targetTable.waiterName,
+                    guest_count = targetTable.guestCount,
+                    opened_at = tgtOpenedAt
+                )
                 val tgtRes = apiService.updateTable(targetTableId, targetBody)
                 if (!tgtRes.isSuccessful) {
                     if (tgtRes.code() == 403) {
@@ -577,7 +587,7 @@ class ApiSyncRepository @Inject constructor(
             }
             val orderRes = apiService.updateOrderTable(
                 orderId,
-                mapOf("table_id" to targetTableId, "table_number" to targetTableNumber)
+                OrderTablePatchRequest(table_id = targetTableId, table_number = targetTableNumber)
             )
             if (!orderRes.isSuccessful) Log.e("ApiSync", "pushTableTransfer order $orderId failed: ${orderRes.code()}")
             Result.success(Unit)
@@ -594,6 +604,9 @@ class ApiSyncRepository @Inject constructor(
         try {
             restoreAuthTokenIfNeeded()
             val res = apiService.updateOrderItemStatus(orderId, apiItemId, OrderItemStatusRequest("delivered"))
+            try {
+                res.body()?.close()
+            } catch (_: Exception) { }
             if (!res.isSuccessful) Log.e("ApiSync", "pushItemDelivered failed for ${item.id}")
         } catch (e: Exception) {
             Log.e("ApiSync", "pushItemDelivered error: ${e.message}", e)
@@ -617,6 +630,9 @@ class ApiSyncRepository @Inject constructor(
                 val apiItemId = item.apiId ?: item.id
                 try {
                     val res = apiService.updateOrderItemStatus(order.id, apiItemId, OrderItemStatusRequest(statusToPush))
+                    try {
+                        res.body()?.close()
+                    } catch (_: Exception) { }
                     if (!res.isSuccessful) Log.e("ApiSync", "updateOrderItemStatus failed for ${item.id}")
                 } catch (e: Exception) {
                     Log.e("ApiSync", "pushOrderItemStatus error: ${e.message}")
@@ -851,6 +867,7 @@ class ApiSyncRepository @Inject constructor(
             // Trust API when it says occupied - so other devices' occupied tables are visible (multi-app sync).
             // Previously preferred local free over API occupied, which broke app-to-app visibility.
             val useLocalFree = false
+            val trustApiFreeWaiterClear = apiSaysFree && !useLocalOccupied
             TableEntity(
                 id = dto.id,
                 number = dto.number.toString(),
@@ -871,23 +888,25 @@ class ApiSyncRepository @Inject constructor(
                 guestCount = when {
                     useLocalFree -> 0
                     useLocalOccupied -> localOccupiedRow!!.guestCount
+                    trustApiFreeWaiterClear -> 0
                     else -> dto.guestCount ?: 0
                 },
                 waiterId = when {
                     useLocalFree -> null
                     useLocalOccupied -> localOccupiedRow!!.waiterId
-                    dto.waiterId.isNullOrBlank() && localAny?.waiterId != null -> localAny.waiterId
+                    trustApiFreeWaiterClear -> null
                     else -> dto.waiterId
                 },
                 waiterName = when {
                     useLocalFree -> null
                     useLocalOccupied -> localOccupiedRow!!.waiterName
-                    dto.waiterName.isNullOrBlank() && localAny?.waiterName != null -> localAny.waiterName
+                    trustApiFreeWaiterClear -> null
                     else -> dto.waiterName
                 },
                 openedAt = when {
                     useLocalFree -> null
                     useLocalOccupied -> localOccupiedRow!!.openedAt
+                    trustApiFreeWaiterClear -> null
                     else -> dto.openedAt?.let { parseIsoDate(it) }
                 },
                 syncStatus = "SYNCED",
@@ -909,11 +928,11 @@ class ApiSyncRepository @Inject constructor(
                 tableDao.markOrphaned(local.id)
                 try {
                     apiService.reportSyncError(
-                        mapOf(
-                            "source" to "android",
-                            "entity_type" to "table",
-                            "entity_id" to local.id,
-                            "message" to "Table ${local.number} (${local.name}) exists locally but not in API - marked as orphaned"
+                        SyncErrorReport(
+                            source = "android",
+                            entity_type = "table",
+                            entity_id = local.id,
+                            message = "Table ${local.number} (${local.name}) exists locally but not in API - marked as orphaned"
                         )
                     )
                 } catch (e: Exception) {
@@ -1760,11 +1779,11 @@ class ApiSyncRepository @Inject constructor(
         if (!isOnline()) return false
         restoreAuthTokenIfNeeded()
         return try {
-            val body = mapOf(
-                "guest_name" to guestName,
-                "guest_phone" to guestPhone,
-                "from_time" to fromTimeMs,
-                "to_time" to toTimeMs
+            val body = TableReserveRequest(
+                guest_name = guestName,
+                guest_phone = guestPhone,
+                from_time = fromTimeMs,
+                to_time = toTimeMs
             )
             val response = apiService.reserveTable(tableId, body)
             if (response.isSuccessful) {
@@ -1780,7 +1799,8 @@ class ApiSyncRepository @Inject constructor(
         if (!isOnline()) return false
         restoreAuthTokenIfNeeded()
         return try {
-            val response = apiService.cancelTableReservation(tableId, emptyMap())
+            val emptyJson = "{}".toRequestBody("application/json; charset=utf-8".toMediaType())
+            val response = apiService.cancelTableReservation(tableId, emptyJson)
             if (response.isSuccessful) {
                 syncTables()
                 true

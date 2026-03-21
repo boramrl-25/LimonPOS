@@ -27,6 +27,8 @@ class ServerPreferences @Inject constructor(
         val API_BASE_URL = stringPreferencesKey("api_base_url")
         val API_BASE_URL_SECONDARY = stringPreferencesKey("api_base_url_secondary")
         val API_BASE_URL_TERTIARY = stringPreferencesKey("api_base_url_tertiary")
+        val KDS_LAN_BASE_URL = stringPreferencesKey("kds_lan_base_url")
+        val KDS_PUSH_SECRET = stringPreferencesKey("kds_push_secret")
         val DEVICE_ID = stringPreferencesKey("device_id")
     }
 
@@ -58,6 +60,15 @@ class ServerPreferences @Inject constructor(
     val tertiaryBaseUrl: Flow<String> = context.serverDataStore.data.map { prefs ->
         val v = prefs[Keys.API_BASE_URL_TERTIARY]
         if (v.isNullOrBlank() || isBlockedUrl(v)) "" else resolveBaseUrl(v)
+    }
+
+    /** Örn. http://192.168.1.50:3099 — sonda / olmadan veya path olmadan */
+    val kdsLanBaseUrl: Flow<String> = context.serverDataStore.data.map { prefs ->
+        (prefs[Keys.KDS_LAN_BASE_URL] ?: "").trim()
+    }
+
+    val kdsPushSecret: Flow<String> = context.serverDataStore.data.map { prefs ->
+        (prefs[Keys.KDS_PUSH_SECRET] ?: "").trim()
     }
 
     suspend fun getBaseUrl(): String {
@@ -127,6 +138,28 @@ class ServerPreferences @Inject constructor(
     suspend fun getTertiaryBaseUrl(): String {
         val v = context.serverDataStore.data.first()[Keys.API_BASE_URL_TERTIARY]
         return if (v.isNullOrBlank() || isBlockedUrl(v)) "" else resolveBaseUrl(v)
+    }
+
+    suspend fun getKdsLanBaseUrl(): String =
+        (context.serverDataStore.data.first()[Keys.KDS_LAN_BASE_URL] ?: "").trim()
+
+    suspend fun getKdsPushSecret(): String =
+        (context.serverDataStore.data.first()[Keys.KDS_PUSH_SECRET] ?: "").trim()
+
+    suspend fun setKdsLanBaseUrl(url: String?) {
+        val t = url?.trim() ?: ""
+        context.serverDataStore.edit {
+            if (t.isBlank()) it.remove(Keys.KDS_LAN_BASE_URL)
+            else it[Keys.KDS_LAN_BASE_URL] = t.removeSuffix("/")
+        }
+    }
+
+    suspend fun setKdsPushSecret(secret: String?) {
+        val t = secret?.trim() ?: ""
+        context.serverDataStore.edit {
+            if (t.isBlank()) it.remove(Keys.KDS_PUSH_SECRET)
+            else it[Keys.KDS_PUSH_SECRET] = t
+        }
     }
 
     private fun normalizeUrl(trimmed: String): String = when {

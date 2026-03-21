@@ -1,9 +1,10 @@
 package com.limonpos.app.data.remote
 
 import com.limonpos.app.data.remote.dto.*
+import okhttp3.RequestBody
+import okhttp3.ResponseBody
 import retrofit2.Response
 import retrofit2.http.*
-import kotlin.jvm.JvmSuppressWildcards
 
 interface ApiService {
     @POST("auth/login")
@@ -47,24 +48,21 @@ interface ApiService {
     suspend fun closeTable(@Path("id") id: String): Response<TableDto>
 
     @PUT("tables/{id}")
-    @JvmSuppressWildcards
     suspend fun updateTable(
         @Path("id") id: String,
-        @Body body: Map<String, Any?>
+        @Body body: TablePatchRequest
     ): Response<TableDto>
 
     @POST("tables/{id}/reserve")
-    @JvmSuppressWildcards
     suspend fun reserveTable(
         @Path("id") id: String,
-        @Body body: Map<String, Any?>
+        @Body body: TableReserveRequest
     ): Response<TableReservationDto>
 
     @POST("tables/{id}/reservation/cancel")
-    @JvmSuppressWildcards
     suspend fun cancelTableReservation(
         @Path("id") id: String,
-        @Body body: Map<String, Any?>
+        @Body body: RequestBody
     ): Response<Unit>
 
     @GET("categories")
@@ -101,10 +99,9 @@ interface ApiService {
     suspend fun getOrder(@Path("id") id: String): Response<OrderDto>
 
     @PATCH("orders/{id}")
-    @JvmSuppressWildcards
     suspend fun updateOrderTable(
         @Path("id") orderId: String,
-        @Body body: Map<String, Any?>
+        @Body body: OrderTablePatchRequest
     ): Response<OrderDto>
 
     @POST("orders")
@@ -137,7 +134,7 @@ interface ApiService {
         @Path("orderId") orderId: String,
         @Path("itemId") itemId: String,
         @Body body: OrderItemStatusRequest
-    ): Response<OrderItemDto>
+    ): Response<ResponseBody>
 
     @POST("orders/{id}/send")
     suspend fun sendOrderToKitchen(@Path("id") id: String): Response<OrderDto>
@@ -221,8 +218,7 @@ interface ApiService {
     suspend fun postDailyTransaction(@Body body: DailyTransactionRequest): Response<DailyTransactionEntryDto>
 
     @POST("sync-errors")
-    @JvmSuppressWildcards
-    suspend fun reportSyncError(@Body body: Map<String, Any?>): Response<Any>
+    suspend fun reportSyncError(@Body body: SyncErrorReport): Response<Unit>
 
     /** Delta Sync: son 1 dakikada değişen varlıkları çeker. */
     @GET("sync/delta")

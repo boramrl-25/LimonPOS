@@ -32,16 +32,22 @@ fun ServerSettingsScreen(
     val baseUrl by viewModel.baseUrl.collectAsState()
     val secondaryBaseUrl by viewModel.secondaryBaseUrl.collectAsState()
     val tertiaryBaseUrl by viewModel.tertiaryBaseUrl.collectAsState()
+    val kdsLanBaseUrl by viewModel.kdsLanBaseUrl.collectAsState()
+    val kdsPushSecret by viewModel.kdsPushSecret.collectAsState()
     val message by viewModel.message.collectAsState()
     val testing by viewModel.testing.collectAsState()
     var inputUrl by remember { mutableStateOf(baseUrl) }
     var inputSecondary by remember { mutableStateOf(secondaryBaseUrl) }
     var inputTertiary by remember { mutableStateOf(tertiaryBaseUrl) }
+    var inputKdsLan by remember { mutableStateOf(kdsLanBaseUrl) }
+    var inputKdsSecret by remember { mutableStateOf(kdsPushSecret) }
 
-    LaunchedEffect(baseUrl, secondaryBaseUrl, tertiaryBaseUrl) {
+    LaunchedEffect(baseUrl, secondaryBaseUrl, tertiaryBaseUrl, kdsLanBaseUrl, kdsPushSecret) {
         inputUrl = baseUrl
         inputSecondary = secondaryBaseUrl
         inputTertiary = tertiaryBaseUrl
+        inputKdsLan = kdsLanBaseUrl
+        inputKdsSecret = kdsPushSecret
     }
 
     LaunchedEffect(message) {
@@ -154,8 +160,50 @@ fun ServerSettingsScreen(
                 "Note: Opening this URL in browser may show 'connection not secure' (HTTP). Use it only in this field and Save.",
                 color = LimonTextSecondary.copy(alpha = 0.8f),
                 fontSize = 11.sp,
-                modifier = Modifier.padding(bottom = 24.dp)
+                modifier = Modifier.padding(bottom = 16.dp)
             )
+            Text(
+                "KDS LAN (optional): local kitchen server only — no cloud. POS pushes sent items here after \"Send to kitchen\".",
+                color = LimonTextSecondary,
+                fontSize = 13.sp,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            OutlinedTextField(
+                value = inputKdsLan,
+                onValueChange = { inputKdsLan = it },
+                label = { Text("KDS LAN base URL", color = LimonTextSecondary) },
+                placeholder = { Text("http://192.168.1.50:3099", color = LimonTextSecondary.copy(alpha = 0.6f)) },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = LimonText,
+                    unfocusedTextColor = LimonText,
+                    focusedBorderColor = LimonPrimary,
+                    unfocusedBorderColor = LimonTextSecondary.copy(alpha = 0.5f),
+                    focusedLabelColor = LimonPrimary,
+                    cursorColor = LimonPrimary
+                )
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedTextField(
+                value = inputKdsSecret,
+                onValueChange = { inputKdsSecret = it },
+                label = { Text("KDS push secret (X-KDS-Secret)", color = LimonTextSecondary) },
+                placeholder = { Text("Same as KDS_PUSH_SECRET on server", color = LimonTextSecondary.copy(alpha = 0.6f)) },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = LimonText,
+                    unfocusedTextColor = LimonText,
+                    focusedBorderColor = LimonPrimary,
+                    unfocusedBorderColor = LimonTextSecondary.copy(alpha = 0.5f),
+                    focusedLabelColor = LimonPrimary,
+                    cursorColor = LimonPrimary
+                )
+            )
+            Spacer(modifier = Modifier.height(8.dp))
             message?.let { msg ->
                 Text(
                     msg,
@@ -163,6 +211,16 @@ fun ServerSettingsScreen(
                     fontSize = 14.sp,
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
+            }
+            if (inputKdsLan.isNotBlank()) {
+                OutlinedButton(
+                    onClick = { viewModel.testConnection(inputKdsLan) },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !testing
+                ) {
+                    Text(if (testing) "Testing…" else "Test KDS LAN (/health)")
+                }
+                Spacer(modifier = Modifier.height(8.dp))
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -175,14 +233,16 @@ fun ServerSettingsScreen(
                 ) {
                     Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(20.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(if (testing) "Testing…" else "Test connection")
+                    Text(if (testing) "Testing…" else "Test API")
                 }
                 Button(
                     onClick = {
                         viewModel.saveUrl(
                             inputUrl,
                             inputSecondary.ifBlank { null },
-                            inputTertiary.ifBlank { null }
+                            inputTertiary.ifBlank { null },
+                            inputKdsLan.ifBlank { null },
+                            inputKdsSecret.ifBlank { null }
                         )
                     },
                     modifier = Modifier.weight(1f),
